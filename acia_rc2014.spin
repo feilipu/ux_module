@@ -247,15 +247,15 @@ entry
                         mov     outa,bus_wait           ' clear /WAIT high by default
                                                         ' it is behind a diode, and the bus is open collector
 
-                        or      port_base_addr,bus_wait ' add the /WAIT pin to the address for waitpeq wr effect
                         or      port_base_addr,bus_m1   ' add in the /M1 pin to tighten addressing
+                        or      port_base_addr,bus_wait ' add the /WAIT pin to the address for waitpeq wr effect
 
 wait
                         mov     outa,port_base_addr     ' configure the base address to compare with ina
 
                         waitpne outa,port_active_mask
                         waitpeq outa,port_active_mask wr' wait until we see our addresses, together with /IORQ low
-                                                        ' use wr effect to set /WAIT low (/INT gets hit as side effect)
+                                                        ' use wr effect to set /WAIT low on match (/INT gets hit as side effect)
 
                         andn    outa,bus_int            ' reset /INT pin (modified as a side effect of the waitpeq outa wr effect)
 
@@ -282,7 +282,9 @@ handler_data
 
                         testn    bus_wr,ina        wz   ' capture port data again, test for /WR pin low
             if_nz       jmp     #receive_data
-                        jmp     #wait
+
+                        or      outa,bus_wait           ' set /WAIT line high to continue
+                        jmp     #wait                   ' then go back and wait for next address chance
 
 receive_command
                         or      outa,bus_wait           ' set /WAIT line high to continue
@@ -292,6 +294,7 @@ receive_command
                         wrlong  bus,acia_config_addr
                         xor     bus,acia_config_reset wz' master reset if we've received the RESET command
             if_nz       jmp     #wait
+
                         wrlong  acia_config_initial,acia_config_addr  ' reset config
                         wrlong  acia_status_initial,acia_status_addr  ' reset status
                         jmp     #wait
