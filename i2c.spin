@@ -59,94 +59,31 @@
  
 CON
 
-          _clkmode = xtal1 + pll16x
-          _xinfreq = 5_000_000                                      'use 5MHz crystal
-        
-          clk_freq = (_clkmode >> 6) * _xinfreq                     'system freq as a constant
-          mSec     = clk_freq / 1_000                               'ticks in 1ms
-          uSec     = clk_freq / 1_000_000                           'ticks in 1us
-                                                                                       
+          mSec = 117965                                             ' 7372.8 * 16 simple xin*pll / 1_000 = ticks in 1ms
+          uSec = 118                                                ' 7.3728 * 16 simple xin*pll / 1_000_000 = ticks in 1us
+
+CON
+
           ACK = 0                                                   'signals ready for more
           NAK = 1                                                   'signals not ready for more
-  
 
-
-VAR
-          LONG  Slaves[120]                                        'Used only by PUB Main, i.e. demo code (comment out if you need the space)
-
-          
 DAT
-          PINscl              LONG    1                            'Use DAT variable to make the assignment stick for later calls to the object, and optionally        'Use DAT variable to make the assignment stick for later calls to the object 
-          PINsda              LONG    2                            'assign to default pin numbers. Use Init( ) to change at runtime. Best for many chips same one bus. 'and assign to default pin numbers Use Init( ) to change at runtime
-          BusInitialized      LONG    FALSE                        'If this is not desired, change from defining PINmosi etc. as DAT to VAR, and                       
-                                                                   'assign value to them in Init by means of 'PINmosi:= _PINmosi' etc. instead. Best when many busses.
-                                                                   
-          ThisObjectInstance  LONG    1                            'Change to separate object loads for different physical buses
+          PINscl              LONG    29                            'Use DAT variable to make the assignment stick for later calls to the object, and optionally
+          PINsda              LONG    28                            'assign to default pin numbers. Use Init( ) to change at runtime. Best for many chips same one bus.
+                                                                    'and assign to default pin numbers Use Init( ) to change at runtime
+
+          BusInitialized      LONG    FALSE                         'If this is not desired, change from defining PINmosi etc. as DAT to VAR, and                       
+                                                                    'assign value to them in Init by means of 'PINmosi:= _PINmosi' etc. instead. Best when many busses.
+
+          ThisObjectInstance  LONG    1                             'Change to separate object loads for different physical buses
+
+          fit
 
 
-OBJ
-          pst   : "Parallax Serial Terminal"
-          
-
-PUB Main | value, i                                                    'Demo code (comment out if you need the space)
-
-  pst.Start(9600)                                                      'Remember to start the terminal at 9600b/s
-  WAITCNT(clkfreq + cnt)                                         
-
-  pst.Str(String("Test of I2C bus, push button to start"))
-  value := pst.DecIn
-   REPEAT
-     pst.Str(String("Enter SCL pin number:"))
-     PINscl:= || pst.DecIn
-     pst.Dec(PINscl)
-     pst.Chars(pst#NL, 2)
-     pst.Str(String("Enter SDA pin number:"))
-     PINsda:= || pst.DecIn
-     pst.Dec(PINsda)
-     pst.Chars(pst#NL, 2)
-     IF PINscl>31 OR PINsda>31
-       pst.Str(String("Pin number maximum 31!"))
-       pst.Chars(pst#NL, 2)
-     ELSE
-       QUIT       
-   pst.Str(String("Now initialising bus..."))   
-   Init(PINscl, PINsda)
-   pst.Chars(pst#NL, 2)
-   pst.Str(String("Status of SCL: "))
-   IF INA[PINscl] == 1
-     pst.Str(String(" HIGH (good)"))
-   ELSE
-     pst.Str(String(" LOW (pull-up resistor missing?)"))
-   pst.Chars(pst#NL, 2)
-   pst.Str(String("Status of SDA: "))
-   IF INA[PINsda] == 1
-     pst.Str(String(" HIGH (good)"))
-   ELSE
-     pst.Str(String(" LOW (pull-up resistor missing?)"))
-   pst.Chars(pst#NL, 2)   
-   pst.Str(String("Bus initialization completed."))
-   pst.Chars(pst#NL, 2)
-  pst.Chars(pst#NL, 2)
-
-  IF INA[PINscl] == 1 AND INA[PINsda] == 1
-    pst.Str(String("Now scanning bus..."))
-    pst.Chars(pst#NL, 2)    
-    WhoOnBus(@Slaves) 
-     IF Slaves[0] > 0
-       REPEAT i FROM 1 TO Slaves[0]
-         pst.Str(String("Bus slave detected at address: $"))
-         pst.Hex(Slaves[i], 4)
-         pst.Chars(pst#NL, 2)
-     pst.Dec(Slaves[0])
-     pst.Str(String("  slaves found.  "))
-     pst.Str(String("Scan completed."))   
-     pst.Chars(pst#NL, 2)
-          
+PUB Init(_PINscl, _PINsda)
 
 'INITIATION METHOD
 '=================================================================================================================================================
- 
-PUB Init(_PINscl, _PINsda)
 
    LONG[@PINscl]:= _PINscl                                          'Copy pin into DAT where it will survive
    LONG[@PINsda]:= _PINsda                                          'into later calls to this object
@@ -156,7 +93,7 @@ PUB Init(_PINscl, _PINsda)
    DIRA[PINsda] := 0                                                'to simulate open collector i/o (i.e. pull-up resistors required)
    Reset                                                            'Do bus reset to clear any chips' activity
    LONG[@BusInitialized]:= TRUE                                     'Keep tally of initialization
-   
+
 
 PUB IsInitialized
 
@@ -176,7 +113,7 @@ PUB WriteByteA8(ChipAddr, RegAddr, Value)                           'Write a byt
      WriteBus(Value)                             
      Stop
 
-                           
+
 PUB WriteByteA16(ChipAddr, RegAddr, Value)                          'Write a byte to specified chip and 16bit register address
 
    IF CallChip(ChipAddr << 1)== ACK                                 'Shift left 1 to add on the read/write bit, default 0 (write)
@@ -196,7 +133,7 @@ PUB WriteWordA8(ChipAddr, RegAddr, Value)                           'Write a Wor
      WriteBus(Value.BYTE[0])                                        'LSB
      Stop
 
-                           
+
 PUB WriteWordA16(ChipAddr, RegAddr, Value)                          'Write a Word to specified chip and 16bit register address
 
    IF CallChip(ChipAddr << 1)== ACK                                 'Shift left 1 to add on the read/write bit, default 0 (write)
@@ -219,7 +156,7 @@ PUB WriteLongA8(ChipAddr, RegAddr, Value)                           'Write a Lon
      WriteBus(Value.BYTE[0])                                        'LSB
      Stop
 
-                           
+
 PUB WriteLongA16(ChipAddr, RegAddr, Value)                          'Write a Long to specified chip and 16bit register address
 
    IF CallChip(ChipAddr << 1)== ACK                                 'Shift left 1 to add on the read/write bit, default 0 (write)
@@ -255,11 +192,11 @@ PUB WriteBlockDirect(ChipAddr, FlagByte, OneByte, begin_end)        'Write direc
        WriteBus(OneByte)                                            'Last byte of data
        Stop
 
-       
-     
+
+
 'Read------------------------------------------------------------------------------------------------------
 'Byte
-     
+
 PUB ReadByteA8(ChipAddr, RegAddr) | Value                           'Read a byte from specified chip and 8bit register address
 
    IF CallChip(ChipAddr << 1)== ACK                                 'Check if chip responded
@@ -392,7 +329,7 @@ PUB WhoOnBus(ptrOnBusArr) | onbus, addr                             'Fills an ar
    
        
 PUB CallChip(ChipAddr) | acknak, t                                  'Address the chip until it acknowledges or timeout
-                                                                  
+
   t:= CNT                                                           'Set start time
   REPEAT                                                            
      Start                                                          'Prepare chips for responding
@@ -402,7 +339,7 @@ PUB CallChip(ChipAddr) | acknak, t                                  'Address the
   UNTIL acknak == ACK                                               'or until it acknowledges
   RETURN ACK
 
-                                                        
+
 PUB Start                                                           'Check that no chip is holding down SCL, then signal 'start'
 
    DIRA[PINsda] := 0                                                
@@ -410,7 +347,7 @@ PUB Start                                                           'Check that 
    WAITPEQ(|<PINscl,|<PINscl, 0)                                    'Check/ wait for SCL to be released
    DIRA[PINsda] := 1                                                'Signal 'start'
    DIRA[PINscl] := 1                                                
-                                                              
+
   
 PUB WriteBus(BusByte) | acknak                                      'Clock out 8 bits to the bus
 
@@ -437,7 +374,7 @@ PUB ReadBus(acknak) | BusByte                                       'Clock in  8
     WAITPEQ(|<PINscl,|<PINscl, 0)                                   'check/ wait for SCL to be released  
     BusByte := (BusByte << 1) | INA[PINsda]                         'read the bit
     DIRA[PINscl] := 1                                               'and leave SCL low
-                                                                 
+ 
   DIRA[PINsda] := !acknak                                           'output nak if finished, ack if more reads
   DIRA[PINscl] := 0                                                 'clock the bus
   DIRA[PINscl] := 1                                                 'and leave SCL low
@@ -446,7 +383,7 @@ PUB ReadBus(acknak) | BusByte                                       'Clock in  8
 
 
 PUB Stop                                                            'Send stop sequence
-                                                                    
+
   DIRA[PINsda] := 1                                                 'Pull SDA low
   DIRA[PINscl] := 0                                                 'float SCL and
   WAITPEQ(|<PINscl,|<PINscl,0)                                      'wait for SCL to be released
@@ -456,24 +393,19 @@ PUB Stop                                                            'Send stop s
 DAT
 
 {{
-
-  Terms of Use: MIT License
-
-  Permission is hereby granted, free of charge, to any person obtaining a copy of this
-  software and associated documentation files (the "Software"), to deal in the Software
-  without restriction, including without limitation the rights to use, copy, modIFy,
-  merge, PUBlish, distribute, sublicense, and/or sell copies of the Software, and to
-  permit persons to whom the Software is furnished to do so, subject to the following
-  conditions:
-
-  The above copyright notice and this permission notice shall be included in all copies
-  or substantial portions of the Software.
-
-  THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED,
-  INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A
-  PARTICULAR PURPOSE AND NON-INFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT
-  HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF
-  CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE
-  OR THE USE OR OTHER DEALINGS IN THE SOFTWARE. 
-
+┌──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┐
+│                                                   TERMS OF USE: MIT License                                                  │
+├──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┤
+│Permission is hereby granted, free of charge, to any person obtaining a copy of this software and associated documentation    │
+│files (the "Software"), to deal in the Software without restriction, including without limitation the rights to use, copy,    │
+│modify, merge, publish, distribute, sublicense, and/or sell copies of the Software, and to permit persons to whom the Software│
+│is furnished to do so, subject to the following conditions:                                                                   │
+│                                                                                                                              │
+│The above copyright notice and this permission notice shall be included in all copies or substantial portions of the Software.│
+│                                                                                                                              │
+│THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE          │
+│WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR         │
+│COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE,   │
+│ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.                         │
+└──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
 }}

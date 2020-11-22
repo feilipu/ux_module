@@ -13,14 +13,14 @@
 '' 4. Numeric functions that print binary, hex, decimal numbers as we well as conversion methods
 ''   from and to.
 '' 
-'' Of course, one could seperate all these into multiple objects, but in the quest for simplicity
+'' Of course, one could separate all these into multiple objects, but in the quest for simplicity
 '' I am going to keep all these methods within the same module since they are so tightly coupled,
 '' need access to each other, and this is simply easier to deal with. You may want to seperate things
 '' out later into multiple modules/objects and you are free to do so.
 '' 
 '' Much of the functionality in this object is very specific to the VGA driver it supports. This is
 '' a necessary evil of graphics drivers. Each one has its various features, memory layout, functionality,
-'' etc. and we must code for it specifically. Additioanally, a lot of the methods are generic and process
+'' etc. and we must code for it specifically. Additionally, a lot of the methods are generic and process
 '' strings, characters, and convert numbers.
 ''
 ''  Modification History
@@ -37,10 +37,10 @@
 
 CON
 ' -----------------------------------------------------------------------------
-' CONSTANTS, DEFINES, MACROS, ETC.   
+' CONSTANTS, DEFINES, MACROS, ETC.
 ' -----------------------------------------------------------------------------
-  CLOCKS_PER_MICROSECOND = 8*16     ' simple xin*pll / 1_000_000                     
-  CLOCKS_PER_MILLISECOND = 8000*16  ' simple xin*pll / 1_000
+  CLOCKS_PER_MICROSECOND = 118    ' 7.3728 * 16 ' simple xin*pll / 1_000_000 
+  CLOCKS_PER_MILLISECOND = 117965 ' 7372.8 * 16 ' simple xin*pll / 1_000
 
 
   ' import some constants from the VGA driver
@@ -56,7 +56,7 @@ CON
   ASCII_F      = 70
   ASCII_G      = 71
   ASCII_H      = 72
-  ASCII_O      = 79  
+  ASCII_O      = 79
   ASCII_P      = 80
   ASCII_Z      = 90
   ASCII_0      = 48
@@ -187,7 +187,7 @@ OBJ
   ' there are many VGA text drivers, but this is the simplest and cleanest, plus
   ' its developed by Parallax and is somewhat of a standard.
   
-  vga           : "VGA_HiRes_Text_010"
+  vga           : "hires_text_vga"
 
 
 VAR
@@ -198,7 +198,7 @@ VAR
                                                 ' however, in a really tight application, the user might not be able to spare
                                                 ' even a small amount of memory, but, in most cases, menu items are approx 20 characters
                                                 ' wide and there are 5-10 menu items, thus the buffer will cost 100-200 bytes
-                                                                                                            
+
   word  gColors[VGAROWS]                        ' row colors
   long  gVsync                                  ' sync long - written to -1 by VGA driver after each screen refresh
 
@@ -210,11 +210,12 @@ VAR
 
 CON
 ' -----------------------------------------------------------------------------
-' INITIALIZATION ENTRY POINT FOR TERMINAL SERVICES DRIVER   
+' INITIALIZATION ENTRY POINT FOR TERMINAL SERVICES DRIVER
 ' -----------------------------------------------------------------------------
+
 PUB Init( pVGABasePin, pTextCursXPtr ) | retVal
 {{
-DESCRIPTION: Initializes the VGA and Keyboard Drivers as well as basic terminal parameters  
+DESCRIPTION: Initializes the VGA and Keyboard Drivers as well as basic terminal parameters
 
 PARMS:
 
@@ -239,14 +240,11 @@ RETURNS:  Returns the screen geometry in high WORD of 32-bit return value
   gTermNumRows   := VGAROWS
   gTermFlag      := 0
   
-  ' start the VGA driver, send VGA base pins, video buffer, color buffer, pointer to cursors, and vsync global   
+  ' start the VGA driver, send VGA base pins, video buffer, color buffer, pointer to cursors, and vsync global
   vga.start(pVGABasePin, @gVideoBuffer, @gColors, pTextCursXPtr, @gVsync) 
-
-  ' if you wanted the mouse as well, you would start it here, and then add "pass thru" methods
-  ' so you could call it from the upper level object
-  
+ 
   ' clear the VGA screen to Atari theme
-  ClearScreen( CTHEME_ATARI_C64_FG, CTHEME_ATARI_C64_BG )           
+  ClearScreen( CTHEME_ATARI_C64_FG, CTHEME_ATARI_C64_BG )
 
   ' finally return the screen geometry in the format [video_buffer:16 | vga_colums:8 | vga_rows]
   retVal :=   (@gVideoBuffer << 16 ) | ( VGAROWS << 8 ) | VGACOLS
@@ -258,13 +256,13 @@ RETURNS:  Returns the screen geometry in high WORD of 32-bit return value
 
 CON
 ' -----------------------------------------------------------------------------
-' DIRECT FRAMEBUFFER METHODS FOR GENERAL RENDERING FOR CONSOLE AND CONTROLS  
+' DIRECT FRAMEBUFFER METHODS FOR GENERAL RENDERING FOR CONSOLE AND CONTROLS
 ' -----------------------------------------------------------------------------
 
 PUB PrintString( pStrPtr, pCol, pRow, pInvFlag ) | strLen, vgaIndex, index
 {{
 DESCRIPTION: This method draws a string directly to the frame buffer avoiding the
-terminal system.  
+terminal system.
 
 PARMS:  pStrPtr  - Pointer to string to print, null terminated.
         pCol     - Column(x) position to print (0,0) upper left.
@@ -286,9 +284,10 @@ RETURNS: Nothing.
 
 ' end PUB ----------------------------------------------------------------------
 
+
 PUB PrintChar( pChar, pCol, pRow, pInvFlag )
 {{
-DESCRIPTION: Draws a character directly the the frame buffer avoiding the terminal system.  
+DESCRIPTION: Draws a character directly the the frame buffer avoiding the terminal system.
 
 PARMS:  pChar    - Character to print.
         pCol     - Column(x) position to print (0,0) upper left.
@@ -304,7 +303,7 @@ RETURNS: Nothing.
     if (pInvFlag)
       pChar += 128
       
-    byte[ gVideoBufferPtr ][pCol + (pRow * gTermNumCols)] := pChar  
+    byte[ gVideoBufferPtr ][pCol + (pRow * gTermNumCols)] := pChar
 
 ' end PUB ----------------------------------------------------------------------
 
@@ -312,7 +311,7 @@ RETURNS: Nothing.
 PUB ClearScreen( pFGroundColor, pBGroundColor ) | colorWord
 {{
 DESCRIPTION: Clear the screen at the memory buffer level, very fast. However, doesn't
-effect the terminal sub-system or cursor position, they are independant.   
+effect the terminal sub-system or cursor position, they are independant.
 
 PARMS:  pFGroundColor - foreground color in RGB[2:2:2] format.
         pBGroundColor - background color in RGB[2:2:2] format.
@@ -324,23 +323,24 @@ RETURNS: Nothing.
   colorWord := pBGroundColor << 10 + pFGroundColor << 2
 
   ' clear the screen (long at a time, this is why video buffer needs to be on
-  ' long boundary  
+  ' long boundary
   longfill( gVideoBufferPtr, $20202020, VGACOLS*VGAROWS/4 )
 
-  ' clear color control buffer   
+  ' clear color control buffer
   wordfill( @gColors, colorWord, VGAROWS )
 
 ' end PUB ----------------------------------------------------------------------
+
 
 PUB SetLineColor( pRow, pFGroundColor, pBGroundColor ) | colorWord
 {{
 DESCRIPTION: Sets the sent row to the given foreground and background color. The VGA
 driver this framework is connected to VGA_HiRes_Text_*** has only 2 colors per row, but
-we can control those colors. We give color up for high resoloution.  
+we can control those colors. We give color up for high resoloution.
 
 PARMS:  pRow - the row to change the foreground and backgroundf color of.
         pFGroundColor - the foreground color in RGB[2:2:2] format.
-        pBGroundColor - the background color in RGB[2:2:2] format.         
+        pBGroundColor - the background color in RGB[2:2:2] format.
 
 RETURNS: Nothing.
 }}
@@ -353,12 +353,13 @@ RETURNS: Nothing.
 
 ' end PUB ----------------------------------------------------------------------
 
+
 PUB DrawFrame( pCol, pRow, pWidth, pHeight, pTitlePtr, pAttr, pVgaPtr, pVgaWidth ) | index, index2, vgaIndex, rowCount, vgaStartIndex , pWidth_2
 {{
 DESCRIPTION: This method draws a rectangular "frame" at pCol, pRow directly to the graphics buffer
 with size pWidth x pHeight. Also, if pTitlePtr is not null then a title is drawn above the frame in a
 smaller frame, so it looks nice and clean.
-  
+
 PARMS:
 
   pCol       - The column to draw the frame at. 
@@ -378,10 +379,10 @@ RETURNS: Nothing.
   vgaStartIndex := pRow * pVgaWidth + pCol
 
   ' pre-compute this value since its used so much
-  pWidth_2 := pWidth-2                           
+  pWidth_2 := pWidth-2
 
-  ' starting rendering index  
-  vgaIndex := vgaStartIndex                      
+  ' starting rendering index
+  vgaIndex := vgaStartIndex
 
   ' clear the target rectangle
   repeat pHeight
@@ -389,59 +390,59 @@ RETURNS: Nothing.
     vgaIndex += pVgaWidth
 
   ' reset to top left of box
-  vgaIndex := vgaStartIndex                              
+  vgaIndex := vgaStartIndex
 
-  ' draw top left corner, then horizontal line followed by rop right character  
-  byte[pVgaPtr][vgaIndex++] := ASCII_TOPLT               
+  ' draw top left corner, then horizontal line followed by rop right character
+  byte[pVgaPtr][vgaIndex++] := ASCII_TOPLT
   bytefill(@byte[pVgaPtr][vgaIndex],ASCII_HLINE,pWidth_2) 
   vgaIndex += pWidth_2
-  byte[pVgaPtr][vgaIndex++] := ASCII_TOPRT               
+  byte[pVgaPtr][vgaIndex++] := ASCII_TOPRT
 
-  ' move to next row (potentially title will go here)    
-  vgaIndex := vgaStartIndex + pVgaWidth              
+  ' move to next row (potentially title will go here)
+  vgaIndex := vgaStartIndex + pVgaWidth
 
   ' test if there is a title, if so draw it
   if (pTitlePtr <> NULL AND strsize( pTitlePtr ) > 0)
 
-    ' left vertical line, then title, then right vertical line    
-    byte[pVgaPtr][vgaIndex++] := ASCII_VLINE             
+    ' left vertical line, then title, then right vertical line
+    byte[pVgaPtr][vgaIndex++] := ASCII_VLINE
     index := strsize( pTitlePtr )
 
     ' test if caller wants inverted title
     if ( pAttr & ATTR_DRAW_INVERSE )
       repeat index2 from 0 to index-1
-        byte[pVgaPtr][vgaIndex+index2] := byte[pTitlePtr][index2]+128   
+        byte[pVgaPtr][vgaIndex+index2] := byte[pTitlePtr][index2]+128
     else
-      bytemove( @byte[pVgaPtr][vgaIndex], pTitlePtr, index )         
+      bytemove( @byte[pVgaPtr][vgaIndex], pTitlePtr, index )
 
     vgaIndex += pWidth_2
-    byte[pVgaPtr][vgaIndex++] := ASCII_VLINE              
+    byte[pVgaPtr][vgaIndex++] := ASCII_VLINE
 
     ' move down to next row (optimize this *2 later)
-    vgaIndex := vgaStartIndex + 2 * pVgaWidth             
+    vgaIndex := vgaStartIndex + 2 * pVgaWidth
 
     ' if a title was inserted, then we need to draw the "tee" characters
     ' on the left and right to finish this off
 
     ' draw left "tee" horizontal line, then right "tee"
-    byte[pVgaPtr][vgaIndex++] := ASCII_LTT             
+    byte[pVgaPtr][vgaIndex++] := ASCII_LTT
     bytefill(@byte[pVgaPtr][vgaIndex],ASCII_HLINE,pWidth_2) 
     vgaIndex += pWidth_2
-    byte[pVgaPtr][vgaIndex++] := ASCII_RTT               
+    byte[pVgaPtr][vgaIndex++] := ASCII_RTT
 
-    ' adjust the row counter since we had this added title section    
-    rowCount := 3                                         
+    ' adjust the row counter since we had this added title section
+    rowCount := 3
 
     ' draw shadow on box?
-    if (pAttr & ATTR_DRAW_SHADOW)                          
-      byte[pVgaPtr][vgaIndex] := ASCII_DITHER               
+    if (pAttr & ATTR_DRAW_SHADOW)
+      byte[pVgaPtr][vgaIndex] := ASCII_DITHER
     
   else ' don't adjust row counter, draw the box as usual
-    rowCount := 1                                       
+    rowCount := 1
 
   ' taking row counter into consideration, move to next row and finish drawing
   ' left and right sides of box
-  vgaIndex := vgaStartIndex + pVgaWidth * rowCount           
+  vgaIndex := vgaStartIndex + pVgaWidth * rowCount
 
   ' draw the sides and vertical characters
   repeat pHeight - rowCount - 1
@@ -450,8 +451,8 @@ RETURNS: Nothing.
     byte[pVgaPtr][vgaIndex++] := ASCII_VLINE              'vertical line char
 
     ' draw shadw on box?
-    if (pAttr & ATTR_DRAW_SHADOW)                          
-      byte[pVgaPtr][vgaIndex] := ASCII_DITHER                 
+    if (pAttr & ATTR_DRAW_SHADOW)
+      byte[pVgaPtr][vgaIndex] := ASCII_DITHER 
 
     ' adjust current position for rendering, back to left side of next and final row
     vgaIndex -= pWidth
@@ -462,15 +463,15 @@ RETURNS: Nothing.
   ' draw the last line on the bottom of box which consists
   ' of the bottom left corner char, then the horizontal line char
   ' and finally the bottom right corner char 
-    
-  byte[pVgaPtr][vgaIndex++] := ASCII_BOTLT                
+
+  byte[pVgaPtr][vgaIndex++] := ASCII_BOTLT
   bytefill(@byte[pVgaPtr][vgaIndex],ASCII_HLINE,pWidth_2) 
   vgaIndex += pWidth_2
-  byte[pVgaPtr][vgaIndex++] := ASCII_BOTRT                
+  byte[pVgaPtr][vgaIndex++] := ASCII_BOTRT
 
   ' finally shadow?
-  if (pAttr & ATTR_DRAW_SHADOW)                        
-    byte[pVgaPtr][vgaIndex]  := ASCII_DITHER               
+  if (pAttr & ATTR_DRAW_SHADOW)
+    byte[pVgaPtr][vgaIndex]  := ASCII_DITHER
     vgaIndex += (pVgaWidth - pWidth + 2)
     bytefill(@byte[pVgaPtr][vgaIndex],ASCII_DITHER,pWidth-1)
 
@@ -479,13 +480,13 @@ RETURNS: Nothing.
 
 CON
 ' -----------------------------------------------------------------------------
-' TEXT CONSOLE/TERMINAL METHODS - THESE METHODS CAN BE CALLED MUCH LIKE THE  
+' TEXT CONSOLE/TERMINAL METHODS - THESE METHODS CAN BE CALLED MUCH LIKE THE
 ' OTHER TERMINAL DRIVERS FOR HIGH LEVEL PRINTING WITH "CONSOLE" EMULATION
 ' -----------------------------------------------------------------------------
 
 PUB StringTermLn( pStringPtr )
 {{
-DESCRIPTION: Prints a string to the terminal and appends a newline.  
+DESCRIPTION: Prints a string to the terminal and appends a newline.
 
 PARMS: pStrPtr - Pointer to null terminated string to print.
 
@@ -498,9 +499,10 @@ RETURNS: Nothing.
 
 ' end PUB ----------------------------------------------------------------------
 
+
 PUB StringTerm( pStringPtr )
 {{
-DESCRIPTION: Prints a string to the terminal.  
+DESCRIPTION: Prints a string to the terminal.
 
 PARMS: pStrPtr - Pointer to null terminated string to print.
 
@@ -513,9 +515,10 @@ RETURNS: Nothing.
 
 ' end PUB ----------------------------------------------------------------------
 
+
 PUB DecTerm( pValue, pDigits) | divisor, dividend, zFlag, digit
 {{
-DESCRIPTION: Prints a decimal number to the screen.  
+DESCRIPTION: Prints a decimal number to the screen.
 
 PARMS:  pValue - the number to print.
         pDigits - the maximum number of digits to print.
@@ -531,7 +534,7 @@ RETURNS: Nothing.
   ' check for negative
   if (pValue < 0)
     pValue := -pValue
-    PrintTerm("-")    
+    PrintTerm("-")
 
   ' generate divisor
   divisor := 1
@@ -559,9 +562,10 @@ RETURNS: Nothing.
   
 ' end PUB ----------------------------------------------------------------------
 
+
 PUB HexTerm(pValue, pDigits)
 {{
-DESCRIPTION: Prints the sent number in hex format.  
+DESCRIPTION: Prints the sent number in hex format.
 
 PARMS:  pValue  - the number to print in hex format.
         pDigits - the number of hex digits to print.
@@ -577,9 +581,10 @@ RETURNS: Nothing.
 
 ' end PUB ----------------------------------------------------------------------
 
+
 PUB BinTerm(pValue, pDigits)
 {{
-DESCRIPTION: Prints the sent value in binary format with 0's and 1's.  
+DESCRIPTION: Prints the sent value in binary format with 0's and 1's.
 
 PARMS:  pValue - the number to print in binary format.
         pDigits - the number binary digits to print.
@@ -595,9 +600,10 @@ RETURNS: Nothing.
 
 ' end PUB ----------------------------------------------------------------------
 
+
 PUB NewlineTerm
 {{
-DESCRIPTION: Moves the terminal cursor home and outputs a carriage return.  
+DESCRIPTION: Moves the terminal cursor home and outputs a carriage return.
 
 PARMS: None.
  
@@ -611,16 +617,17 @@ RETURNS: Nothing.
     gTermRow--
 
     'scroll lines
-    bytemove(gVideoBufferPtr, gVideoBufferPtr + gTermNumCols, ( (gTermNumRows-1) * gTermNumCols )  )
+    bytemove(gVideoBufferPtr, gVideoBufferPtr + gTermNumCols, ( (gTermNumRows-1) * gTermNumCols ) )
 
-   'clear new line                             
+   'clear new line
     bytefill(gVideoBufferPtr + ((gTermNumRows-1) * gTermNumCols), ASCII_SPACE, gTermNumCols)
 
 ' end PUB ----------------------------------------------------------------------
-       
+
+
 PUB PrintTerm( pChar )
 {{
-DESCRIPTION: Prints the sent character to the terminal console with scrolling.  
+DESCRIPTION: Prints the sent character to the terminal console with scrolling.
 
 PARMS: pChar - character to print.
 
@@ -630,11 +637,12 @@ RETURNS: Nothing.
   ' print a character at current cursor position
   byte[ gVideoBufferPtr ][ gTermCol + (gTermRow * gTermNumCols)] := pChar
 
-  ' check for scroll  
+  ' check for scroll
   if (++gTermCol == gTermNumCols)
     NewlineTerm
 
 ' end PUB ----------------------------------------------------------------------
+
 
 PUB OutTerm( pChar )
 {{
@@ -691,7 +699,7 @@ RETURNS: Nothing.
 
 PUB SetColTerm( pCol )
 {{
-DESCRIPTION: Set terminal x column cursor position.   
+DESCRIPTION: Set terminal x column cursor position.
 
 PARMS: pRow - row to set the cursor to.
 
@@ -702,9 +710,10 @@ RETURNS: Nothing.
 
 ' end PUB ----------------------------------------------------------------------
 
+
 PUB SetRowTerm( pRow )
 {{
-DESCRIPTION: Set terminal y row cursor position  
+DESCRIPTION: Set terminal y row cursor position
 
 PARMS: pRow - row to set the cursor to.
 
@@ -715,9 +724,10 @@ RETURNS: Nothing.
 
 ' end PUB ----------------------------------------------------------------------
 
+
 PUB GotoXYTerm( pCol, pRow )
 {{
-DESCRIPTION: Sets the x column and y row position of terminal cursor.  
+DESCRIPTION: Sets the x column and y row position of terminal cursor.
 
 PARMS: none.
 
@@ -733,10 +743,11 @@ RETURNS: Nothing.
 
 ' end PUB ----------------------------------------------------------------------
 
+
 PUB GetColTerm
 ' retrieve x column cursor position 
 {{
-DESCRIPTION: Retrieve x terminal cursor position  
+DESCRIPTION: Retrieve x terminal cursor position
 
 PARMS: none.
 
@@ -746,9 +757,10 @@ RETURNS: x terminal cursor position.
 
 ' end PUB ----------------------------------------------------------------------
 
+
 PUB GetRowTerm
 {{ 
-DESCRIPTION: Retrieve y row terminal cursor position  
+DESCRIPTION: Retrieve y row terminal cursor position
 
 PARMS: none.
 
@@ -762,7 +774,7 @@ RETURNS: y terminal cursor position.
 
 CON
 ' -----------------------------------------------------------------------------
-' STRING AND NUMERIC CONVERSION METHODS   
+' STRING AND NUMERIC CONVERSION METHODS 
 ' -----------------------------------------------------------------------------
 
 PUB StrCpy( pDestStrPtr, pSourceStrPtr ) | strIndex
@@ -784,7 +796,7 @@ strIndex := 0
 
 repeat while (byte [ pSourceStrPtr ][ strIndex ] <> NULL)
   ' copy next byte
-   byte [ pDestStrPtr ][ strIndex ] := byte [ pSourceStrPtr ][ strIndex ]    
+   byte [ pDestStrPtr ][ strIndex ] := byte [ pSourceStrPtr ][ strIndex ]
    strIndex++
 
 ' null terminate
@@ -795,11 +807,12 @@ return ( strIndex )
 
 ' end PUB ----------------------------------------------------------------------
 
+
 PUB StrUpper( pStringPtr )
 {{
 DESCRIPTION: Converts the sent string to all uppercase. 
 
-PARMS: pStringPtr - NULL terminated ASCII string to convert.  
+PARMS: pStringPtr - NULL terminated ASCII string to convert.
 
 RETURNS: pStringPtr converted to uppercase.
 }}
@@ -813,6 +826,7 @@ RETURNS: pStringPtr converted to uppercase.
   return ( pStringPtr )
 
 ' end PUB ----------------------------------------------------------------------
+
 
 PUB ToUpper( pChar )
 {{
@@ -830,6 +844,7 @@ else
 
 ' end PUB ----------------------------------------------------------------------
 
+
 PUB IsInSet(pChar, pSetStringPtr)
 {{
 DESCRIPTION: Tests if sent character is in sent string.
@@ -846,9 +861,10 @@ repeat while (byte[ pSetStringPtr ] <> NULL)
     return( pChar )
 
 ' not found
-return( -1 )    
+return( -1 )
 
 ' end PUB ----------------------------------------------------------------------
+
 
 PUB IsSpace( pChar )
 {{
@@ -862,9 +878,10 @@ RETURNS: pChar if its a white space character, -1 otherwise.
 if ( (pChar == ASCII_SPACE) OR (pChar == ASCII_LF) OR (pChar == ASCII_CR) or (pChar == ASCII_TAB))
   return ( pChar )
 else
-  return( -1 )  
+  return( -1 )
 
 ' end PUB ----------------------------------------------------------------------
+
 
 PUB IsNull( pChar )
 {{
@@ -878,9 +895,10 @@ RETURNS: 1 if pChar is NULL, -1 otherwise.
 if ( ( pChar == NULL))
   return ( 1 )
 else
-  return( -1 )  
+  return( -1 )
 
 ' end PUB ----------------------------------------------------------------------
+
 
 PUB IsDigit( pChar )
 {{
@@ -894,9 +912,10 @@ RETURNS: pChar if its in the ASCII set [0..9], -1 otherwise.
 if ( (pChar => ASCII_0) AND (pChar =< ASCII_9) )
   return ( pChar-ASCII_0 )
 else
-  return(-1)  
+  return(-1)
 
 ' end PUB ----------------------------------------------------------------------
+
 
 PUB IsAlpha( pChar )
 {{
@@ -914,9 +933,10 @@ pChar := ToUpper( pChar )
 if ( (pChar => ASCII_A) AND (pChar =< ASCII_Z))
   return ( pChar )
 else
-  return( -1 )  
+  return( -1 )
 
 ' end PUB ----------------------------------------------------------------------
+
 
 PUB IsPunc( pChar )
 {{
@@ -930,10 +950,10 @@ RETURNS: pChar itself if its in the set, -1 if its not in the set.
 
 pChar := ToUpper( pChar )
 
-if ( ((pChar => 33) AND (pChar =< 47)) OR ((pChar => 58) AND (pChar =< 64)) OR ((pChar => 91) AND (pChar =< 96)) OR ((pChar =>123) AND (pChar =< 126))  ) 
+if ( ((pChar => 33) AND (pChar =< 47)) OR ((pChar => 58) AND (pChar =< 64)) OR ((pChar => 91) AND (pChar =< 96)) OR ((pChar =>123) AND (pChar =< 126)) ) 
   return ( pChar )
 else
-  return( -1 )  
+  return( -1 )
 
 ' end PUB ----------------------------------------------------------------------
 
@@ -953,9 +973,10 @@ RETURNS:
   elseif ( (pChar => "a") and (pChar =< "f") )
     return (pChar - "a" + 10)
   else
-    return ( 0 )  
+    return ( 0 )
 
 ' end PUB ----------------------------------------------------------------------
+
 
 PUB HexToASCII( pValue )
 {{
@@ -977,6 +998,7 @@ return ( lookupz( (pValue & $F) : "0".."9", "A".."F") )
 
 
 ' end PUB ----------------------------------------------------------------------
+
 
 PUB itoa(pNumber, pBase, pDigits, pStringPtr) | divisor, digit, zflag, dividend
 {{
@@ -1039,8 +1061,8 @@ RETURNS: Pointer back to the pStringPtr with the converted results.
         pNumber := pNumber // divisor
         divisor /= 10
 
-  ' pBase 16 code --------------------------------------------------------------       
-  else  
+  ' pBase 16 code -------------------------------------------------------------- 
+  else
     divisor := $F << (4*(pDigits-1))  
 
     repeat digit from 0 to (pDigits-1)
@@ -1053,7 +1075,8 @@ RETURNS: Pointer back to the pStringPtr with the converted results.
       
    return( pStringPtr )
 
-  ' end PUB ----------------------------------------------------------------------  
+  ' end PUB ----------------------------------------------------------------------
+
 
 PUB atoi(pStringPtr, pLength) | index, sum, ch, sign
 {{
@@ -1093,14 +1116,14 @@ elseif (byte [pStringPtr][index] == "-")
 ' try to determine number base
 if (byte [pStringPtr][index] == ASCII_HEX)
   index++
-  repeat while ( ( IsDigit(ch := byte [pStringPtr][index]) <> -1) or ( IsAlpha(ch := byte [pStringPtr][index]) <> -1)  )
+  repeat while ( ( IsDigit(ch := byte [pStringPtr][index]) <> -1) or ( IsAlpha(ch := byte [pStringPtr][index]) <> -1) )
     index++
     sum := (sum << 4) + HexToDec( ToUpper(ch) )
     if (index => pLength)
       return (sum*sign)
  
   return(sum*sign)
-' // end if hex number    
+' // end if hex number
 elseif (byte [pStringPtr][index] == ASCII_BIN)
   repeat while ( IsDigit(ch := byte [pStringPtr][++index]) <> -1)
     sum := (sum << 1) + (ch - ASCII_0)
@@ -1108,7 +1131,7 @@ elseif (byte [pStringPtr][index] == ASCII_BIN)
       return (sum*sign)
  
   return(sum*sign)
-' // end if binary number  
+' // end if binary number
 else
   ' must be in default base 10, assume that
   repeat while ( IsDigit(ch := byte [pStringPtr][index++]) <> -1)
@@ -1130,12 +1153,13 @@ DESCRIPTION: Delays "time" milliseconds and returns.
 
 PARMS: pTime - number of millseconds to delay.
 
-RETURNS: nothing.                                       
+RETURNS: nothing. 
 }}
 
   waitcnt (cnt + pTime*CLOCKS_PER_MILLISECOND)
 
 ' end PUB ----------------------------------------------------------------------
+
 
 PUB DelayMicroSec( pTime )
 {{
@@ -1150,9 +1174,10 @@ RETURNS: nothing.
 
 ' end PUB ----------------------------------------------------------------------
 
+
 {{
 ┌────────────────────────────────────────────────────────────────────────────┐
-│                     TERMS OF USE: MIT License                              │                                                            
+│                     TERMS OF USE: MIT License                              │
 ├────────────────────────────────────────────────────────────────────────────┤
 │Permission is hereby granted, free of charge, to any person obtaining a copy│
 │of this software and associated documentation files (the "Software"), to    │
@@ -1174,5 +1199,3 @@ RETURNS: nothing.
 └────────────────────────────────────────────────────────────────────────────┘
 }}
 
-
-    
