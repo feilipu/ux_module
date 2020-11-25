@@ -70,6 +70,8 @@ CON
   BUFFER_LENGTH = 512                 'Recommended as 64 or higher, but can be 2, 4, 8, 16, 32, 64, 128, 256 or 512.
   BUFFER_MASK   = BUFFER_LENGTH - 1
 
+  MAX_STRING  =   255
+
 CON   
  
   PORT_00     =   0
@@ -163,6 +165,15 @@ PUB stop
       longfill(@rx_head, 0, 7)
 
 
+PUB txString( pStringPtr )
+
+  '' Print a zero-terminated string to terminal.
+  '' pStrPtr - Pointer to null terminated string to print.
+
+  repeat strsize( pStringPtr)
+    tx(byte[ pStringPtr++])
+
+
 PUB tx(txbyte)
 
   '' Sends byte (may wait for room in buffer)
@@ -172,10 +183,7 @@ PUB tx(txbyte)
   tx_buffer[tx_head] := txbyte
   tx_head := ++tx_head & BUFFER_MASK
 
-' rx_buffer[rx_head] := txbyte
-' rx_head := ++rx_head & BUFFER_MASK
-
-  acia_status |= constant ( SR_RDRF << DATA_BASE  )     ' Bytes ready to transmit to Z80
+  acia_status |= constant ( SR_RDRF << DATA_BASE  )     ' Byte ready to transmit to Z80
 
   if acia_config & constant ( CR_RIE << DATA_BASE )     ' If the Rx interrupt (Z80 perspective) is not set, then set it
     acia_status |= constant ( SR_IRQ << DATA_BASE )     ' Set the interrupt status byte (cleared in driver cog)
@@ -185,10 +193,13 @@ PUB tx(txbyte)
 
 PUB rx : rxbyte
 
-  '' Receives byte (may wait for byte)
-  '' rxbyte returns $00..$FF
+  '' Receive single-byte character.  Waits until character received.
+  '' Returns: $00..$FF
 
-  repeat while (rxbyte := rxcheck) < 0
+  repeat while (!rxCheck)
+  rxbyte := rx_buffer[rx_tail]
+  rx_tail := ++rx_tail & BUFFER_MASK
+
 
 PUB rxCount : count
 
@@ -203,18 +214,15 @@ PUB rxFlush
 
   '' Flush receive buffer
 
-  repeat while rxcheck => 0
+  rx_tail := rx_head
 
 
-PUB rxCheck : rxbyte
+PUB rxCheck : truefalse
 
-  '' Check if byte received (never waits)
-  '' rxbyte returns -1 ($FF) if no byte received, $00..$FE if byte
+  '' Check if character received; return immediately.
+  '' Returns: t|f
 
-  rxbyte~~
-  if rx_tail <> rx_head    
-    rxbyte := rx_buffer[rx_tail]
-    rx_tail := ++rx_tail & BUFFER_MASK
+  truefalse := rx_tail <> rx_head
 
 
 DAT
@@ -231,10 +239,10 @@ DAT
 entry
                         mov     t1,par                  ' get structure address
 
-                        add     t1,#16                  'get acia_config address
+                        add     t1,#16                  ' get acia_config address
                         mov     acia_config_addr,t1
 
-                        add     t1,#4                   'get acia_status address
+                        add     t1,#4                   ' get acia_status address
                         mov     acia_status_addr,t1
 
                         add     t1,#4                   ' resolve buffer addresses using buffer_ptr
@@ -252,10 +260,11 @@ entry
 
 wait
                         mov     outa,port_base_addr     ' configure the base address to compare with ina
+                                                        ' including /WAIT pin
 
                         waitpne outa,port_active_mask
                         waitpeq outa,port_active_mask wr' wait until we see our addresses, together with /IORQ low
-                                                        ' use wr effect to set /WAIT low on match (/INT gets hit as side effect)
+                                                        ' use wr effect to set /WAIT low on match (/INT gets hit as a side effect)
 
                         andn    outa,bus_int            ' reset /INT pin (modified as a side effect of the waitpeq outa wr effect)
 
@@ -268,7 +277,6 @@ wait
                         testn   bus_wr,ina         wz   ' capture port data again, test for /WR pin low
             if_nz       jmp     #receive_command
 
-                        or      outa,bus_wait           ' set /WAIT line high to continue
                         jmp     #wait                   ' then go back and wait for next address chance
 
 handler_data
@@ -283,7 +291,6 @@ handler_data
                         testn    bus_wr,ina        wz   ' capture port data again, test for /WR pin low
             if_nz       jmp     #receive_data
 
-                        or      outa,bus_wait           ' set /WAIT line high to continue
                         jmp     #wait                   ' then go back and wait for next address chance
 
 receive_command
@@ -327,6 +334,7 @@ receive_data
                         and     t1,acia_config_int_tx_mask  ' mask out the tx interrupt bits.
                         xor     t1,acia_config_int_tx wz' test whether the interrupt pin should be set
             if_nz       jmp     #wait                   ' receive byte done
+
                         jmp     #set_interrupt          ' set the interrupt if needed
 
 transmit_data                                           ' check for head <> tail
@@ -376,7 +384,7 @@ set_interrupt
                         or      t1,acia_status_irq      ' set the interrupt status bit
                         wrlong  t1,acia_status_addr
                         andn    dira,bus_int            ' clear /INT pin
-                        jmp     #wait                   ' transmit byte done
+                        jmp     #wait                   ' set interrupt done
 
 '
 ' Constants
@@ -421,7 +429,8 @@ t3                      res     1
 
 bus                     res     1
 
-fit
+                        fit
+
 
 DAT
 

@@ -50,8 +50,6 @@ VAR
 
   long  gVideoBufferPtr                              ' holds the address of the video buffer passed back from the VGA driver
  
-  byte  char
-
 
 OBJ
 
@@ -71,12 +69,10 @@ PUB start | i
 
   'echo keystrokes in hex
   repeat
-    char := term.rxCheck
-    if char <> $ff
-      acia.tx (char)
-    char := acia.rxCheck
-    if char <> $ff
-      term.char (char)
+    if term.rxCheck
+      acia.tx ( term.charIn )
+    if acia.rxCheck
+      term.char ( acia.rx )
 
 
 {{

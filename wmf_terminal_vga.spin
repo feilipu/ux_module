@@ -39,9 +39,6 @@ CON
 ' -----------------------------------------------------------------------------
 ' CONSTANTS, DEFINES, MACROS, ETC.
 ' -----------------------------------------------------------------------------
-  CLOCKS_PER_MICROSECOND = 118    ' 7.3728 * 16 ' simple xin*pll / 1_000_000 
-  CLOCKS_PER_MILLISECOND = 117965 ' 7372.8 * 16 ' simple xin*pll / 1_000
-
 
   ' import some constants from the VGA driver
   VGACOLS = vga#cols
@@ -202,10 +199,10 @@ VAR
   word  gColors[VGAROWS]                        ' row colors
   long  gVsync                                  ' sync long - written to -1 by VGA driver after each screen refresh
 
-  byte  gStrBuffer[64]                          ' generic string buffer
+  byte  gStrBuffer[VGACOLS]                     ' generic string buffer, long enough to hold the maximum screen row (128 char)
 
   ' console terminal variables
-  long  gTermCol, gTermRow, gTermNumCols, gTermNumRows, gTermAttr, gTermColor, gTermFlag, gTermLasRow
+  long  gScreenCol, gScreenRow, gScreenNumCols, gScreenNumRows, gScreenAttr, gScreenColor, gScreenFlag, gScreenLasRow
 
 
 CON
@@ -213,7 +210,7 @@ CON
 ' INITIALIZATION ENTRY POINT FOR TERMINAL SERVICES DRIVER
 ' -----------------------------------------------------------------------------
 
-PUB Init( pVGABasePin, pTextCursXPtr ) | retVal
+PUB init( pVGABasePin, pTextCursXPtr ) | retVal
 {{
 DESCRIPTION: Initializes the VGA and Keyboard Drivers as well as basic terminal parameters
 
@@ -234,17 +231,30 @@ RETURNS:  Returns the screen geometry in high WORD of 32-bit return value
   gVideoBufferPtr := @gVideoBuffer
 
   ' initial terminal settings
-  gTermCol       := 0
-  gTermRow       := 0
-  gTermNumCols   := VGACOLS
-  gTermNumRows   := VGAROWS
-  gTermFlag      := 0
+  gScreenCol       := 0
+  gScreenRow       := 0
+  gScreenNumCols   := VGACOLS
+  gScreenNumRows   := VGAROWS
+  gScreenFlag      := 0
   
   ' start the VGA driver, send VGA base pins, video buffer, color buffer, pointer to cursors, and vsync global
   vga.start(pVGABasePin, @gVideoBuffer, @gColors, pTextCursXPtr, @gVsync) 
  
-  ' clear the VGA screen to Atari theme
-  ClearScreen( CTHEME_ATARI_C64_FG, CTHEME_ATARI_C64_BG )
+  ' ---------------------------------------------------------------------------
+  ' setup screen colors
+  ' ---------------------------------------------------------------------------
+ 
+  ' the VGA driver vga_hires_text only has 2 colors per character
+  ' (one for foreground, one for background). However,each line/row on the screen
+  ' can have its OWN set of 2 colors, thus as long as you design your interfaces
+
+  ' "vertically" you can have more apparent colors, nonetheless, on any one row
+  ' there are only two colors. The function call below fills the color table up
+  ' for the specified foreground and background colors from the set of "themes"
+  ' These are nothing more than some pre-computed color constants that look
+  ' "good" and if you are color or artistically challenged will help you make
+  ' your GUIs look clean and professional.
+  clearFrame( CTHEME_APPLE2_FG, CTHEME_APPLE2_BG )
 
   ' finally return the screen geometry in the format [video_buffer:16 | vga_colums:8 | vga_rows]
   retVal :=   (@gVideoBuffer << 16 ) | ( VGAROWS << 8 ) | VGACOLS
@@ -259,7 +269,7 @@ CON
 ' DIRECT FRAMEBUFFER METHODS FOR GENERAL RENDERING FOR CONSOLE AND CONTROLS
 ' -----------------------------------------------------------------------------
 
-PUB PrintString( pStrPtr, pCol, pRow, pInvFlag ) | strLen, vgaIndex, index
+PUB printStr( pStrPtr, pCol, pRow, pInvFlag ) | strLen, vgaIndex, index
 {{
 DESCRIPTION: This method draws a string directly to the frame buffer avoiding the
 terminal system.
@@ -285,9 +295,9 @@ RETURNS: Nothing.
 ' end PUB ----------------------------------------------------------------------
 
 
-PUB PrintChar( pChar, pCol, pRow, pInvFlag )
+PUB printChar( pChar, pCol, pRow, pInvFlag )
 {{
-DESCRIPTION: Draws a character directly the the frame buffer avoiding the terminal system.
+DESCRIPTION: Draws a character directly to the frame buffer avoiding the terminal system.
 
 PARMS:  pChar    - Character to print.
         pCol     - Column(x) position to print (0,0) upper left.
@@ -303,12 +313,12 @@ RETURNS: Nothing.
     if (pInvFlag)
       pChar += 128
       
-    byte[ gVideoBufferPtr ][pCol + (pRow * gTermNumCols)] := pChar
+    byte[ gVideoBufferPtr ][pCol + (pRow * gScreenNumCols)] := pChar
 
 ' end PUB ----------------------------------------------------------------------
 
 
-PUB ClearScreen( pFGroundColor, pBGroundColor ) | colorWord
+PUB clearFrame( pFGroundColor, pBGroundColor ) | colorWord
 {{
 DESCRIPTION: Clear the screen at the memory buffer level, very fast. However, doesn't
 effect the terminal sub-system or cursor position, they are independant.
@@ -332,10 +342,10 @@ RETURNS: Nothing.
 ' end PUB ----------------------------------------------------------------------
 
 
-PUB SetLineColor( pRow, pFGroundColor, pBGroundColor ) | colorWord
+PUB setLineColor( pRow, pFGroundColor, pBGroundColor ) | colorWord
 {{
 DESCRIPTION: Sets the sent row to the given foreground and background color. The VGA
-driver this framework is connected to VGA_HiRes_Text_*** has only 2 colors per row, but
+driver this framework is connected to vga_hires_text has only 2 colors per row, but
 we can control those colors. We give color up for high resoloution.
 
 PARMS:  pRow - the row to change the foreground and backgroundf color of.
@@ -345,8 +355,6 @@ PARMS:  pRow - the row to change the foreground and backgroundf color of.
 RETURNS: Nothing.
 }}
 
-
-
   if ( pRow < VGAROWS )
     colorWord := pBGroundColor << 10 + pFGroundColor << 2 
     gColors[ pRow ] := colorWord
@@ -354,7 +362,7 @@ RETURNS: Nothing.
 ' end PUB ----------------------------------------------------------------------
 
 
-PUB DrawFrame( pCol, pRow, pWidth, pHeight, pTitlePtr, pAttr, pVgaPtr, pVgaWidth ) | index, index2, vgaIndex, rowCount, vgaStartIndex , pWidth_2
+PUB drawFrame( pCol, pRow, pWidth, pHeight, pTitlePtr, pAttr, pVgaPtr, pVgaWidth ) | index, index2, vgaIndex, rowCount, vgaStartIndex , pWidth_2
 {{
 DESCRIPTION: This method draws a rectangular "frame" at pCol, pRow directly to the graphics buffer
 with size pWidth x pHeight. Also, if pTitlePtr is not null then a title is drawn above the frame in a
@@ -480,27 +488,11 @@ RETURNS: Nothing.
 
 CON
 ' -----------------------------------------------------------------------------
-' TEXT CONSOLE/TERMINAL METHODS - THESE METHODS CAN BE CALLED MUCH LIKE THE
+' TEXT TERMINAL/SCREEN METHODS - THESE METHODS CAN BE CALLED MUCH LIKE THE
 ' OTHER TERMINAL DRIVERS FOR HIGH LEVEL PRINTING WITH "CONSOLE" EMULATION
 ' -----------------------------------------------------------------------------
 
-PUB StringTermLn( pStringPtr )
-{{
-DESCRIPTION: Prints a string to the terminal and appends a newline.
-
-PARMS: pStrPtr - Pointer to null terminated string to print.
-
-RETURNS: Nothing.
-}}
-
-  ' Print a zero-terminated string to terminal and newline
-  StringTerm( pStringPtr )
-  NewlineTerm
-
-' end PUB ----------------------------------------------------------------------
-
-
-PUB StringTerm( pStringPtr )
+PUB strScreen( pStringPtr )
 {{
 DESCRIPTION: Prints a string to the terminal.
 
@@ -511,12 +503,28 @@ RETURNS: Nothing.
 
   ' Print a zero-terminated string to terminal
   repeat strsize( pStringPtr)
-    OutTerm(byte[ pStringPtr++])
+    outScreen(byte[ pStringPtr++])
 
 ' end PUB ----------------------------------------------------------------------
 
 
-PUB DecTerm( pValue, pDigits) | divisor, dividend, zFlag, digit
+PUB strScreenLn( pStringPtr )
+{{
+DESCRIPTION: Prints a string to the terminal and appends a newline.
+
+PARMS: pStrPtr - Pointer to null terminated string to print.
+
+RETURNS: Nothing.
+}}
+
+  ' Print a zero-terminated string to terminal and newline
+  strScreen( pStringPtr )
+  newLine
+
+' end PUB ----------------------------------------------------------------------
+
+
+PUB decScreen( pValue, pDigits) | divisor, dividend, zFlag, digit
 {{
 DESCRIPTION: Prints a decimal number to the screen.
 
@@ -528,13 +536,13 @@ RETURNS: Nothing.
 
   ' check for 0
   if (pValue == 0)
-    PrintTerm("0")
+    PrintScreen("0")
     return
 
   ' check for negative
   if (pValue < 0)
     pValue := -pValue
-    PrintTerm("-")
+    PrintScreen("-")
 
   ' generate divisor
   divisor := 1
@@ -554,7 +562,7 @@ RETURNS: Nothing.
       zFlag := 0
    
     if (zFlag == 0)
-      PrintTerm( dividend + "0")
+      PrintScreen( dividend + "0")
    
     pValue := pValue // divisor
     divisor /= 10
@@ -563,7 +571,7 @@ RETURNS: Nothing.
 ' end PUB ----------------------------------------------------------------------
 
 
-PUB HexTerm(pValue, pDigits)
+PUB hexScreen(pValue, pDigits)
 {{
 DESCRIPTION: Prints the sent number in hex format.
 
@@ -577,12 +585,12 @@ RETURNS: Nothing.
   pValue <<= (8 - pDigits) << 2
 
   repeat pDigits
-    PrintTerm(lookupz((pValue <-= 4) & $F : "0".."9", "A".."F"))
+    PrintScreen(lookupz((pValue <-= 4) & $F : "0".."9", "A".."F"))
 
 ' end PUB ----------------------------------------------------------------------
 
 
-PUB BinTerm(pValue, pDigits)
+PUB binScreen(pValue, pDigits)
 {{
 DESCRIPTION: Prints the sent value in binary format with 0's and 1's.
 
@@ -596,12 +604,12 @@ RETURNS: Nothing.
   pValue <<= 32 - pDigits
 
   repeat pDigits
-    PrintTerm((pValue <-= 1) & 1 + "0")
+    PrintScreen((pValue <-= 1) & 1 + "0")
 
 ' end PUB ----------------------------------------------------------------------
 
 
-PUB NewlineTerm
+PUB newLine
 {{
 DESCRIPTION: Moves the terminal cursor home and outputs a carriage return.
 
@@ -611,21 +619,21 @@ RETURNS: Nothing.
 }}
 
   ' reset terminal column
-  gTermCol := 0
+  gScreenCol := 0
 
-  if (++gTermRow => gTermNumRows)
-    gTermRow--
+  if (++gScreenRow => gScreenNumRows)
+    gScreenRow--
 
     'scroll lines
-    bytemove(gVideoBufferPtr, gVideoBufferPtr + gTermNumCols, ( (gTermNumRows-1) * gTermNumCols ) )
+    bytemove(gVideoBufferPtr, gVideoBufferPtr + gScreenNumCols, ( (gScreenNumRows-1) * gScreenNumCols ) )
 
    'clear new line
-    bytefill(gVideoBufferPtr + ((gTermNumRows-1) * gTermNumCols), ASCII_SPACE, gTermNumCols)
+    bytefill(gVideoBufferPtr + ((gScreenNumRows-1) * gScreenNumCols), ASCII_SPACE, gScreenNumCols)
 
 ' end PUB ----------------------------------------------------------------------
 
 
-PUB PrintTerm( pChar )
+PUB printScreen( pChar )
 {{
 DESCRIPTION: Prints the sent character to the terminal console with scrolling.
 
@@ -635,16 +643,16 @@ RETURNS: Nothing.
 }}
 
   ' print a character at current cursor position
-  byte[ gVideoBufferPtr ][ gTermCol + (gTermRow * gTermNumCols)] := pChar
+  byte[ gVideoBufferPtr ][ gScreenCol + (gScreenRow * gScreenNumCols)] := pChar
 
   ' check for scroll
-  if (++gTermCol == gTermNumCols)
-    NewlineTerm
+  if (++gScreenCol == gScreenNumCols)
+    newLine
 
 ' end PUB ----------------------------------------------------------------------
 
 
-PUB OutTerm( pChar )
+PUB outScreen( pChar )
 {{
 DESCRIPTION: Output a character to terminal, this is the primary interface from the client to the driver in "terminal mode"
 direct mode access uses the register model and controls the engine from the low level
@@ -667,37 +675,37 @@ PARMS: pChar - character to print with the following extra controls:
 RETURNS: Nothing.
 }}
 
-  case gTermFlag
+  case gScreenFlag
     $00: case pChar
-           $00: bytefill( gVideoBufferPtr, ASCII_SPACE, gTermNumCols * gTermNumRows)
-                gTermCol := gTermRow := 0
+           $00: bytefill( gVideoBufferPtr, ASCII_SPACE, gScreenNumCols * gScreenNumRows)
+                gScreenCol := gScreenRow := 0
 
-           $01: gTermCol := gTermRow := 0
+           $01: gScreenCol := gScreenRow := 0
 
-           $08: if gTermCol
-                  gTermCol--
+           $08: if gScreenCol
+                  gScreenCol--
 
            $09: repeat
-                  PrintTerm(" ")
-                while gTermCol & 7
+                  PrintScreen(" ")
+                while gScreenCol & 7
 
-           $0A..$0C: gTermFlag := pChar
+           $0A..$0C: gScreenFlag := pChar
                      return
 
-           $0D: NewlineTerm
+           $0D: newLine
 
-           other: PrintTerm( pChar )
+           other: printScreen( pChar )
            
-    $0A: gTermCol := pChar // gTermNumCols
-    $0B: gTermRow := pChar // gTermNumRows
-    $0C: gTermFlag := pChar & 7
+    $0A: gScreenCol := pChar // gScreenNumCols
+    $0B: gScreenRow := pChar // gScreenNumRows
+    $0C: gScreenFlag := pChar & 7
 
-  gTermFlag := 0
+  gScreenFlag := 0
 
 ' end PUB ----------------------------------------------------------------------
 
 
-PUB SetColTerm( pCol )
+PUB setColScreen( pCol )
 {{
 DESCRIPTION: Set terminal x column cursor position.
 
@@ -706,12 +714,12 @@ PARMS: pRow - row to set the cursor to.
 RETURNS: Nothing.
 }}
 
-  gTermCol := pCol // gTermNumCols 
+  gScreenCol := pCol // gScreenNumCols 
 
 ' end PUB ----------------------------------------------------------------------
 
 
-PUB SetRowTerm( pRow )
+PUB setRowScreen( pRow )
 {{
 DESCRIPTION: Set terminal y row cursor position
 
@@ -720,12 +728,12 @@ PARMS: pRow - row to set the cursor to.
 RETURNS: Nothing.
 }}
 
-  gTermRow := pRow// gTermNumRows 
+  gScreenRow := pRow// gScreenNumRows 
 
 ' end PUB ----------------------------------------------------------------------
 
 
-PUB GotoXYTerm( pCol, pRow )
+PUB gotoXYScreen( pCol, pRow )
 {{
 DESCRIPTION: Sets the x column and y row position of terminal cursor.
 
@@ -736,15 +744,15 @@ RETURNS: Nothing.
 
 
 ' set terminal x/column cursor position
-  gTermCol := pCol // gTermNumCols 
+  gScreenCol := pCol // gScreenNumCols 
 
-' set terminal y/row cursor position
-  gTermRow := pRow// gTermNumRows 
+' set Terminal y/row cursor position
+  gScreenRow := pRow// gScreenNumRows 
 
 ' end PUB ----------------------------------------------------------------------
 
 
-PUB GetColTerm
+PUB getColScreen
 ' retrieve x column cursor position 
 {{
 DESCRIPTION: Retrieve x terminal cursor position
@@ -753,12 +761,12 @@ PARMS: none.
 
 RETURNS: x terminal cursor position.
 }}
-  return( gTermCol )
+  return( gScreenCol )
 
 ' end PUB ----------------------------------------------------------------------
 
 
-PUB GetRowTerm
+PUB getRowScreen
 {{ 
 DESCRIPTION: Retrieve y row terminal cursor position
 
@@ -767,9 +775,24 @@ PARMS: none.
 RETURNS: y terminal cursor position.
 }}
 
-  return( gTermRow ) 
+  return( gScreenRow ) 
 
 ' end PUB ----------------------------------------------------------------------
+
+PUB clearScreen( pFGroundColor, pBGroundColor )
+{{
+DESCRIPTION: Clear the screen, and reset the cursors
+
+PARMS:  pFGroundColor - foreground color in RGB[2:2:2] format.
+        pBGroundColor - background color in RGB[2:2:2] format.
+
+RETURNS: Nothing.
+}}
+  clearFrame( pFGroundColor, pBGroundColor )
+
+  gScreenCol       := 0
+  gScreenRow       := 0
+  gScreenFlag      := 0 
 
 
 CON
@@ -777,7 +800,7 @@ CON
 ' STRING AND NUMERIC CONVERSION METHODS 
 ' -----------------------------------------------------------------------------
 
-PUB StrCpy( pDestStrPtr, pSourceStrPtr ) | strIndex
+PUB strCpy( pDestStrPtr, pSourceStrPtr ) | strIndex
 {{
 DESCRIPTION: Copies the NULL terminated source string to the destination string
 and null terminates the copy. 
@@ -789,26 +812,26 @@ RETURNS: Number of bytes copied.
 }}
 
 ' test if there is storage
-if ( pDestStrPtr == NULL)
-  return (NULL)
-
-strIndex := 0
-
-repeat while (byte [ pSourceStrPtr ][ strIndex ] <> NULL)
+  if ( pDestStrPtr == NULL)
+    return (NULL)
+  
+  strIndex := 0
+  
+  repeat while (byte [ pSourceStrPtr ][ strIndex ] <> NULL)
   ' copy next byte
    byte [ pDestStrPtr ][ strIndex ] := byte [ pSourceStrPtr ][ strIndex ]
    strIndex++
 
 ' null terminate
-byte [ pDestStrPtr ][ strIndex ] := NULL
+  byte [ pDestStrPtr ][ strIndex ] := NULL
 
 ' return number of bytes copied
-return ( strIndex )
+  return ( strIndex )
 
 ' end PUB ----------------------------------------------------------------------
 
 
-PUB StrUpper( pStringPtr )
+PUB strUpper( pStringPtr )
 {{
 DESCRIPTION: Converts the sent string to all uppercase. 
 
@@ -828,7 +851,7 @@ RETURNS: pStringPtr converted to uppercase.
 ' end PUB ----------------------------------------------------------------------
 
 
-PUB ToUpper( pChar )
+PUB toUpper( pChar )
 {{
 DESCRIPTION: Returns the uppercase of the sent character.
 
@@ -837,15 +860,15 @@ PARMS:  pChar - character to convert to uppercase.
 RETURNS: The uppercase version of the character.
 }}
 
-if ( pChar => $61 and pChar =< $7A)
-  return( pChar - 32 )
-else
-  return( pChar )
+  if ( pChar => $61 and pChar =< $7A)
+    return( pChar - 32 )
+  else
+    return( pChar )
 
 ' end PUB ----------------------------------------------------------------------
 
 
-PUB IsInSet(pChar, pSetStringPtr)
+PUB isInSet(pChar, pSetStringPtr)
 {{
 DESCRIPTION: Tests if sent character is in sent string.
 
@@ -856,17 +879,17 @@ RETURNS: pChar if its in the string set, -1 otherwise. Note to self, maybe
 later make this return the position of the 1st occurance, more useful?
 }}
 
-repeat while (byte[ pSetStringPtr ] <> NULL)
-  if ( pChar == byte[ pSetStringPtr++ ])
-    return( pChar )
+  repeat while (byte[ pSetStringPtr ] <> NULL)
+    if ( pChar == byte[ pSetStringPtr++ ])
+      return( pChar )
 
 ' not found
-return( -1 )
+  return( -1 )
 
 ' end PUB ----------------------------------------------------------------------
 
 
-PUB IsSpace( pChar )
+PUB isSpace( pChar )
 {{
 DESCRIPTION: Tests if sent character is white space, cr, lf, space, or tab.
 
@@ -875,15 +898,15 @@ PARMS: pChar - character to test for white space.
 RETURNS: pChar if its a white space character, -1 otherwise.
 }}
 
-if ( (pChar == ASCII_SPACE) OR (pChar == ASCII_LF) OR (pChar == ASCII_CR) or (pChar == ASCII_TAB))
-  return ( pChar )
-else
-  return( -1 )
+  if ( (pChar == ASCII_SPACE) OR (pChar == ASCII_LF) OR (pChar == ASCII_CR) or (pChar == ASCII_TAB))
+    return ( pChar )
+  else
+    return( -1 )
 
 ' end PUB ----------------------------------------------------------------------
 
 
-PUB IsNull( pChar )
+PUB isNull( pChar )
 {{
 DESCRIPTION: Tests if sent character is NULL, 0.
 
@@ -892,15 +915,15 @@ PARMS: pChar - character to test.
 RETURNS: 1 if pChar is NULL, -1 otherwise.
 }}
 
-if ( ( pChar == NULL))
-  return ( 1 )
-else
-  return( -1 )
+  if ( ( pChar == NULL))
+    return ( 1 )
+  else
+    return( -1 )
 
 ' end PUB ----------------------------------------------------------------------
 
 
-PUB IsDigit( pChar )
+PUB isDigit( pChar )
 {{
 DESCRIPTION: Tests if sent character is an ASCII number digit [0..9], returns integer [0..9]
 
@@ -909,15 +932,15 @@ PARMS: pChar - character to test.
 RETURNS: pChar if its in the ASCII set [0..9], -1 otherwise.
 }}
 
-if ( (pChar => ASCII_0) AND (pChar =< ASCII_9) )
-  return ( pChar-ASCII_0 )
-else
-  return(-1)
+  if ( (pChar => ASCII_0) AND (pChar =< ASCII_9) )
+    return ( pChar-ASCII_0 )
+  else
+    return(-1)
 
 ' end PUB ----------------------------------------------------------------------
 
 
-PUB IsAlpha( pChar )
+PUB isAlpha( pChar )
 {{
 DESCRIPTION: Tests if sent character is in the set [a...zA...Z].
 Useful for text processing and parsing.
@@ -928,17 +951,17 @@ RETURNS: pChar if the sent character is in the set [a...zA....Z] or -1 otherwise
 }}
 
 ' first convert to uppercase to simplify testing
-pChar := ToUpper( pChar )
-
-if ( (pChar => ASCII_A) AND (pChar =< ASCII_Z))
-  return ( pChar )
-else
-  return( -1 )
+  pChar := ToUpper( pChar )
+  
+  if ( (pChar => ASCII_A) AND (pChar =< ASCII_Z))
+    return ( pChar )
+  else
+    return( -1 )
 
 ' end PUB ----------------------------------------------------------------------
 
 
-PUB IsPunc( pChar )
+PUB isPunc( pChar )
 {{
 DESCRIPTION: Tests if sent character is a punctuation symbol !@#$%^&*()--+={}[]|\;:'",<.>/?.
 Helpful for parser and string processing in general.
@@ -948,17 +971,17 @@ PARMS: pChar - ASCII character to test if its in the set of punctuation characte
 RETURNS: pChar itself if its in the set, -1 if its not in the set.
 }}
 
-pChar := ToUpper( pChar )
-
-if ( ((pChar => 33) AND (pChar =< 47)) OR ((pChar => 58) AND (pChar =< 64)) OR ((pChar => 91) AND (pChar =< 96)) OR ((pChar =>123) AND (pChar =< 126)) ) 
-  return ( pChar )
-else
-  return( -1 )
+  pChar := ToUpper( pChar )
+  
+  if ( ((pChar => 33) AND (pChar =< 47)) OR ((pChar => 58) AND (pChar =< 64)) OR ((pChar => 91) AND (pChar =< 96)) OR ((pChar =>123) AND (pChar =< 126)) ) 
+    return ( pChar )
+  else
+    return( -1 )
 
 ' end PUB ----------------------------------------------------------------------
 
 
-PUB HexToDec( pChar )
+PUB hexToDec( pChar )
 {{
 DESCRIPTION: Converts ASCII hex digit to decimal.
 
@@ -978,7 +1001,7 @@ RETURNS:
 ' end PUB ----------------------------------------------------------------------
 
 
-PUB HexToASCII( pValue )
+PUB hexToASCII( pValue )
 {{
 DESCRIPTION: ' converts a number 0..15 to ASCII 0...9, A, B, C, D, E, F. There
 should be a better way to do this with lookupz etc., note to self check that out.
@@ -994,7 +1017,7 @@ RETURNS: The converted ASCII digit.
   else
     return( pValue + "0" )
 }   
-return ( lookupz( (pValue & $F) : "0".."9", "A".."F") )
+  return ( lookupz( (pValue & $F) : "0".."9", "A".."F") )
 
 
 ' end PUB ----------------------------------------------------------------------
@@ -1096,84 +1119,56 @@ this method!
 }}
 
 ' initialize vars
-index := 0
-sum   := 0
-sign  := 1
+  index := 0
+  sum   := 0
+  sign  := 1
  
 ' consume white space
-repeat while (IsSpace( byte[ pStringPtr ][index] ) <> -1)
-  index++
+  repeat while (isSpace( byte[ pStringPtr ][index] ) <> -1)
+    index++
  
 ' is there a +/- sign?
-if (byte [pStringPtr][index] == "+")
+  if (byte [pStringPtr][index] == "+")
   ' consume it
-  index++
-elseif (byte [pStringPtr][index] == "-")
+    index++
+  elseif (byte [pStringPtr][index] == "-")
   ' consume it
-  index++
-  sign := -1    
+    index++
+    sign := -1    
      
 ' try to determine number base
-if (byte [pStringPtr][index] == ASCII_HEX)
-  index++
-  repeat while ( ( IsDigit(ch := byte [pStringPtr][index]) <> -1) or ( IsAlpha(ch := byte [pStringPtr][index]) <> -1) )
+  if (byte [pStringPtr][index] == ASCII_HEX)
     index++
-    sum := (sum << 4) + HexToDec( ToUpper(ch) )
-    if (index => pLength)
-      return (sum*sign)
- 
-  return(sum*sign)
+    repeat while ( ( isDigit(ch := byte [pStringPtr][index]) <> -1) or ( isAlpha(ch := byte [pStringPtr][index]) <> -1) )
+      index++
+      sum := (sum << 4) + HexToDec( ToUpper(ch) )
+      if (index => pLength)
+        return (sum*sign)
+   
+    return(sum*sign)
 ' // end if hex number
-elseif (byte [pStringPtr][index] == ASCII_BIN)
-  repeat while ( IsDigit(ch := byte [pStringPtr][++index]) <> -1)
-    sum := (sum << 1) + (ch - ASCII_0)
-    if (index => pLength)
-      return (sum*sign)
- 
-  return(sum*sign)
+  elseif (byte [pStringPtr][index] == ASCII_BIN)
+    repeat while ( isDigit(ch := byte [pStringPtr][++index]) <> -1)
+      sum := (sum << 1) + (ch - ASCII_0)
+      if (index => pLength)
+        return (sum*sign)
+   
+    return(sum*sign)
 ' // end if binary number
-else
+  else
   ' must be in default base 10, assume that
-  repeat while ( IsDigit(ch := byte [pStringPtr][index++]) <> -1)
-    sum := (sum * 10) + (ch - ASCII_0)
-    if (index => pLength)
-      return (sum*sign)
- 
-  return(sum*sign)
+    repeat while ( isDigit(ch := byte [pStringPtr][index++]) <> -1)
+      sum := (sum * 10) + (ch - ASCII_0)
+      if (index => pLength)
+        return (sum*sign)
+   
+    return(sum*sign)
  
 ' else, have no idea of number format!
-return( 0 )
- 
-' end PUB ----------------------------------------------------------------------
+  return( 0 )
 
 
-PUB DelayMilliSec( pTime )
-{{
-DESCRIPTION: Delays "time" milliseconds and returns.
-
-PARMS: pTime - number of millseconds to delay.
-
-RETURNS: nothing. 
-}}
-
-  waitcnt (cnt + pTime*CLOCKS_PER_MILLISECOND)
-
-' end PUB ----------------------------------------------------------------------
-
-
-PUB DelayMicroSec( pTime )
-{{
-DESCRIPTION: Delays "time" microseconds and returns.
-
-PARMS: pTime - number of microseconds to delay.
-
-RETURNS: nothing.
-}}
-
-  waitcnt (cnt + pTime*CLOCKS_PER_MICROSECOND)
-
-' end PUB ----------------------------------------------------------------------
-
+DAT
 
 {{
 ┌────────────────────────────────────────────────────────────────────────────┐

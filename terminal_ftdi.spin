@@ -23,35 +23,15 @@ USAGE:
 }
 
 CON
-''
-''     Parallax Serial Terminal
-''    Control Character Constants
-''─────────────────────────────────────
-  CS = 16  ''CS: Clear Screen
-  CE = 11  ''CE: Clear to End of line
-  CB = 12  ''CB: Clear lines Below
-
-  HM =  1  ''HM: HoMe cursor
-  PC =  2  ''PC: Position Cursor in x,y
-  PX = 14  ''PX: Position cursor in X
-  PY = 15  ''PY: Position cursor in Y
-
-  NL = 13  ''NL: New Line
-  LF = 10  ''LF: Line Feed
-  ML =  3  ''ML: Move cursor Left
-  MR =  4  ''MR: Move cursor Right
-  MU =  5  ''MU: Move cursor Up
-  MD =  6  ''MD: Move cursor Down
-  TB =  9  ''TB: TaB
-  BS =  8  ''BS: BackSpace
-
-  BP =  7  ''BP: BeeP speaker
-
-CON
 
    BUFFER_LENGTH = 512                                  'Recommended as 64 or higher, but can be 2, 4, 8, 16, 32, 64, 128, 256 or 512.
    BUFFER_MASK   = BUFFER_LENGTH - 1
-   MAXSTR_LENGTH = 49                                   'Maximum length of received numerical string (not including zero terminator).
+
+   MAXSTR_LENGTH = 255                                  'Maximum length of received numerical string (not including zero terminator).
+
+   NL = 13                                              ' NL: New Line
+   LF = 10                                              ' LF: Line Feed
+
 
 VAR
 
@@ -141,7 +121,101 @@ PUB charIn : bytechr
 {{Receive single-byte character.  Waits until character received.
   Returns: $00..$FF}}
 
-  repeat while (bytechr := rxCheck) < 0
+  repeat while (!rxCheck)
+  bytechr := rx_buffer[rx_tail]
+  rx_tail := ++rx_tail & BUFFER_MASK
+
+PUB rxCount : count
+{{Get count of characters in receive buffer.
+  Returns: number of characters waiting in receive buffer.}}
+
+  count := rx_head - rx_tail
+  count -= BUFFER_LENGTH * (count < 0)
+
+
+PUB rxFlush
+{{Flush receive buffer.}}
+
+  rx_tail := rx_head
+
+
+PUB rxCheck : truefalse
+{Check if character received; return immediately.
+  Returns: t|f}
+
+  truefalse := rx_tail <> rx_head
+
+
+CON
+
+  ' Terminal Control
+
+
+PUB clear
+{{Clear screen and place cursor at top-left.}}
+
+    str(string(27,"[2J"))
+
+
+PUB clearEnd
+{{Clear line from cursor to end of line.}}
+
+    str(string(27,"[0K"))
+
+PUB clearBelow
+{{Clear all lines below cursor.}}
+
+    str(string(27,"[J"))
+
+
+PUB home
+{{Send cursor to home position (top-left).}}
+
+    str(string(27,"[H"))
+
+
+PUB position(x, y)
+{{Position cursor at column x, row y (from top-left).}}
+    str(string(27,"[")) ' Position Cursor
+    dec(y)
+    char(";")
+    dec(x)
+    char("H")
+
+
+PUB saveCurPos
+    str(string(27,"7"))
+
+
+PUB restoreCurPos
+    str(string(27,"8"))
+
+
+PUB hideCursor
+
+    str(string(27,"[?25l")) ' Hide Cursor
+
+
+PUB showCursor
+    str(string(27,"[?25h")) ' Show Cursor
+
+
+PUB newLine
+{{Send cursor to new line (carriage return plus line feed).}}
+
+  char(NL)
+  char(LF)
+
+
+PUB lineFeed
+{{Send cursor down to next line.}}
+
+  char(LF)
+
+
+CON
+
+  ' String Handling
 
 
 PUB str(stringptr)
@@ -151,6 +225,7 @@ PUB str(stringptr)
 
   repeat strsize(stringptr)
     char(byte[stringptr++])
+
 
 PUB strIn(stringptr)
 {{Receive a string (carriage return terminated) and stores it (zero terminated) starting at stringptr.
@@ -174,6 +249,12 @@ starting at stringptr.  Waits until either full string received or maxcount char
     if (byte[stringptr++] := charIn) == NL                                      'Get chars until NL
       quit
   byte[stringptr+(byte[stringptr-1] == NL)]~                                    'Zero terminate string; overwrite NL or append 0 char
+
+
+
+CON
+
+  ' Numeric and Alternate Base Handling
 
 
 PUB dec(value) | i, x
@@ -244,138 +325,6 @@ PUB hexIn : value
   value := strToBase(@str_buffer, 16)
 
 
-PUB clear
-{{Clear screen and place cursor at top-left.}}
-
-    str(string(27,"[2J"))
-
-
-PUB clearEnd
-{{Clear line from cursor to end of line.}}
-
-    str(string(27,"[0K"))
-
-PUB clearBelow
-{{Clear all lines below cursor.}}
-
-    str(string(27,"[J"))
-
-
-PUB home
-{{Send cursor to home position (top-left).}}
-
-    str(string(27,"[H"))
-
-
-PUB position(x, y)
-{{Position cursor at column x, row y (from top-left).}}
-    str(string(27,"[")) ' Position Cursor
-    dec(y)
-    char(";")
-    dec(x)
-    char("H")
-
-
-PUB saveCurPos
-    str(string(27,"7"))
-
-
-PUB restoreCurPos
-    str(string(27,"8"))
-
-
-PUB hideCursor
-
-    str(string(27,"[?25l")) ' Hide Cursor
-
-
-PUB showCursor
-    str(string(27,"[?25h")) ' Show Cursor
-
-
-PUB newLine
-{{Send cursor to new line (carriage return plus line feed).}}
-
-  char(NL)
-  char(LF)
-
-
-PUB lineFeed
-{{Send cursor down to next line.}}
-
-  char(LF)
-
-
-PUB moveLeft(x)
-{{Move cursor left x characters.}}
-
-  repeat x
-    char(ML)
-
-
-PUB moveRight(x)
-{{Move cursor right x characters.}}
-
-  repeat x
-    char(MR)
-
-
-PUB moveUp(y)
-{{Move cursor up y lines.}}
-
-  repeat y
-    char(MU)
-
-
-PUB moveDown(y)
-{{Move cursor down y lines.}}
-
-  repeat y
-    char(MD)
-
-
-PUB tab
-{{Send cursor to next tab position.}}
-
-  char(TB)
-
-
-PUB backspace
-{{Delete one character to left of cursor and move cursor there.}}
-
-  char(BS)
-
-
-PUB beep
-{{Play bell tone on PC speaker.}}
-
-  char(BP)
-
-
-PUB rxCount : count
-{{Get count of characters in receive buffer.
-  Returns: number of characters waiting in receive buffer.}}
-
-  count := rx_head - rx_tail
-  count -= BUFFER_LENGTH * (count < 0)
-
-
-PUB rxFlush
-{{Flush receive buffer.}}
-
-  repeat while rxcheck => 0
-
-
-PUB rxCheck : bytechr
-{Check if character received; return immediately.
-  Returns: -1 ($FF) if no byte received, $00..$FE if character received.}
-
-  bytechr~~
-  if rx_tail <> rx_head
-    bytechr := rx_buffer[rx_tail]
-    rx_tail := ++rx_tail & BUFFER_MASK
-
-
 PRI strToBase(stringptr, base) : value | chr, index
 {Converts a zero terminated string representation of a number to a value in the designated base.
 Ignores all non-digit characters (except negative (-) when base is decimal (10)).}
@@ -387,6 +336,7 @@ Ignores all non-digit characters (except negative (-) when base is decimal (10))
       value := value * base + chr
   if (base == 10) and (byte[stringptr] == "-")                                  'If decimal, address negative sign; ignore otherwise
     value := - value
+
 
 DAT
 
