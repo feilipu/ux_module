@@ -1,5 +1,5 @@
 ''***************************************
-''*  VGA High-Res Text Driver v1.0      *
+''*  VGA High-Res Text Driver v1.0a     *
 ''*  Author: Chip Gracey                *
 ''*  Copyright (c) 2006 Parallax, Inc.  *
 ''*  See end of file for terms of use.  *
@@ -153,6 +153,7 @@ PUB start(BasePin, ScreenPtr, ColorPtr, CursorPtr, SyncPtr) : okay | i, j
   font_base := @font
 
   'implant unique settings and launch first COG
+  pixelRate |= (pr << 2) / (clkfreq / 16_000_000)       'assuming PLL16X
   vf_lines.byte := vf
   vb_lines.byte := vb
   font_third := 1
@@ -253,7 +254,7 @@ d0                      long    1 << 9                  'd0 always resides here 
 
                         mov     dira,reg_dira           'set pin directions
                         mov     dirb,reg_dirb
-                        movi    frqa,#(pr / 7) << 2     'set pixel rate (7MHz granularity)
+pixelRate               movi    frqa,#0                 'set pixel rate := (pr/clk) << 2
                         mov     vcfg,reg_vcfg           'set video configuration
                         mov     vscl,#1                 'set video to reload on every pixel
                         waitcnt sync_cnt,colormask      'wait for start value in cnt, add ~1ms
@@ -432,7 +433,7 @@ font_third              long    0                       'set at runtime
 
 hx                      long    hp                      'visible pixels per scan line
 vscl_line2x             long    (hp + hf + hs + hb) * 2 'total number of pixels per 2 scan lines
-vscl_chr                long    1 << 12 + 8             '1 clock per pixel and 8 pixels per set
+vscl_chr                long    1 << 12 + 8             '1 pixel per clock and 8 pixels per set
 colormask               long    $FCFC                   'mask to isolate R,G,B bits from H,V
 longmask                long    $FFFFFFFF               'all bits set
 slowbit                 long    1 << 25                 'cnt mask for slow cursor blink
@@ -470,13 +471,13 @@ fours                   res     1
 '  char 2    = ↑ up arrow
 '  char 3    = ↓ down arrow
 '  char 4    =   empty circle bullet  (radio button)
-'  char 5    =   filled circle bullet (radio button)                                
+'  char 5    =   filled circle bullet (radio button)
 '  char 6    =   empty square bullet  (check box)
 '  char 7    =   filled square bullet (check box)
 '  char 8    = ▶ right triangle bullet
 '  char 9    = • small bullet
 '  char 10   = ┌ top left corner (but curved)
-'  char 11   = ┐ top right corner (but curved)                         
+'  char 11   = ┐ top right corner (but curved)
 '  char 12   = └ bottom left corner (but curved)
 '  char 13   = ┘ bottom right corner (but curved)
 '  char 14   = ─ horizontal line

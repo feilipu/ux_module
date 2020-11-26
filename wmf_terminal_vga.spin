@@ -1,23 +1,23 @@
 '' ===========================================================================
 ''
 ''  File: WMF_Terminal_Services_010.spin
-'' 
+''
 '' This file contains general "terminal services" for the VGA driver VGA_HiRes_Text_***.
 '' This is a work in progress and over time as the version iterates more functionality
 '' will be added. However, for now, the object contains the following general sets
 '' of functionality:
-'' 
+''
 '' 1. General VGA terminal / console functionality
 '' 2. Direct screen rendering for printing characters, text, etc.
 '' 3. Text parsing functionality to help with string processing.
 '' 4. Numeric functions that print binary, hex, decimal numbers as we well as conversion methods
 ''   from and to.
-'' 
+''
 '' Of course, one could separate all these into multiple objects, but in the quest for simplicity
 '' I am going to keep all these methods within the same module since they are so tightly coupled,
 '' need access to each other, and this is simply easier to deal with. You may want to seperate things
 '' out later into multiple modules/objects and you are free to do so.
-'' 
+''
 '' Much of the functionality in this object is very specific to the VGA driver it supports. This is
 '' a necessary evil of graphics drivers. Each one has its various features, memory layout, functionality,
 '' etc. and we must code for it specifically. Additionally, a lot of the methods are generic and process
@@ -25,7 +25,7 @@
 ''
 ''  Modification History
 ''
-''  Author:     Andre' LaMothe 
+''  Author:     Andre' LaMothe
 ''  Copyright (c) Andre' LaMothe / Parallax Inc.
 ''  See end of file for terms of use
 ''  Version:    1.0
@@ -44,59 +44,59 @@ CON
   VGACOLS = vga#cols
   VGAROWS = vga#rows
 
-  ' ASCII codes for ease of parser development
-  ASCII_A      = 65
-  ASCII_B      = 66
-  ASCII_C      = 67
-  ASCII_D      = 68
-  ASCII_E      = 69
-  ASCII_F      = 70
-  ASCII_G      = 71
-  ASCII_H      = 72
-  ASCII_O      = 79
-  ASCII_P      = 80
-  ASCII_Z      = 90
-  ASCII_0      = 48
-  ASCII_9      = 57
-  ASCII_LEFT   = $C0
-  ASCII_RIGHT  = $C1
-  ASCII_UP     = $C2
-  ASCII_DOWN   = $C3 
-  ASCII_BS     = $C8 ' backspace
-  ASCII_DEL    = $C9 ' delete
-  ASCII_LF     = $0A ' line feed 
-  ASCII_CR     = $0D ' carriage return
-  ASCII_ESC    = $CB ' escape
-  ASCII_HEX    = $24 ' $ for hex
-  ASCII_BIN    = $25 ' % for binary
-  ASCII_LB     = $5B ' [ 
-  ASCII_SEMI   = $3A ' ; 
-  ASCII_EQUALS = $3D ' = 
-  ASCII_PERIOD = $2E ' .
-  ASCII_COMMA  = $2C ' ,
-  ASCII_SHARP  = $23 ' #
-  ASCII_NULL   = $00 ' null character
-  ASCII_SPACE  = $20 ' space
-  ASCII_TAB    = $09 ' horizontal tab
+  ' default screen colour themes
+  CTHEME_DEFAULT_FG = CTHEME_AUTUMN_INV_FG
+  CTHEME_DEFAULT_BG = CTHEME_AUTUMN_INV_BG
 
+  ' 8 x 12 font - characters 0..127
+  '
+  ' Each long holds four scan lines of a single character. The longs are arranged into
+  ' groups of 128 which represent all characters (0..127). There are three groups which
+  ' each contain a vertical third of all characters. They are ordered top, middle, and
+  ' bottom.
+  '
+  ' NOTE: MSB set inverts the character. i.e. $31 = a 1  $B1 = an inverted 1
+  '
+  '  char 0    = ← left arrow
+  '  char 1    = → right arrow
+  '  char 2    = ↑ up arrow
+  '  char 3    = ↓ down arrow
+  '  char 4    =   empty circle bullet  (radio button)
+  '  char 5    =   filled circle bullet (radio button)
+  '  char 6    =   empty square bullet  (check box)
+  '  char 7    =   filled square bullet (check box)
+  '  char 8    = ▶ right triangle bullet
+  '  char 9    = • small bullet
+  '  char 10   = ┌ top left corner (but curved)
+  '  char 11   = ┐ top right corner (but curved)
+  '  char 12   = └ bottom left corner (but curved)
+  '  char 13   = ┘ bottom right corner (but curved)
+  '  char 14   = ─ horizontal line
+  '  char 15   = │ vertical line
+  '  char 16   = ┬ top 'tee'
+  '  char 17   = ┴ bottom 'tee'
+  '  char 18   = ├ left 'tee'
+  '  char 19   = ┤ right 'tee'
+  '  char 20   = ┼ cross point
 
-  ' box drawing characters
-  ASCII_HLINE = 14 ' horizontal line character
-  ASCII_VLINE = 15 ' vertical line character
+  FONT_ASCII_TOPLT = 10 ' top left corner character
+  FONT_ASCII_TOPRT = 11 ' top right corner character
 
-  ASCII_TOPLT = 10 ' top left corner character
-  ASCII_TOPRT = 11 ' top right corner character
+  FONT_ASCII_BOTLT = 12 ' bottom left character
+  FONT_ASCII_BOTRT = 13 ' bottom right character
 
-  ASCII_TOPT  = 16 ' top "t" character
-  ASCII_BOTT  = 17 ' bottom "t" character
+  FONT_ASCII_HLINE = 14 ' horizontal line character
+  FONT_ASCII_VLINE = 15 ' vertical line character
 
-  ASCII_LTT   = 18 ' left "t" character
-  ASCII_RTT   = 19 ' right "t" character
+  FONT_ASCII_TOPT  = 16 ' top "t" character
+  FONT_ASCII_BOTT  = 17 ' bottom "t" character
 
-  ASCII_BOTLT = 12 ' bottom left character
-  ASCII_BOTRT = 13 ' bottom right character
+  FONT_ASCII_LTT   = 18 ' left "t" character
+  FONT_ASCII_RTT   = 19 ' right "t" character
+  FONT_ASCII_CROSS = 20 ' cross point character
 
-  ASCII_DITHER = 24 ' dithered pattern for shadows
+  FONT_ASCII_DITHER = 24 ' dithered pattern for shadows
+  FONT_ASCII_SPACE = 32  ' space
 
   NULL         = 0 ' NULL pointer
 
@@ -110,80 +110,130 @@ CON
   ATTR_DRAW_DASH      = $04
   ATTR_DRAW_BORDER    = $08
   ATTR_DRAW_INVERSE   = $10
-  ATTR_DRAW_NORMAL    = $00  
+  ATTR_DRAW_NORMAL    = $00
 
-  ' basic white on black theme, looks like a DOS/CMD console terminal, white text on black background
-  CTHEME_WHITENBLACK_FG      = %%333
-  CTHEME_WHITENBLACK_BG      = %%000
-  
-  CTHEME_WHITENBLACK_INFO_FG = %%000
-  CTHEME_WHITENBLACK_INFO_BG = %%333
+  ' basic white on black theme  - DOS/CMD console terminal, white text on black background
+  CTHEME_WHITENBLACK_F      = %%333
+  CTHEME_WHITENBLACK_BG     = %%000
 
-  ' basic black on white theme, looks like a modern Windows/Linux/Mac OS window with black text on white background
-  CTHEME_BLACKNWHITE_FG      = %%000
-  CTHEME_BLACKNWHITE_BG      = %%333
-  
-  CTHEME_BLACKNWHITE_INFO_FG = %%333
-  CTHEME_BLACKNWHITE_INFO_BG = %%000
+  CTHEME_WHITENBLACK_INV_FG = %%000
+  CTHEME_WHITENBLACK_INV_BG = %%333
 
-  ' Atari/C64 theme -- this is white on dark blue like the old 8-bit systems
-  CTHEME_ATARI_C64_FG      = %%333
-  CTHEME_ATARI_C64_BG      = %%002
-  
-  CTHEME_ATARI_C64_INFO_FG = %%002
-  CTHEME_ATARI_C64_INFO_BG = %%333
-  
-  ' Apple ][ / Terminal theme - this theme is green text on a black background, reminiscient of old terminals and the Apple ][.
-  CTHEME_APPLE2_FG      = %%030
-  CTHEME_APPLE2_BG      = %%000
-  
-  CTHEME_APPLE2_INFO_FG = %%000
-  CTHEME_APPLE2_INFO_BG = %%030
+  ' basic black on white theme  - modern Windows/Linux/Mac OS window with black text on white background
+  CTHEME_BLACKNWHITE_FG     = %%000
+  CTHEME_BLACKNWHITE_BG     = %%333
 
-  ' wasp/yellow jacket theme - black on yellow background, 
-  CTHEME_WASP_FG      = %%000
-  CTHEME_WASP_BG      = %%220
-  
-  CTHEME_WASP_INFO_FG = %%220
-  CTHEME_WASP_INFO_BG = %%000
+  CTHEME_BLACKNWHITE_INV_FG = %%333
+  CTHEME_BLACKNWHITE_INV_BG = %%000
 
-  ' autumn theme  - black on orange background 
-  CTHEME_AUTUMN_FG      = %%000
-  CTHEME_AUTUMN_BG      = %%310
-  
-  CTHEME_AUTUMN_INFO_FG = %%310
-  CTHEME_AUTUMN_INFO_BG = %%000
+  ' Atari/C64 theme  - this is white on dark blue like the old 8-bit systems
+  CTHEME_ATARI_C64_FG       = %%333
+  CTHEME_ATARI_C64_BG       = %%002
 
-  ' creamsicle theme  - white on orange background 
+  CTHEME_ATARI_C64_INV_FG   = %%002
+  CTHEME_ATARI_C64_INV_BG   = %%333
+
+  ' Apple ][ / Terminal theme  - this theme is green text on a black background, reminiscient of old terminals and the Apple ][.
+  CTHEME_APPLE2_FG          = %%030
+  CTHEME_APPLE2_BG          = %%000
+
+  CTHEME_APPLE2_INV_FG      = %%000
+  CTHEME_APPLE2_INV_BG      = %%030
+
+  ' wasp/yellow jacket theme  - black on yellow background
+  CTHEME_WASP_FG            = %%000
+  CTHEME_WASP_BG            = %%220
+
+  CTHEME_WASP_INV_FG       = %%220
+  CTHEME_WASP_INV_BG       = %%000
+
+  ' autumn theme  - black on orange background
+  CTHEME_AUTUMN_FG          = %%000
+  CTHEME_AUTUMN_BG          = %%310
+
+  CTHEME_AUTUMN_INV_FG      = %%310
+  CTHEME_AUTUMN_INV_BG      = %%000
+
+  ' creamsicle theme  - white on orange background
   CTHEME_CREAMSICLE_FG      = %%333
   CTHEME_CREAMSICLE_BG      = %%310
-  
-  CTHEME_CREAMSICLE_INFO_FG = %%310
-  CTHEME_CREAMSICLE_INFO_BG = %%333
 
-  ' purple orchid theme  - white on purple background 
-  CTHEME_ORCHID_FG      = %%333
-  CTHEME_ORCHID_BG      = %%112
-  
-  CTHEME_ORCHID_INFO_FG = %%112
-  CTHEME_ORCHID_INFO_BG = %%333
+  CTHEME_CREAMSICLE_INV_FG  = %%310
+  CTHEME_CREAMSICLE_INV_BG  = %%333
 
-  ' gremlin theme  - green on gray background 
-  CTHEME_GREMLIN_FG      = %%030
-  CTHEME_GREMLIN_BG      = %%111
-  
-  CTHEME_GREMLIN_INFO_FG = %%111
-  CTHEME_GREMLIN_INFO_BG = %%030
+  ' purple orchid theme  - white on purple background
+  CTHEME_ORCHID_FG          = %%333
+  CTHEME_ORCHID_BG          = %%112
 
+  CTHEME_ORCHID_INV_FG      = %%112
+  CTHEME_ORCHID_INV_BG      = %%333
 
-  
+  ' gremlin theme  - green on gray background
+  CTHEME_GREMLIN_FG         = %%030
+  CTHEME_GREMLIN_BG         = %%111
+
+  CTHEME_GREMLIN_INV_FG     = %%111
+  CTHEME_GREMLIN_INV_BG     = %%030
+
+  ' keyboard keycodes for ease of parser development
+
+  KBD_ASCII_NULL   = $00 ' null character
+  KBD_ASCII_TAB    = $09 ' horizontal tab
+  KBD_ASCII_LF     = $0A ' line feed
+  KBD_ASCII_CR     = $0D ' carriage return
+
+  KBD_ASCII_SPACE  = $20 ' space
+  KBD_ASCII_HASH   = $23 ' #
+  KBD_ASCII_HEX    = $24 ' $ for hex
+  KBD_ASCII_BIN    = $25 ' % for binary
+  KBD_ASCII_COMMA  = $2C ' ,
+  KBD_ASCII_PERIOD = $2E ' .
+
+  KBD_ASCII_SEMI   = $3A ' ;
+  KBD_ASCII_EQUALS = $3D ' =
+
+  KBD_ASCII_LB     = $5B ' [
+  KBD_ASCII_RB     = $5D ' ]
+
+  KBD_ASCII_0      = 48
+  KBD_ASCII_9      = 57
+  KBD_ASCII_A      = 65
+  KBD_ASCII_B      = 66
+  KBD_ASCII_C      = 67
+  KBD_ASCII_D      = 68
+  KBD_ASCII_E      = 69
+  KBD_ASCII_F      = 70
+  KBD_ASCII_G      = 71
+  KBD_ASCII_H      = 72
+  KBD_ASCII_O      = 79
+  KBD_ASCII_P      = 80
+  KBD_ASCII_Z      = 90
+
+  KBD_ASCII_LEFT   = $C0
+  KBD_ASCII_RIGHT  = $C1
+  KBD_ASCII_UP     = $C2
+  KBD_ASCII_DOWN   = $C3
+  KBD_ASCII_HOME   = $C4
+  KBD_ASCII_END    = $C5
+  KBD_ASCII_BS     = $C8 ' backspace
+  KBD_ASCII_DEL    = $C9 ' delete
+  KBD_ASCII_INS    = $CA ' insert
+  KBD_ASCII_ESC    = $CB ' escape
+
+  ' keyboard kecode modifier keys
+
+  KBD_ASCII_SHIFT  = $100' eg. Ctrl-Alt-Delete = $6C9
+  KBD_ASCII_CTRL   = $200
+  KBD_ASCII_ALT    = $400
+  KBD_ASCII_WIN    = $800
+
 OBJ
   '---------------------------------------------------------------------------
-  ' OBJECTS IMPORTED BY FRAMEWORK 
+  ' OBJECTS IMPORTED BY FRAMEWORK
   '---------------------------------------------------------------------------
   ' there are many VGA text drivers, but this is the simplest and cleanest, plus
   ' its developed by Parallax and is somewhat of a standard.
-  
+
   vga           : "hires_text_vga"
 
 
@@ -236,14 +286,14 @@ RETURNS:  Returns the screen geometry in high WORD of 32-bit return value
   gScreenNumCols   := VGACOLS
   gScreenNumRows   := VGAROWS
   gScreenFlag      := 0
-  
+
   ' start the VGA driver, send VGA base pins, video buffer, color buffer, pointer to cursors, and vsync global
-  vga.start(pVGABasePin, @gVideoBuffer, @gColors, pTextCursXPtr, @gVsync) 
- 
+  vga.start(pVGABasePin, @gVideoBuffer, @gColors, pTextCursXPtr, @gVsync)
+
   ' ---------------------------------------------------------------------------
   ' setup screen colors
   ' ---------------------------------------------------------------------------
- 
+
   ' the VGA driver vga_hires_text only has 2 colors per character
   ' (one for foreground, one for background). However,each line/row on the screen
   ' can have its OWN set of 2 colors, thus as long as you design your interfaces
@@ -254,11 +304,11 @@ RETURNS:  Returns the screen geometry in high WORD of 32-bit return value
   ' These are nothing more than some pre-computed color constants that look
   ' "good" and if you are color or artistically challenged will help you make
   ' your GUIs look clean and professional.
-  clearFrame( CTHEME_APPLE2_FG, CTHEME_APPLE2_BG )
+  clearFrame( CTHEME_DEFAULT_FG, CTHEME_DEFAULT_BG )
 
   ' finally return the screen geometry in the format [video_buffer:16 | vga_colums:8 | vga_rows]
   retVal :=   (@gVideoBuffer << 16 ) | ( VGAROWS << 8 ) | VGACOLS
-  
+
   return ( retVal )
 
 ' end PUB ----------------------------------------------------------------------
@@ -312,7 +362,7 @@ RETURNS: Nothing.
     ' check inverse video flag, if so, add 128 for inverse character set
     if (pInvFlag)
       pChar += 128
-      
+
     byte[ gVideoBufferPtr ][pCol + (pRow * gScreenNumCols)] := pChar
 
 ' end PUB ----------------------------------------------------------------------
@@ -356,7 +406,7 @@ RETURNS: Nothing.
 }}
 
   if ( pRow < VGAROWS )
-    colorWord := pBGroundColor << 10 + pFGroundColor << 2 
+    colorWord := pBGroundColor << 10 + pFGroundColor << 2
     gColors[ pRow ] := colorWord
 
 ' end PUB ----------------------------------------------------------------------
@@ -370,16 +420,16 @@ smaller frame, so it looks nice and clean.
 
 PARMS:
 
-  pCol       - The column to draw the frame at. 
-  pRow       - The row to draw the frame at. 
+  pCol       - The column to draw the frame at.
+  pRow       - The row to draw the frame at.
   pWidth     - The overall width of frame.
   pHeight    - The height of the frame.
-  pTitlePtr  - ASCIIZ String to print as title or null for no title. 
+  pTitlePtr  - ASCIIZ String to print as title or null for no title.
   pAttr      - Rendering attributes such as shadow, etc. see CON section at top of program for all ATTR_* flags.
-               Currently only ATTR_DRAW_SHADOW and ATTR_DRAW_INVERSE are implemented. 
-  pVgaPtr    - Pointer to VGA character graphics buffer. 
+               Currently only ATTR_DRAW_SHADOW and ATTR_DRAW_INVERSE are implemented.
+  pVgaPtr    - Pointer to VGA character graphics buffer.
   pVgaWidth  - Width of VGA screen in bytes, same as number of columns in screen; 40, 64, 80, 100, etc.
-  
+
 
 RETURNS: Nothing.
 }}
@@ -401,10 +451,10 @@ RETURNS: Nothing.
   vgaIndex := vgaStartIndex
 
   ' draw top left corner, then horizontal line followed by rop right character
-  byte[pVgaPtr][vgaIndex++] := ASCII_TOPLT
-  bytefill(@byte[pVgaPtr][vgaIndex],ASCII_HLINE,pWidth_2) 
+  byte[pVgaPtr][vgaIndex++] := FONT_ASCII_TOPLT
+  bytefill(@byte[pVgaPtr][vgaIndex],FONT_ASCII_HLINE,pWidth_2)
   vgaIndex += pWidth_2
-  byte[pVgaPtr][vgaIndex++] := ASCII_TOPRT
+  byte[pVgaPtr][vgaIndex++] := FONT_ASCII_TOPRT
 
   ' move to next row (potentially title will go here)
   vgaIndex := vgaStartIndex + pVgaWidth
@@ -413,7 +463,7 @@ RETURNS: Nothing.
   if (pTitlePtr <> NULL AND strsize( pTitlePtr ) > 0)
 
     ' left vertical line, then title, then right vertical line
-    byte[pVgaPtr][vgaIndex++] := ASCII_VLINE
+    byte[pVgaPtr][vgaIndex++] := FONT_ASCII_VLINE
     index := strsize( pTitlePtr )
 
     ' test if caller wants inverted title
@@ -424,7 +474,7 @@ RETURNS: Nothing.
       bytemove( @byte[pVgaPtr][vgaIndex], pTitlePtr, index )
 
     vgaIndex += pWidth_2
-    byte[pVgaPtr][vgaIndex++] := ASCII_VLINE
+    byte[pVgaPtr][vgaIndex++] := FONT_ASCII_VLINE
 
     ' move down to next row (optimize this *2 later)
     vgaIndex := vgaStartIndex + 2 * pVgaWidth
@@ -433,18 +483,18 @@ RETURNS: Nothing.
     ' on the left and right to finish this off
 
     ' draw left "tee" horizontal line, then right "tee"
-    byte[pVgaPtr][vgaIndex++] := ASCII_LTT
-    bytefill(@byte[pVgaPtr][vgaIndex],ASCII_HLINE,pWidth_2) 
+    byte[pVgaPtr][vgaIndex++] := FONT_ASCII_LTT
+    bytefill(@byte[pVgaPtr][vgaIndex],FONT_ASCII_HLINE,pWidth_2)
     vgaIndex += pWidth_2
-    byte[pVgaPtr][vgaIndex++] := ASCII_RTT
+    byte[pVgaPtr][vgaIndex++] := FONT_ASCII_RTT
 
     ' adjust the row counter since we had this added title section
     rowCount := 3
 
     ' draw shadow on box?
     if (pAttr & ATTR_DRAW_SHADOW)
-      byte[pVgaPtr][vgaIndex] := ASCII_DITHER
-    
+      byte[pVgaPtr][vgaIndex] := FONT_ASCII_DITHER
+
   else ' don't adjust row counter, draw the box as usual
     rowCount := 1
 
@@ -454,13 +504,13 @@ RETURNS: Nothing.
 
   ' draw the sides and vertical characters
   repeat pHeight - rowCount - 1
-    byte[pVgaPtr][vgaIndex++] := ASCII_VLINE              'vertical line char
+    byte[pVgaPtr][vgaIndex++] := FONT_ASCII_VLINE              'vertical line char
     vgaIndex += pWidth_2
-    byte[pVgaPtr][vgaIndex++] := ASCII_VLINE              'vertical line char
+    byte[pVgaPtr][vgaIndex++] := FONT_ASCII_VLINE              'vertical line char
 
     ' draw shadw on box?
     if (pAttr & ATTR_DRAW_SHADOW)
-      byte[pVgaPtr][vgaIndex] := ASCII_DITHER 
+      byte[pVgaPtr][vgaIndex] := FONT_ASCII_DITHER
 
     ' adjust current position for rendering, back to left side of next and final row
     vgaIndex -= pWidth
@@ -470,18 +520,18 @@ RETURNS: Nothing.
 
   ' draw the last line on the bottom of box which consists
   ' of the bottom left corner char, then the horizontal line char
-  ' and finally the bottom right corner char 
+  ' and finally the bottom right corner char
 
-  byte[pVgaPtr][vgaIndex++] := ASCII_BOTLT
-  bytefill(@byte[pVgaPtr][vgaIndex],ASCII_HLINE,pWidth_2) 
+  byte[pVgaPtr][vgaIndex++] := FONT_ASCII_BOTLT
+  bytefill(@byte[pVgaPtr][vgaIndex],FONT_ASCII_HLINE,pWidth_2)
   vgaIndex += pWidth_2
-  byte[pVgaPtr][vgaIndex++] := ASCII_BOTRT
+  byte[pVgaPtr][vgaIndex++] := FONT_ASCII_BOTRT
 
   ' finally shadow?
   if (pAttr & ATTR_DRAW_SHADOW)
-    byte[pVgaPtr][vgaIndex]  := ASCII_DITHER
+    byte[pVgaPtr][vgaIndex]  := FONT_ASCII_DITHER
     vgaIndex += (pVgaWidth - pWidth + 2)
-    bytefill(@byte[pVgaPtr][vgaIndex],ASCII_DITHER,pWidth-1)
+    bytefill(@byte[pVgaPtr][vgaIndex],FONT_ASCII_DITHER,pWidth-1)
 
 ' end PUB ----------------------------------------------------------------------
 
@@ -503,7 +553,7 @@ RETURNS: Nothing.
 
   ' Print a zero-terminated string to terminal
   repeat strsize( pStringPtr)
-    outScreen(byte[ pStringPtr++])
+    outScreen(byte[pStringPtr++])
 
 ' end PUB ----------------------------------------------------------------------
 
@@ -546,28 +596,28 @@ RETURNS: Nothing.
 
   ' generate divisor
   divisor := 1
-    
+
   repeat (pDigits-1)
-    divisor *= 10 
-   
+    divisor *= 10
+
   ' pBase 10, only mode where leading 0's are not copied to string
   zFlag := 1
-   
+
   repeat digit from 0 to (pDigits-1)
     ' print with pBase 10
-   
+
     dividend := (pValue / divisor)
-   
+
     if (dividend => 1)
       zFlag := 0
-   
+
     if (zFlag == 0)
       PrintScreen( dividend + "0")
-   
+
     pValue := pValue // divisor
     divisor /= 10
-   
-  
+
+
 ' end PUB ----------------------------------------------------------------------
 
 
@@ -614,7 +664,7 @@ PUB newLine
 DESCRIPTION: Moves the terminal cursor home and outputs a carriage return.
 
 PARMS: None.
- 
+
 RETURNS: Nothing.
 }}
 
@@ -622,13 +672,13 @@ RETURNS: Nothing.
   gScreenCol := 0
 
   if (++gScreenRow => gScreenNumRows)
-    gScreenRow--
+    --gScreenRow
 
     'scroll lines
     bytemove(gVideoBufferPtr, gVideoBufferPtr + gScreenNumCols, ( (gScreenNumRows-1) * gScreenNumCols ) )
 
    'clear new line
-    bytefill(gVideoBufferPtr + ((gScreenNumRows-1) * gScreenNumCols), ASCII_SPACE, gScreenNumCols)
+    bytefill(gVideoBufferPtr + ((gScreenNumRows-1) * gScreenNumCols), FONT_ASCII_SPACE, gScreenNumCols)
 
 ' end PUB ----------------------------------------------------------------------
 
@@ -677,13 +727,13 @@ RETURNS: Nothing.
 
   case gScreenFlag
     $00: case pChar
-           $00: bytefill( gVideoBufferPtr, ASCII_SPACE, gScreenNumCols * gScreenNumRows)
+           $00: bytefill( gVideoBufferPtr, FONT_ASCII_SPACE, gScreenNumCols * gScreenNumRows)
                 gScreenCol := gScreenRow := 0
 
            $01: gScreenCol := gScreenRow := 0
 
            $08: if gScreenCol
-                  gScreenCol--
+                  --gScreenCol
 
            $09: repeat
                   PrintScreen(" ")
@@ -695,7 +745,7 @@ RETURNS: Nothing.
            $0D: newLine
 
            other: printScreen( pChar )
-           
+
     $0A: gScreenCol := pChar // gScreenNumCols
     $0B: gScreenRow := pChar // gScreenNumRows
     $0C: gScreenFlag := pChar & 7
@@ -714,7 +764,7 @@ PARMS: pRow - row to set the cursor to.
 RETURNS: Nothing.
 }}
 
-  gScreenCol := pCol // gScreenNumCols 
+  gScreenCol := pCol // gScreenNumCols
 
 ' end PUB ----------------------------------------------------------------------
 
@@ -728,7 +778,7 @@ PARMS: pRow - row to set the cursor to.
 RETURNS: Nothing.
 }}
 
-  gScreenRow := pRow// gScreenNumRows 
+  gScreenRow := pRow// gScreenNumRows
 
 ' end PUB ----------------------------------------------------------------------
 
@@ -744,16 +794,16 @@ RETURNS: Nothing.
 
 
 ' set terminal x/column cursor position
-  gScreenCol := pCol // gScreenNumCols 
+  gScreenCol := pCol // gScreenNumCols
 
 ' set Terminal y/row cursor position
-  gScreenRow := pRow// gScreenNumRows 
+  gScreenRow := pRow// gScreenNumRows
 
 ' end PUB ----------------------------------------------------------------------
 
 
 PUB getColScreen
-' retrieve x column cursor position 
+' retrieve x column cursor position
 {{
 DESCRIPTION: Retrieve x terminal cursor position
 
@@ -767,7 +817,7 @@ RETURNS: x terminal cursor position.
 
 
 PUB getRowScreen
-{{ 
+{{
 DESCRIPTION: Retrieve y row terminal cursor position
 
 PARMS: none.
@@ -775,7 +825,7 @@ PARMS: none.
 RETURNS: y terminal cursor position.
 }}
 
-  return( gScreenRow ) 
+  return( gScreenRow )
 
 ' end PUB ----------------------------------------------------------------------
 
@@ -792,18 +842,18 @@ RETURNS: Nothing.
 
   gScreenCol       := 0
   gScreenRow       := 0
-  gScreenFlag      := 0 
+  gScreenFlag      := 0
 
 
 CON
 ' -----------------------------------------------------------------------------
-' STRING AND NUMERIC CONVERSION METHODS 
+' STRING AND NUMERIC CONVERSION METHODS
 ' -----------------------------------------------------------------------------
 
 PUB strCpy( pDestStrPtr, pSourceStrPtr ) | strIndex
 {{
 DESCRIPTION: Copies the NULL terminated source string to the destination string
-and null terminates the copy. 
+and null terminates the copy.
 
 PARMS:  pDestStrPtr - destination string storage for string copy.
         pSrcStrPtr  - source string to copy, must be null terminated.
@@ -814,9 +864,9 @@ RETURNS: Number of bytes copied.
 ' test if there is storage
   if ( pDestStrPtr == NULL)
     return (NULL)
-  
+
   strIndex := 0
-  
+
   repeat while (byte [ pSourceStrPtr ][ strIndex ] <> NULL)
   ' copy next byte
    byte [ pDestStrPtr ][ strIndex ] := byte [ pSourceStrPtr ][ strIndex ]
@@ -833,7 +883,7 @@ RETURNS: Number of bytes copied.
 
 PUB strUpper( pStringPtr )
 {{
-DESCRIPTION: Converts the sent string to all uppercase. 
+DESCRIPTION: Converts the sent string to all uppercase.
 
 PARMS: pStringPtr - NULL terminated ASCII string to convert.
 
@@ -843,7 +893,7 @@ RETURNS: pStringPtr converted to uppercase.
   if ( pStringPtr <> NULL)
     repeat while (byte[ pStringPtr ] <> NULL)
       byte[ pStringPtr ] :=  ToUpper( byte[ pStringPtr ] )
-      pStringPtr++  
+      pStringPtr++
 
   ' return string
   return ( pStringPtr )
@@ -874,7 +924,7 @@ DESCRIPTION: Tests if sent character is in sent string.
 
 PARMS:  pChar         - character to test for set inclusion.
         pSetStringPtr - string to test for character.
-        
+
 RETURNS: pChar if its in the string set, -1 otherwise. Note to self, maybe
 later make this return the position of the 1st occurance, more useful?
 }}
@@ -898,7 +948,7 @@ PARMS: pChar - character to test for white space.
 RETURNS: pChar if its a white space character, -1 otherwise.
 }}
 
-  if ( (pChar == ASCII_SPACE) OR (pChar == ASCII_LF) OR (pChar == ASCII_CR) or (pChar == ASCII_TAB))
+  if ( (pChar == KBD_ASCII_SPACE) OR (pChar == KBD_ASCII_LF) OR (pChar == KBD_ASCII_CR) or (pChar == KBD_ASCII_TAB))
     return ( pChar )
   else
     return( -1 )
@@ -932,8 +982,8 @@ PARMS: pChar - character to test.
 RETURNS: pChar if its in the ASCII set [0..9], -1 otherwise.
 }}
 
-  if ( (pChar => ASCII_0) AND (pChar =< ASCII_9) )
-    return ( pChar-ASCII_0 )
+  if ( (pChar => KBD_ASCII_0) AND (pChar =< KBD_ASCII_9) )
+    return ( pChar-KBD_ASCII_0 )
   else
     return(-1)
 
@@ -952,8 +1002,8 @@ RETURNS: pChar if the sent character is in the set [a...zA....Z] or -1 otherwise
 
 ' first convert to uppercase to simplify testing
   pChar := ToUpper( pChar )
-  
-  if ( (pChar => ASCII_A) AND (pChar =< ASCII_Z))
+
+  if ( (pChar => KBD_ASCII_A) AND (pChar =< KBD_ASCII_Z))
     return ( pChar )
   else
     return( -1 )
@@ -972,8 +1022,8 @@ RETURNS: pChar itself if its in the set, -1 if its not in the set.
 }}
 
   pChar := ToUpper( pChar )
-  
-  if ( ((pChar => 33) AND (pChar =< 47)) OR ((pChar => 58) AND (pChar =< 64)) OR ((pChar => 91) AND (pChar =< 96)) OR ((pChar =>123) AND (pChar =< 126)) ) 
+
+  if ( ((pChar => 33) AND (pChar =< 47)) OR ((pChar => 58) AND (pChar =< 64)) OR ((pChar => 91) AND (pChar =< 96)) OR ((pChar =>123) AND (pChar =< 126)) )
     return ( pChar )
   else
     return( -1 )
@@ -988,9 +1038,9 @@ DESCRIPTION: Converts ASCII hex digit to decimal.
 PARMS: ASCII hex digit ["0"..."9", "A..."F"|"a"..."f"]
 
 RETURNS:
-}} 
+}}
   if ( (pChar => "0") and (pChar =< "9") )
-    return (pChar - ASCII_0)
+    return (pChar - KBD_ASCII_0)
   elseif ( (pChar => "A") and (pChar =< "F") )
     return (pChar - "A" + 10)
   elseif ( (pChar => "a") and (pChar =< "f") )
@@ -1008,7 +1058,7 @@ should be a better way to do this with lookupz etc., note to self check that out
 
 PARMS:  pValue - The hex digit value to convert to ASCII digit.
 
-RETURNS: The converted ASCII digit. 
+RETURNS: The converted ASCII digit.
 
 }}
 {
@@ -1016,7 +1066,7 @@ RETURNS: The converted ASCII digit.
     return ( pValue + "A" - 10 )
   else
     return( pValue + "0" )
-}   
+}
   return ( lookupz( (pValue & $F) : "0".."9", "A".."F") )
 
 
@@ -1027,7 +1077,7 @@ PUB itoa(pNumber, pBase, pDigits, pStringPtr) | divisor, digit, zflag, dividend
 {{
 DESCRIPTION: "C-like" method that converts pNumber to string; decimal, hex, or binary formats. Caller
 should make sure that conversion will fit in string, otherwise method will overwrite
-data.        
+data.
 
 PARMS:  pNumber - number to convert to ASCII string.
         pBase   - base for conversion; 2, 10, 16, for binary, decimal, and hex respectively.
@@ -1048,7 +1098,7 @@ RETURNS: Pointer back to the pStringPtr with the converted results.
   if (pBase == 2)
     ' print with pBase 2,  bit pNumber
     divisor := 1 << (pDigits-1) ' initialize bitmask
-    
+
     repeat digit from 0 to (pDigits-1)
       ' print with pBase 2
       byte [pStringPtr++] := ((pNumber & divisor) >> ( (pDigits-1) - digit) + "0")
@@ -1065,28 +1115,28 @@ RETURNS: Pointer back to the pStringPtr with the converted results.
       ' generate divisor
       divisor := 1
       repeat (pDigits-1)
-        divisor *= 10 
-       
+        divisor *= 10
+
       ' pBase 10, only mode where leading 0's are not copied to string
       zflag~~
-       
+
       repeat digit from 0 to (pDigits-1)
         ' print with pBase 10
-       
+
         dividend := (pNumber / divisor)
-       
+
         if (dividend => 1)
           zflag~
-       
+
         if (zflag == 0)
           byte [pStringPtr++] := (dividend + "0")
-       
+
         pNumber := pNumber // divisor
         divisor /= 10
 
-  ' pBase 16 code -------------------------------------------------------------- 
+  ' pBase 16 code --------------------------------------------------------------
   else
-    divisor := $F << (4*(pDigits-1))  
+    divisor := $F << (4*(pDigits-1))
 
     repeat digit from 0 to (pDigits-1)
       ' print with pBase 16
@@ -1095,7 +1145,7 @@ RETURNS: Pointer back to the pStringPtr with the converted results.
 
    ' null terminate and return
    byte [pStringPtr] := 0
-      
+
    return( pStringPtr )
 
   ' end PUB ----------------------------------------------------------------------
@@ -1122,11 +1172,11 @@ this method!
   index := 0
   sum   := 0
   sign  := 1
- 
+
 ' consume white space
   repeat while (isSpace( byte[ pStringPtr ][index] ) <> -1)
     index++
- 
+
 ' is there a +/- sign?
   if (byte [pStringPtr][index] == "+")
   ' consume it
@@ -1134,36 +1184,36 @@ this method!
   elseif (byte [pStringPtr][index] == "-")
   ' consume it
     index++
-    sign := -1    
-     
+    sign := -1
+
 ' try to determine number base
-  if (byte [pStringPtr][index] == ASCII_HEX)
+  if (byte [pStringPtr][index] == KBD_ASCII_HEX)
     index++
     repeat while ( ( isDigit(ch := byte [pStringPtr][index]) <> -1) or ( isAlpha(ch := byte [pStringPtr][index]) <> -1) )
       index++
       sum := (sum << 4) + HexToDec( ToUpper(ch) )
       if (index => pLength)
         return (sum*sign)
-   
+
     return(sum*sign)
 ' // end if hex number
-  elseif (byte [pStringPtr][index] == ASCII_BIN)
+  elseif (byte [pStringPtr][index] == KBD_ASCII_BIN)
     repeat while ( isDigit(ch := byte [pStringPtr][++index]) <> -1)
-      sum := (sum << 1) + (ch - ASCII_0)
+      sum := (sum << 1) + (ch - KBD_ASCII_0)
       if (index => pLength)
         return (sum*sign)
-   
+
     return(sum*sign)
 ' // end if binary number
   else
   ' must be in default base 10, assume that
     repeat while ( isDigit(ch := byte [pStringPtr][index++]) <> -1)
-      sum := (sum * 10) + (ch - ASCII_0)
+      sum := (sum * 10) + (ch - KBD_ASCII_0)
       if (index => pLength)
         return (sum*sign)
-   
+
     return(sum*sign)
- 
+
 ' else, have no idea of number format!
   return( 0 )
 

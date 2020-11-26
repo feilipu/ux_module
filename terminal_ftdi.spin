@@ -136,7 +136,7 @@ PUB rxCount : count
 PUB rxFlush
 {{Flush receive buffer.}}
 
-  rx_tail := rx_head
+  rx_tail := rx_head := 0
 
 
 PUB rxCheck : truefalse

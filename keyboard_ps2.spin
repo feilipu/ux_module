@@ -9,16 +9,79 @@
  v1.0.1 - Updated 6/15/2006 to work with Propeller Tool 0.96
 }
 
+{
+  Added "break key" mechanism and methods to set/test.
+  Copyright (c) 2008 Michael Green
+}
+
+CON
+
+  ' keyboard keycodes for ease of parser development
+
+  KBD_ASCII_NULL   = $00 ' null character
+  KBD_ASCII_TAB    = $09 ' horizontal tab
+  KBD_ASCII_LF     = $0A ' line feed
+  KBD_ASCII_CR     = $0D ' carriage return
+
+  KBD_ASCII_SPACE  = $20 ' space
+  KBD_ASCII_HASH   = $23 ' #
+  KBD_ASCII_HEX    = $24 ' $ for hex
+  KBD_ASCII_BIN    = $25 ' % for binary
+  KBD_ASCII_COMMA  = $2C ' ,
+  KBD_ASCII_PERIOD = $2E ' .
+
+  KBD_ASCII_SEMI   = $3A ' ;
+  KBD_ASCII_EQUALS = $3D ' =
+
+  KBD_ASCII_LB     = $5B ' [
+  KBD_ASCII_RB     = $5D ' ]
+
+  KBD_ASCII_0      = 48
+  KBD_ASCII_9      = 57
+  KBD_ASCII_A      = 65
+  KBD_ASCII_B      = 66
+  KBD_ASCII_C      = 67
+  KBD_ASCII_D      = 68
+  KBD_ASCII_E      = 69
+  KBD_ASCII_F      = 70
+  KBD_ASCII_G      = 71
+  KBD_ASCII_H      = 72
+  KBD_ASCII_O      = 79
+  KBD_ASCII_P      = 80
+  KBD_ASCII_Z      = 90
+
+  KBD_ASCII_LEFT   = $C0
+  KBD_ASCII_RIGHT  = $C1
+  KBD_ASCII_UP     = $C2
+  KBD_ASCII_DOWN   = $C3
+  KBD_ASCII_HOME   = $C4
+  KBD_ASCII_END    = $C5
+  KBD_ASCII_BS     = $C8 ' backspace
+  KBD_ASCII_DEL    = $C9 ' delete
+  KBD_ASCII_INS    = $CA ' insert
+  KBD_ASCII_ESC    = $CB ' escape
+
+  KBD_ASCII_PAD_CR = $EB0D  ' pad carriage return
+
+  ' keyboard kecode modifier keys
+
+  KBD_ASCII_SHIFT  = $100' eg. Ctrl-Alt-Delete = $6C9
+  KBD_ASCII_CTRL   = $200
+  KBD_ASCII_ALT    = $400
+  KBD_ASCII_WIN    = $800
+
+
 VAR
 
   long  cog
 
-  long  par_tail        'key buffer tail        read/write      (19 contiguous longs)
+  long  par_tail        'key buffer tail        read/write      (21 contiguous longs)
   long  par_head        'key buffer head        read-only
   long  par_present     'keyboard present       read-only
   long  par_states[8]   'key states (256 bits)  read-only
   long  par_keys[8]     'key buffer (16 words)  read-only       (also used to pass initial parameters)
-  long  par_changed     'key state changed
+  long  par_changed     'key state changed      read/write
+  long  par_break       'break key code, flag   read/write
 
 
 PUB start(dpin, cpin) : okay
@@ -65,7 +128,7 @@ PUB stop
 
   if cog
     cogstop(cog~ -  1)
-  longfill(@par_tail, 0, 19)
+  longfill(@par_tail, 0, 21)
 
 
 PUB present : truefalse
@@ -74,6 +137,37 @@ PUB present : truefalse
 '' returns t|f
 
   truefalse := -par_present
+
+
+PUB peekKey : keycode
+
+'' Returns a 0 if the buffer is empty
+'' returns next key if buffer not empty
+'' but doesn't remove the key from buffer
+
+  if par_tail == par_head
+    keycode := 0
+  else
+    keycode := par_keys.word[par_tail]
+
+
+PUB breakTest
+
+'' Return true if a "break key" has been detected
+
+  return par_break & $FFFF0000 <> 0
+
+
+PUB breakCode(code)
+
+'' Set the key code to be used for a "break key".
+'' When the key code is detected by the assembly
+'' routine, it is copied to the high 16 bits of
+'' par_break and the lower 16 bits are cleared.
+'' Since a key code of zero is invalid, setting
+'' the "break key" to zero disables the checking.
+
+  par_break := code & $0000FFFF
 
 
 PUB key : keycode
@@ -86,7 +180,7 @@ PUB key : keycode
     par_tail := ++par_tail & $F
 
 
-PUB getkey : keycode
+PUB getKey : keycode
 
 '' Get next key (may wait for keypress)
 '' returns key
@@ -94,7 +188,7 @@ PUB getkey : keycode
   repeat until (keycode := key)
 
 
-PUB newkey : keycode
+PUB newKey : keycode
 
 '' Clear buffer and get new key (always waits for keypress)
 '' returns key
@@ -103,48 +197,30 @@ PUB newkey : keycode
   keycode := getkey
 
 
-PUB gotkey : truefalse
+PUB gotKey : truefalse
 
 '' Check if any key in buffer
 '' returns t|f
   if par_tail <> par_head
-    if par_keys.word[par_tail] == 222 ' caps lock is not passed through as a keypress
-       par_tail := ++par_tail & $F  ' add one to the tail
+    if par_keys.word[par_tail] == $DE ' caps lock is not passed through as a keypress
+       par_tail := ++par_tail & $0F   ' add one to the tail
 
   truefalse := par_tail <> par_head
 
 
-PUB clearkeys
+PUB clearKeys
 
 '' Clear key buffer
 
-  par_tail := par_head
+  par_tail := par_head := 0
 
 
-PUB keystate(k) : state
+PUB keyState(k) : state
 
 '' Get the state of a particular key
 '' returns t|f
 
   state := -(par_states[k >> 5] >> k & 1)
-
-PUB location
-   return @entry  ' returns the location of the hub space used by this driver to recycled this hub ram
-
-PUB tail_ptr
-   return @par_tail ' returns the location of par_tail long
-
-PUB head_ptr
-   return @par_head ' returns the location of par_head long
-
-PUB keys_ptr
-   return @par_keys ' returns the location of par_keys long
-
-PUB states_ptr
-   return @par_states  ' returns the location of par_states longs
-
-PUB change_ptr
-   return @par_changed  ' returns the location of par_changed long
 
 DAT
 
@@ -315,7 +391,16 @@ newcode                 mov     stat,#0                 'reset state
                         djnz    x,#:loop
                         rol     data,#12
 
-                        rdlong  x,par                   'if room in buffer and key valid, enter
+                        mov     x,par                   'check for a "break key" key code
+                        add     x,#20*4                 '@par_break - @par_head
+                        rdword  y,x             wz
+        if_z            jmp     #:storekey
+                        cmp     y,data          wz      'if match, don't store in buffer
+        if_e            shl     y,#16                   'but do store in high order word
+        if_e            wrlong  y,x                     'of par_break and zero the low
+        if_e            jmp     #:gotbreak              'order word so test is once only
+
+:storekey               rdlong  x,par                   'if room in buffer and key valid, enter
                         sub     x,#1
                         and     x,#$F
                         cmp     x,_head         wz
@@ -328,7 +413,7 @@ newcode                 mov     stat,#0                 'reset state
         if_nz           add     _head,#1
         if_nz           and     _head,#$F
 
-                        test    stat,#4         wc      'if not configure flag, done
+:gotbreak               test    stat,#4         wc      'if not configure flag, done
         if_nc           jmp     #update                 'else configure to update leds
 '
 '

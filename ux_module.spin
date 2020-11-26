@@ -19,7 +19,6 @@ CON
   PORT_C0       = acia#PORT_C0
 
 
-
 CON
 
   ' set these constants based on the Propeller VGA hardware
@@ -29,55 +28,89 @@ CON
   KBD_DATA_PIN  = 27  ' KEYBOARD data pin
   KBD_CLK_PIN   = 26  ' KEYBOARD clock pin
 
+  ' import some constants from the I2C hardware
+  SDA_PIN       = i2c#SDA_PIN  ' I2C data pin
+  SCL_PIN       = i2c#SCL_PIN  ' I2C clock pin
+
   ' import some constants from the Propeller Window Manager
   VGACOLS       = wmf#VGACOLS
   VGAROWS       = wmf#VGAROWS
 
+
 CON
+
 
   '    Control Character Constants
   '─────────────────────────────────────
-  CS = 16  ''CS: Clear Screen
-  CE = 11  ''CE: Clear to End of line
-  CB = 12  ''CB: Clear lines Below
 
   HM =  1  ''HM: HoMe cursor
   PC =  2  ''PC: Position Cursor in x,y
-  PX = 14  ''PX: Position cursor in X
-  PY = 15  ''PY: Position cursor in Y
 
-  NL = 13  ''NL: New Line
-  LF = 10  ''LF: Line Feed
   ML =  3  ''ML: Move cursor Left
   MR =  4  ''MR: Move cursor Right
   MU =  5  ''MU: Move cursor Up
   MD =  6  ''MD: Move cursor Down
-  TB =  9  ''TB: TaB
-  BS =  8  ''BS: BackSpace
 
   BP =  7  ''BP: BeeP speaker
+  BS =  8  ''BS: BackSpace
+  TB =  9  ''TB: TaB
+
+  LF = 10  ''LF: Line Feed
+  CE = 11  ''CE: Clear to End of line
+  CB = 12  ''CB: Clear lines Below
+  NL = 13  ''NL: New Line
+
+  PX = 14  ''PX: Position cursor in X
+  PY = 15  ''PY: Position cursor in Y
+
+  CS = 16  ''CS: Clear Screen
+
+
+CON
+
+  ' ASCII control codes
+
+  ASCII_NULL    = $00 ' null character
+
+  ASCII_BELL    = $07 ' backspace
+  ASCII_BS      = $08 ' backspace
+  ASCII_TAB     = $09 ' horizontal tab
+  ASCII_LF      = $0A ' line feed
+  ASCII_VT      = $0B ' vertical tab
+  ASCII_FF      = $0C ' form feed (new page)
+  ASCII_CR      = $0D ' carriage return
+
+  ASCII_ESC     = $1B ' escape
+
+  ASCII_SPACE   = $20 ' space
+  ASCII_HASH    = $23 ' #
+  ASCII_COMMA   = $2C ' ,
+  ASCII_PERIOD  = $2E ' .
+
+  ASCII_LB      = $5B ' [
+  ASCII_RB      = $5D ' ]
+
+  ASCII_DEL     = $7F ' delete
 
 
 VAR
 
 ' -----------------------------------------------------------------------------
-' DECLARED VARIABLES, ARRAYS, ETC.   
+' DECLARED VARIABLES, ARRAYS, ETC.
 ' -----------------------------------------------------------------------------
 
-  byte  gVgaRows, gVgaCols ' convenient globals to store number of columns and rows
-
-  byte  gStrBuff[255]      ' string buffer
+  byte  gScreenRows, gScreenCols                      ' convenient globals to store number of screen columns and rows
 
   ' these data structures contains two cursors in the format [x,y,mode]
   ' these are passed to the VGA driver, so it can render them over the text in the display
   ' like "hardware" cursors, that don't disturb the graphics under them. We can use them
   ' to show where the text cursor and mouse cursor is
   ' The data structure is 6 contiguous bytes which we pass to the VGA driver ultimately
-  
-  byte  gTextCursX, gTextCursY, gTextCursMode        ' text cursor 0 [x0,y0,mode0] 
-  byte  gMouseCursX, gMouseCursY, gMouseCursMode     ' mouse cursor 1 [x1,y1,mode1] (unused but required for VGA driver)
 
-  long  gVideoBufferPtr                              ' holds the address of the video buffer passed back from the VGA driver 
+  byte  gTextCursX, gTextCursY, gTextCursMode         ' text cursor 0 [x0,y0,mode0]
+  byte  gMouseCursX, gMouseCursY, gMouseCursMode      ' mouse cursor 1 [x1,y1,mode1] (unused but required for VGA driver)
+
+  long  gScreenBufferPtr                              ' holds the address of the video buffer passed back from the VGA driver
 
 
 OBJ
@@ -99,131 +132,137 @@ PUB start
   'start the ACIA interface
   acia.start (PORT_80)
 
+  'start the keyboard
+  kbd.start (KBD_DATA_PIN, KBD_CLK_PIN)
+
   'start i2c
-  i2c.Init (26, 25)
+  i2c.init (SCL_PIN, SDA_PIN)
 
-  'create the GUI
-  createAppGUI
+  'start the VGA scren
+  screenInit
 
-  wmf.strScreenLn (string("UX Module Initialising..."))
-  ++gTextCursY
-
-  ' MAIN EVENT LOOP - this is where you put all your code in an infinite loop...  
+  ' MAIN EVENT LOOP - this is where you put all your code in a non-blocking infinite loop...
   repeat
-    getStringACIA(@gStrBuff, acia#MAX_STRING)
-    repeat while (term.rxCheck)
-      acia.tx (term.charIn)
+    readZ80
+    kbdWriteZ80
+'   termWriteZ80
+
 
 CON
 
   '' Visual differentiation
 
 
-PUB createAppGUI | retVal 
-  ' This functions creates the entire user interface for the application and does any other
+PUB screenInit | retVal
+  ' This functions creates the entire user experience and does any other
   ' static initialization you might want.
- 
-  ' text cursor starting position and as blinking underscore  
-  gTextCursX     := 0                              
-  gTextCursY     := 0                              
-  gTextCursMode  := %110   
+
+  ' text cursor starting position and as blinking underscore
+  gTextCursX     := 0
+  gTextCursY     := 0
+  gTextCursMode  := %110
 
   ' set mouse cursor position as off
-  gMouseCursX    := 0                             
-  gMouseCursY    := 0                              
-  gMouseCursMode := 0     
+  gMouseCursX    := 0
+  gMouseCursY    := 0
+  gMouseCursMode := 0
 
-  'start the keyboard
-  kbd.start (KBD_DATA_PIN, KBD_CLK_PIN)
 
-  ' now start the VGA driver and terminal services 
+  ' now start the VGA driver and terminal services
   retVal := wmf.init(VGA_BASE_PIN, @gTextCursX )
 
   ' rows encoded in upper 8-bits. columns in lower 8-bits of return value, redundant code really
-  ' since we pull it in with a constant in the first CON section, but up to you! 
-  gVgaRows := ( retVal & $0000FF00 ) >> 8
-  gVgaCols := retVal & $000000FF
+  ' since we pull it in with a constant in the first CON section, but up to you!
+  gScreenRows := ( retVal & $0000FF00 ) >> 8
+  gScreenCols := retVal & $000000FF
 
   ' VGA buffer encoded in upper 16-bits of return value
-  gVideoBufferPtr := retVal >> 16 
+  gScreenBufferPtr := retVal >> 16
+
+  wmf.strScreenLn (string("UX Module Initialising..."))
+  ++gTextCursY
 
   ' return to caller
   return
 
 
-PUB getStringACIA(pStringPtr, pMaxLength) | length, char
-{{
-DESCRIPTION: This is a single line editor for the Z80 ACIA serial interface.
-When the system provides <ENTER> | <RETURN> the function exits and returns the string.
-The function has simple cursor control and allows <BACKSPACE> to delete the last character, that's it!
-
-PARMS: pStringPTr - pointer to storage for input string.
-       pMaxLength - maximum length of string buffer.
-
-RETURNS: pointer to string, empty string if user entered nothing.
-
-}}
-
-  ' current length of string buffer
-  length := 0  
-
-  repeat 
+PUB readZ80 | char
 
     ' if no input from ACIA then return
-    if (!acia.rxCheck)
-      return ( pStringPtr )
+    repeat while acia.rxCheck
 
-    ' get character from buffer
-    char := acia.rx
-     
-    case char
-       wmf#ASCII_LF, wmf#ASCII_CR: ' return    
-        wmf.newLine
+      ' get character from buffer
+      char := acia.rx
+  
+      ' send it out the serial terminal (transparently)
+      term.char (char)
+  
+      ' display it on the screen
+      case char
+        ASCII_CR: ' return
+  
+          wmf.outScreen ( NL )
 
-        ' null terminate string and return
-        byte [pStringPtr][length] := wmf#ASCII_NULL
+          gTextCursX := 0
+          if (gTextCursY < gScreenRows )
+            ++gTextCursY
 
-        gTextCursX := 0
-        gTextCursY++
-     
-        return ( pStringPtr )
+        ASCII_LF: ' line feed
+          next
 
-       wmf#ASCII_BS, wmf#ASCII_DEL, wmf#ASCII_LEFT: ' backspace (edit)
-
-         if (length > 0)
+        ASCII_BS, ASCII_DEL: ' backspace (edit)
+  
+          if (gTextCursX < gScreenCols )
            ' move cursor back once to overwrite last character on screen
-           gTextCursX--
-           wmf.outScreen ( wmf#ASCII_SPACE )
-           wmf.outScreen ( $08 )          
-           wmf.outScreen ( $08 )
+           wmf.outScreen ( BS )
+           wmf.outScreen ( ASCII_SPACE )
+           wmf.outScreen ( BS )
 
+           --gTextCursX
+  
+        other:    ' all other cases
+  
+           ' update length
+           if (gTextCursX < gScreenCols )
+             ++gTextCursX
+           else
+             ' move cursor back once to overwrite last character on screen
+             wmf.outScreen ( BS )
+  
            ' echo character
-           wmf.outScreen( wmf#ASCII_SPACE )
-           wmf.outScreen( $08 )
-
-           ' decrement length
-           length--
- 
-       other:    ' all other cases
-
-         ' insert character into string 
-         byte [pStringPtr][length] := char
-
-         ' update length
-         if (length < pMaxLength )
-           gTextCursX++
-           length++
-         else
-           gTextCursX--
-           ' move cursor back once to overwrite last character on screen
-           wmf.outScreen ( $08 )          
-
-         ' echo character
-         wmf.outScreen ( char )
+           wmf.outScreen ( char )
 
 
-CON
+PUB kbdWriteZ80 | char
 
+    ' if no input from keyboard then return
+    repeat while kbd.gotKey
+
+      char := kbd.getKey
+
+      case char
+
+        kbd#KBD_ASCII_BS, kbd#KBD_ASCII_DEL:
+          acia.tx (BS)
+
+        kbd#KBD_ASCII_CR, kbd#KBD_ASCII_PAD_CR:
+          acia.tx (NL)
+
+        kbd#KBD_ASCII_LF:
+          next
+
+        kbd#KBD_ASCII_CTRL | kbd#KBD_ASCII_ALT | kbd#KBD_ASCII_DEL:
+          reboot
+
+        other:      ' all other input
+          acia.tx (char)
+
+
+PUB termWriteZ80
+
+    ' if no input from terminal then return
+    repeat while term.rxCheck
+      acia.tx (term.charIn)
 
 
 DAT
@@ -231,9 +270,9 @@ DAT
 {{
 
 ┌──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┐
-│                                                   TERMS OF USE: MIT License                                                  │                                                            
+│                                                   TERMS OF USE: MIT License                                                  │
 ├──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┤
-│Permission is hereby granted, free of charge, to any person obtaining a copy of this software and associated documentation    │ 
+│Permission is hereby granted, free of charge, to any person obtaining a copy of this software and associated documentation    │
 │files (the "Software"), to deal in the Software without restriction, including without limitation the rights to use, copy,    │
 │modify, merge, publish, distribute, sublicense, and/or sell copies of the Software, and to permit persons to whom the Software│
 │is furnished to do so, subject to the following conditions:                                                                   │

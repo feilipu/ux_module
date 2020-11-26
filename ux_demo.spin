@@ -31,7 +31,7 @@ CON
 VAR
 
 ' -----------------------------------------------------------------------------
-' DECLARED VARIABLES, ARRAYS, ETC.   
+' DECLARED VARIABLES, ARRAYS, ETC.
 ' -----------------------------------------------------------------------------
 
   byte  gVgaRows, gVgaCols ' convenient globals to store number of columns and rows
@@ -44,12 +44,12 @@ VAR
   ' like "hardware" cursors, that don't disturb the graphics under them. We can use them
   ' to show where the text cursor and mouse cursor is
   ' The data structure is 6 contiguous bytes which we pass to the VGA driver ultimately
-  
-  byte  gTextCursX, gTextCursY, gTextCursMode        ' text cursor 0 [x0,y0,mode0] 
+
+  byte  gTextCursX, gTextCursY, gTextCursMode        ' text cursor 0 [x0,y0,mode0]
   byte  gMouseCursX, gMouseCursY, gMouseCursMode     ' mouse cursor 1 [x1,y1,mode1] (unused but required for VGA driver)
 
   long  gVideoBufferPtr                              ' holds the address of the video buffer passed back from the VGA driver
- 
+
 
 OBJ
 
@@ -77,9 +77,9 @@ PUB start | i
 
 {{
 ┌──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┐
-│                                                   TERMS OF USE: MIT License                                                  │                                                            
+│                                                   TERMS OF USE: MIT License                                                  │
 ├──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┤
-│Permission is hereby granted, free of charge, to any person obtaining a copy of this software and associated documentation    │ 
+│Permission is hereby granted, free of charge, to any person obtaining a copy of this software and associated documentation    │
 │files (the "Software"), to deal in the Software without restriction, including without limitation the rights to use, copy,    │
 │modify, merge, publish, distribute, sublicense, and/or sell copies of the Software, and to permit persons to whom the Software│
 │is furnished to do so, subject to the following conditions:                                                                   │

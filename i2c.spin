@@ -7,12 +7,12 @@
  Assumes the caller uses the chip address 7 bit format, onto which a r/w bit is added by the code before being transmitted.
  Signalling 'Open Collector Style' is achieved by setting pins OUTA := 0 permanent, and then manipulate on DIRA to either
  float the output, i.e. let PU resistor pull up to '1' -or- unfloat the output (which was set to 0) to bring it down to '0'
- 
+
  Revisions:
  - Changed DAT assignment of scl and sda pins
  - Added BusInitialized flag
  - Added object instance identifier
- - Added IsBusy
+ - Added isBusy
  - Added self-demo PUB Main
 
 -----------------------------------------------------------------------------------------------------------------------------------------------------------------------
@@ -25,23 +25,23 @@
 
       Propeller
    +-------------+
-   |             +-------+  3.3V  +------------------------------------------------------// -----------------------------------+   
-   |             |  |  |                 |                              |                                 |                |   |   
-   |             |  |  |               +-----------+                  +-----------+                     +-----------+      |   |   
-   |             |  |  |               | V+        |                  | V+        |                     | V+        |      |   |   
-   |   master    |  |  +               |           |                  |           |                     |           |      +   |   
-   |             |  | 4k7              | Chip/slave|                  | Chip/slave|                     | Chip/slave|     4k7  |   
-   |             |  +  +  Pull-up      |           |                  |           |                     |           |      +   |   
-   |             | 4k7 |               |SDA SCL GND|                  |SDA SCL GND|                     |SDA SCL GND|      |   +   
-   |             |  +  |               +-----------+                  +-----------+                     +-----------+      |  4k7  
-   |             |  |  |                 |   |   |                      |   |   |                         |   |   |        |   +   
-   |             |  |  |                 |   |   |                      |   |   |                         |   |   |        |   |   
-   |             |  |  |                 |   |   |                      |   |   |                         |   |   |        |   |   
-   |      PINsda +-----------------------------------------------------------------------// -------------------------------+   |   
-   |             |     |  I2C Bus            |   |                          |   |                             |   |            |   
-   |      PINscl +-----------------------------------------------------------------------// -----------------------------------+   
-   |             |                               |                              |                                 |                
-   |         GND +-----------------------------------------------------------------------// ----------------------+                
+   |             +-------+  3.3V  +------------------------------------------------------// -----------------------------------+
+   |             |  |  |                 |                              |                                 |                |   |
+   |             |  |  |               +-----------+                  +-----------+                     +-----------+      |   |
+   |             |  |  |               | V+        |                  | V+        |                     | V+        |      |   |
+   |   master    |  |  +               |           |                  |           |                     |           |      +   |
+   |             |  | 4k7              | Chip/slave|                  | Chip/slave|                     | Chip/slave|     4k7  |
+   |             |  +  +  Pull-up      |           |                  |           |                     |           |      +   |
+   |             | 4k7 |               |SDA SCL GND|                  |SDA SCL GND|                     |SDA SCL GND|      |   +
+   |             |  +  |               +-----------+                  +-----------+                     +-----------+      |  4k7
+   |             |  |  |                 |   |   |                      |   |   |                         |   |   |        |   +
+   |             |  |  |                 |   |   |                      |   |   |                         |   |   |        |   |
+   |             |  |  |                 |   |   |                      |   |   |                         |   |   |        |   |
+   |      PINsda +-----------------------------------------------------------------------// -------------------------------+   |
+   |             |     |  I2C Bus            |   |                          |   |                             |   |            |
+   |      PINscl +-----------------------------------------------------------------------// -----------------------------------+
+   |             |                               |                              |                                 |
+   |         GND +-----------------------------------------------------------------------// ----------------------+
    |             |
    +-------------+
 
@@ -49,38 +49,44 @@
  ---------
  Both the SCL and the SDA line needs to be pulled up by p-u resistors. Value not critical for such slow speeds that Spin can do, but should be in the order of 1k-47k.
  With long lines have p-u resistors at each node to reduce noise or interference.
- 
+
  REF:
  http://www.8051projects.net/wiki/I2C_TWI_Tutorial
  http://i2c.info/i2c-bus-specification
 
 =======================================================================================================================================================================
 }
- 
+
 CON
 
-          mSec = 117965                                             ' 7372.8 * 16 simple xin*pll / 1_000 = ticks in 1ms
-          uSec = 118                                                ' 7.3728 * 16 simple xin*pll / 1_000_000 = ticks in 1us
+          mSec = 117965                                             ' ticks in 1ms = 7,372,800 * 16 xin * pll / 1_000
+          uSec = 118                                                ' ticks in 1us = 7,372,800 * 16 xin * pll / 1_000_000
 
 CON
 
           ACK = 0                                                   'signals ready for more
           NAK = 1                                                   'signals not ready for more
 
-DAT
-          PINscl              LONG    29                            'Use DAT variable to make the assignment stick for later calls to the object, and optionally
-          PINsda              LONG    28                            'assign to default pin numbers. Use Init( ) to change at runtime. Best for many chips same one bus.
-                                                                    'and assign to default pin numbers Use Init( ) to change at runtime
+CON
 
-          BusInitialized      LONG    FALSE                         'If this is not desired, change from defining PINmosi etc. as DAT to VAR, and                       
-                                                                    'assign value to them in Init by means of 'PINmosi:= _PINmosi' etc. instead. Best when many busses.
+          SCL_PIN = 29                                              'This is reversed from standard pinout, to ensure that only the EEPROM
+          SDA_PIN = 28                                              'appears on the I2C bus during boot process. Ensures no address conflicts.
+
+DAT
+          PINscl              LONG    0                             'Use DAT variable to make the assignment stick for later calls to the object, and optionally
+          PINsda              LONG    0                             'assign to default pin numbers. Use init( ) to change at runtime. Best for many chips same one bus.
+                                                                    'and assign to default pin numbers Use init( ) to change at runtime
+
+          BusInitialized      LONG    FALSE                         'If this is not desired, change from defining PINmosi etc. as DAT to VAR, and
+                                                                    'assign value to them in init( ) by means of 'PINmosi:= _PINmosi' etc. instead.
+                                                                    'Best when many busses.
 
           ThisObjectInstance  LONG    1                             'Change to separate object loads for different physical buses
 
           fit
 
 
-PUB Init(_PINscl, _PINsda)
+PUB init(_PINscl, _PINsda)
 
 'INITIATION METHOD
 '=================================================================================================================================================
@@ -91,298 +97,298 @@ PUB Init(_PINscl, _PINsda)
    DIRA[PINscl] := 0                                                'Float output
    OUTA[PINscl] := 0                                                'and set to 0
    DIRA[PINsda] := 0                                                'to simulate open collector i/o (i.e. pull-up resistors required)
-   Reset                                                            'Do bus reset to clear any chips' activity
+   reset                                                            'Do bus reset to clear any chips' activity
    LONG[@BusInitialized]:= TRUE                                     'Keep tally of initialization
 
 
-PUB IsInitialized
+PUB isInitialized
 
-   RETURN BusInitialized  
-   
-   
+   RETURN BusInitialized
+
+
 'CHIP LEVEL METHODS    - calls BUS LEVEL METHODS below, encapsulates the details of the workings of the bus
 '=================================================================================================================================================
 'Write
 
-'Byte (8bit) 
-   
-PUB WriteByteA8(ChipAddr, RegAddr, Value)                           'Write a byte to specified chip and 8bit register address
+'Byte (8bit)
 
-   IF CallChip(ChipAddr << 1)== ACK                                 'Shift left 1 to add on the read/write bit, default 0 (write)
-     WriteBus(RegAddr)
-     WriteBus(Value)                             
-     Stop
+PUB writeByteA8(ChipAddr, RegAddr, Value)                           'Write a byte to specified chip and 8bit register address
 
-
-PUB WriteByteA16(ChipAddr, RegAddr, Value)                          'Write a byte to specified chip and 16bit register address
-
-   IF CallChip(ChipAddr << 1)== ACK                                 'Shift left 1 to add on the read/write bit, default 0 (write)
-     WriteBus(RegAddr.BYTE[1])                                      'MSB
-     WriteBus(RegAddr.BYTE[0])                                      'LSB
-     WriteBus(Value)                             
-     Stop
+   IF callChip(ChipAddr << 1)== ACK                                 'Shift left 1 to add on the read/write bit, default 0 (write)
+     writeBus(RegAddr)
+     writeBus(Value)
+     stop
 
 
-'Word (16bit) 
+PUB writeByteA16(ChipAddr, RegAddr, Value)                          'Write a byte to specified chip and 16bit register address
 
-PUB WriteWordA8(ChipAddr, RegAddr, Value)                           'Write a Word to specified chip and 8bit register address
-
-   IF CallChip(ChipAddr << 1)== ACK                                 'Shift left 1 to add on the read/write bit, default 0 (write)
-     WriteBus(RegAddr)
-     WriteBus(Value.BYTE[1])                                        'MSB
-     WriteBus(Value.BYTE[0])                                        'LSB
-     Stop
+   IF callChip(ChipAddr << 1)== ACK                                 'Shift left 1 to add on the read/write bit, default 0 (write)
+     writeBus(RegAddr.BYTE[1])                                      'MSB
+     writeBus(RegAddr.BYTE[0])                                      'LSB
+     writeBus(Value)
+     stop
 
 
-PUB WriteWordA16(ChipAddr, RegAddr, Value)                          'Write a Word to specified chip and 16bit register address
+'Word (16bit)
 
-   IF CallChip(ChipAddr << 1)== ACK                                 'Shift left 1 to add on the read/write bit, default 0 (write)
-     WriteBus(RegAddr.BYTE[1])                                      'MSB
-     WriteBus(RegAddr.BYTE[0])                                      'LSB
-     WriteBus(Value.BYTE[1])                                        'MSB
-     WriteBus(Value.BYTE[0])                                        'LSB                             
-     Stop
-    
+PUB writeWordA8(ChipAddr, RegAddr, Value)                           'Write a Word to specified chip and 8bit register address
 
-'Long (32bit) 
-
-PUB WriteLongA8(ChipAddr, RegAddr, Value)                           'Write a Long to specified chip and 8bit register address
-
-   IF CallChip(ChipAddr << 1)== ACK                                 'Shift left 1 to add on the read/write bit, default 0 (write)
-     WriteBus(RegAddr)
-     WriteBus(Value.BYTE[3])                                        'MSB
-     WriteBus(Value.BYTE[2])                                        'NMSB          
-     WriteBus(Value.BYTE[1])                                        'NLSB
-     WriteBus(Value.BYTE[0])                                        'LSB
-     Stop
+   IF callChip(ChipAddr << 1)== ACK                                 'Shift left 1 to add on the read/write bit, default 0 (write)
+     writeBus(RegAddr)
+     writeBus(Value.BYTE[1])                                        'MSB
+     writeBus(Value.BYTE[0])                                        'LSB
+     stop
 
 
-PUB WriteLongA16(ChipAddr, RegAddr, Value)                          'Write a Long to specified chip and 16bit register address
+PUB writeWordA16(ChipAddr, RegAddr, Value)                          'Write a Word to specified chip and 16bit register address
 
-   IF CallChip(ChipAddr << 1)== ACK                                 'Shift left 1 to add on the read/write bit, default 0 (write)
-     WriteBus(RegAddr.BYTE[1])                                      'MSB
-     WriteBus(RegAddr.BYTE[0])                                      'LSB
-     WriteBus(Value.BYTE[3])                                        'MSB
-     WriteBus(Value.BYTE[2])                                        'NMSB          
-     WriteBus(Value.BYTE[1])                                        'NLSB
-     WriteBus(Value.BYTE[0])                                        'LSB                          
-     Stop
-     
+   IF callChip(ChipAddr << 1)== ACK                                 'Shift left 1 to add on the read/write bit, default 0 (write)
+     writeBus(RegAddr.BYTE[1])                                      'MSB
+     writeBus(RegAddr.BYTE[0])                                      'LSB
+     writeBus(Value.BYTE[1])                                        'MSB
+     writeBus(Value.BYTE[0])                                        'LSB
+     stop
 
-' Special ------------not debugged, written in attempt to communicate with adafruit oled -------------------------------------------------------------------------     
 
-PUB WriteByteDirect(ChipAddr, FlagByte, OneByte)                    'Write direct, flagbyte determines if command, parameter or data,  register addressing not used
+'Long (32bit)
 
-   IF CallChip(ChipAddr << 1)== ACK                                 'Shift left 1 to add on the read/write bit, default 0 (write)
-     WriteBus(FlagByte)                                             'FlagByte determines if data is received as command, parameter or data
-     WriteBus(OneByte)
-     Stop
+PUB writeLongA8(ChipAddr, RegAddr, Value)                           'Write a Long to specified chip and 8bit register address
 
-     
-PUB WriteBlockDirect(ChipAddr, FlagByte, OneByte, begin_end)        'Write direct, flagbyte must signal 'data write' begin_end=  1:begin, 0:continue, -1:end
+   IF callChip(ChipAddr << 1)== ACK                                 'Shift left 1 to add on the read/write bit, default 0 (write)
+     writeBus(RegAddr)
+     writeBus(Value.BYTE[3])                                        'MSB
+     writeBus(Value.BYTE[2])                                        'NMSB
+     writeBus(Value.BYTE[1])                                        'NLSB
+     writeBus(Value.BYTE[0])                                        'LSB
+     stop
+
+
+PUB writeLongA16(ChipAddr, RegAddr, Value)                          'Write a Long to specified chip and 16bit register address
+
+   IF callChip(ChipAddr << 1)== ACK                                 'Shift left 1 to add on the read/write bit, default 0 (write)
+     writeBus(RegAddr.BYTE[1])                                      'MSB
+     writeBus(RegAddr.BYTE[0])                                      'LSB
+     writeBus(Value.BYTE[3])                                        'MSB
+     writeBus(Value.BYTE[2])                                        'NMSB
+     writeBus(Value.BYTE[1])                                        'NLSB
+     writeBus(Value.BYTE[0])                                        'LSB
+     stop
+
+
+' Special ------------not debugged, written in attempt to communicate with adafruit oled -------------------------------------------------------------------------
+
+PUB writeByteDirect(ChipAddr, FlagByte, OneByte)                    'Write direct, flagbyte determines if command, parameter or data,  register addressing not used
+
+   IF callChip(ChipAddr << 1)== ACK                                 'Shift left 1 to add on the read/write bit, default 0 (write)
+     writeBus(FlagByte)                                             'FlagByte determines if data is received as command, parameter or data
+     writeBus(OneByte)
+     stop
+
+
+PUB writeBlockDirect(ChipAddr, FlagByte, OneByte, begin_end)        'Write direct, flagbyte must signal 'data write' begin_end=  1:begin, 0:continue, -1:end
    IF begin_end== 1
-     IF CallChip(ChipAddr << 1)== ACK                               'Shift left 1 to add on the read/write bit, default 0 (write)
-        WriteBus(FlagByte)                                          'FlagByte determines if data is received as command, parameter or data
-        WriteBus(OneByte)                                           'First byte of data
+     IF callChip(ChipAddr << 1)== ACK                               'Shift left 1 to add on the read/write bit, default 0 (write)
+        writeBus(FlagByte)                                          'FlagByte determines if data is received as command, parameter or data
+        writeBus(OneByte)                                           'First byte of data
    ELSEIF begin_end== 0
-      WriteBus(FlagByte)    
-      WriteBus(OneByte)                                             'A number of bytes of data
-   ELSEIF begin_end== -1   
-       WriteBus(FlagByte)
-       WriteBus(OneByte)                                            'Last byte of data
-       Stop
+      writeBus(FlagByte)
+      writeBus(OneByte)                                             'A number of bytes of data
+   ELSEIF begin_end== -1
+       writeBus(FlagByte)
+       writeBus(OneByte)                                            'Last byte of data
+       stop
 
 
 
 'Read------------------------------------------------------------------------------------------------------
 'Byte
 
-PUB ReadByteA8(ChipAddr, RegAddr) | Value                           'Read a byte from specified chip and 8bit register address
+PUB readByteA8(ChipAddr, RegAddr) | Value                           'Read a byte from specified chip and 8bit register address
 
-   IF CallChip(ChipAddr << 1)== ACK                                 'Check if chip responded
-     WriteBus(RegAddr)
-     Start                                                          'Restart for reading
-     WriteBus(ChipAddr << 1 | 1 )                                   'address again, but with the read/write bit set to 1 (read)
-     Value:= ReadBus(NAK)
-     Stop
-     RETURN Value
-   ELSE
-     RETURN FALSE  
- 
-
-PUB ReadByteA16(ChipAddr, RegAddr) | Value                          'Read a byte from specified chip and 16bit register address
-
-   IF CallChip(ChipAddr << 1)== ACK                                 'Check if chip responded
-     WriteBus(RegAddr.BYTE[1])                                      'MSB
-     WriteBus(RegAddr.BYTE[0])                                      'LSB    
-     Start                                                          'Restart for reading
-     WriteBus(ChipAddr << 1 | 1 )                                   'address again, but with the read/write bit set to 1 (read)
-     Value:= ReadBus(NAK)
-     Stop
+   IF callChip(ChipAddr << 1)== ACK                                 'Check if chip responded
+     writeBus(RegAddr)
+     start                                                          'Restart for reading
+     writeBus(ChipAddr << 1 | 1 )                                   'address again, but with the read/write bit set to 1 (read)
+     Value:= readBus(NAK)
+     stop
      RETURN Value
    ELSE
      RETURN FALSE
-     
+
+
+PUB readByteA16(ChipAddr, RegAddr) | Value                          'Read a byte from specified chip and 16bit register address
+
+   IF callChip(ChipAddr << 1)== ACK                                 'Check if chip responded
+     writeBus(RegAddr.BYTE[1])                                      'MSB
+     writeBus(RegAddr.BYTE[0])                                      'LSB
+     start                                                          'Restart for reading
+     writeBus(ChipAddr << 1 | 1 )                                   'address again, but with the read/write bit set to 1 (read)
+     Value:= readBus(NAK)
+     stop
+     RETURN Value
+   ELSE
+     RETURN FALSE
+
 'Word
- 
-PUB ReadWordA8(ChipAddr, RegAddr) | Value                           'Read a Word from specified chip and 8bit register address
 
-   IF CallChip(ChipAddr << 1)== ACK                                 'Check if chip responded
-     WriteBus(RegAddr)
-     Start                                                          'Restart for reading
-     WriteBus(ChipAddr << 1 | 1 )                                   'address again, but with the read/write bit set to 1 (read)
+PUB readWordA8(ChipAddr, RegAddr) | Value                           'Read a Word from specified chip and 8bit register address
+
+   IF callChip(ChipAddr << 1)== ACK                                 'Check if chip responded
+     writeBus(RegAddr)
+     start                                                          'Restart for reading
+     writeBus(ChipAddr << 1 | 1 )                                   'address again, but with the read/write bit set to 1 (read)
      Value.BYTE[3]:= 0                                              'clear the rubbish
      Value.BYTE[2]:= 0                                              'clear the rubbish
-     Value.BYTE[1]:= ReadBus(ACK)                                   'MSB
-     Value.BYTE[0]:= ReadBus(NAK)                                   'LSB        
-     Stop 
+     Value.BYTE[1]:= readBus(ACK)                                   'MSB
+     Value.BYTE[0]:= readBus(NAK)                                   'LSB
+     stop
      RETURN Value
    ELSE
-     RETURN FALSE  
- 
+     RETURN FALSE
 
-PUB ReadWordA16(ChipAddr, RegAddr) | Value                          'Read a Word from specified chip and 16bit register address
 
-   IF CallChip(ChipAddr << 1)== ACK                                 'Check if chip responded
-     WriteBus(RegAddr.BYTE[1])                                      'MSB
-     WriteBus(RegAddr.BYTE[0])                                      'LSB    
-     Start                                                          'Restart for reading
-     WriteBus(ChipAddr << 1 | 1 )                                   'address again, but with the read/write bit set to 1 (read)
+PUB readWordA16(ChipAddr, RegAddr) | Value                          'Read a Word from specified chip and 16bit register address
+
+   IF callChip(ChipAddr << 1)== ACK                                 'Check if chip responded
+     writeBus(RegAddr.BYTE[1])                                      'MSB
+     writeBus(RegAddr.BYTE[0])                                      'LSB
+     start                                                          'Restart for reading
+     writeBus(ChipAddr << 1 | 1 )                                   'address again, but with the read/write bit set to 1 (read)
      Value.BYTE[3]:= 0                                              'clear the rubbish
      Value.BYTE[2]:= 0                                              'clear the rubbish
-     Value.BYTE[1]:= ReadBus(ACK)                                   'MSB
-     Value.BYTE[0]:= ReadBus(NAK)                                   'LSB 
-     Stop
+     Value.BYTE[1]:= readBus(ACK)                                   'MSB
+     Value.BYTE[0]:= readBus(NAK)                                   'LSB
+     stop
      RETURN Value
    ELSE
-     RETURN FALSE 
+     RETURN FALSE
 
 
 'Long
 
-PUB ReadLongA8(ChipAddr, RegAddr) | Value                           'Read a Long from specified chip and 8bit register address
+PUB readLongA8(ChipAddr, RegAddr) | Value                           'Read a Long from specified chip and 8bit register address
 
-   IF CallChip(ChipAddr << 1)== ACK                                 'Check if chip responded
-     WriteBus(RegAddr)
-     Start                                                          'Restart for reading
-     WriteBus(ChipAddr << 1 | 1 )                                   'address again, but with the read/write bit set to 1 (read)
-     Value.BYTE[3]:= ReadBus(ACK)                                   'MSB
-     Value.BYTE[2]:= ReadBus(ACK)                                   'NMSB 
-     Value.BYTE[1]:= ReadBus(ACK)                                   'NLSB
-     Value.BYTE[0]:= ReadBus(NAK)                                   'LSB 
-     Stop
+   IF callChip(ChipAddr << 1)== ACK                                 'Check if chip responded
+     writeBus(RegAddr)
+     start                                                          'Restart for reading
+     writeBus(ChipAddr << 1 | 1 )                                   'address again, but with the read/write bit set to 1 (read)
+     Value.BYTE[3]:= readBus(ACK)                                   'MSB
+     Value.BYTE[2]:= readBus(ACK)                                   'NMSB
+     Value.BYTE[1]:= readBus(ACK)                                   'NLSB
+     Value.BYTE[0]:= readBus(NAK)                                   'LSB
+     stop
      RETURN Value
    ELSE
-     RETURN FALSE  
- 
+     RETURN FALSE
 
-PUB ReadLongA16(ChipAddr, RegAddr) | Value                          'Read a Long from specified chip and 16bit register address
 
-   IF CallChip(ChipAddr << 1)== ACK                                 'Check if chip responded
-     WriteBus(RegAddr.BYTE[1])                                      'MSB
-     WriteBus(RegAddr.BYTE[0])                                      'LSB    
-     Start                                                          'Restart for reading
-     WriteBus(ChipAddr << 1 | 1 )                                   'address again, but with the read/write bit set to 1 (read)
-     Value.BYTE[3]:= ReadBus(ACK)                                   'MSB
-     Value.BYTE[2]:= ReadBus(ACK)                                   'NMSB 
-     Value.BYTE[1]:= ReadBus(ACK)                                   'NLSB
-     Value.BYTE[0]:= ReadBus(NAK)                                   'LSB 
-     Stop
+PUB readLongA16(ChipAddr, RegAddr) | Value                          'Read a Long from specified chip and 16bit register address
+
+   IF callChip(ChipAddr << 1)== ACK                                 'Check if chip responded
+     writeBus(RegAddr.BYTE[1])                                      'MSB
+     writeBus(RegAddr.BYTE[0])                                      'LSB
+     start                                                          'Restart for reading
+     writeBus(ChipAddr << 1 | 1 )                                   'address again, but with the read/write bit set to 1 (read)
+     Value.BYTE[3]:= readBus(ACK)                                   'MSB
+     Value.BYTE[2]:= readBus(ACK)                                   'NMSB
+     Value.BYTE[1]:= readBus(ACK)                                   'NLSB
+     Value.BYTE[0]:= readBus(NAK)                                   'LSB
+     stop
      RETURN Value
    ELSE
-     RETURN FALSE   
+     RETURN FALSE
 
 
 'BUS LEVEL METHODS
-'=============================================================================================================================================   
-PUB Reset                                                           'Do bus reset to clear any chips' activity
+'=============================================================================================================================================
+PUB reset                                                           'Do bus reset to clear any chips' activity
 
    OUTA[PINsda] := 0                                                'Float SDA
-   REPEAT 9                                                         
+   REPEAT 9
      DIRA[PINscl] := 1                                              'Toggle SCL to clock out any remaining bits, maximum 8bits + acknak bit
      DIRA[PINscl] := 0                                              'or until
      IF (INA[PINsda])                                               'SDA is released to go high by chip(s)
-       QUIT 
+       QUIT
 
 
-PUB IsBusy
+PUB isBusy
 
    IF INA[PINsda]== 1 AND INA[PINscl]== 1
      RETURN FALSE
    ELSE
-     RETURN TRUE  
-       
+     RETURN TRUE
 
-PUB WhoOnBus(ptrOnBusArr) | onbus, addr                             'Fills an array with max 119 elements with addresses that get a response
+
+PUB whoOnBus(ptrOnBusArr) | onbus, addr                             'Fills an array with max 119 elements with addresses that get a response
                                                                     'and writes how many is onbus to the 0th element
    onbus:= 1
-   
+
    REPEAT addr FROM %0000_1000 TO %0111_0111                        'Scan the entire address space, exept for reserved spaces
-     IF CallChip(addr << 1)== ACK                                   'If a chip acknowledges,
+     IF callChip(addr << 1)== ACK                                   'If a chip acknowledges,
        LONG[ptrOnBusArr][onbus]:= addr                              'put that address in the callers array
        LONG[ptrOnBusArr][0]:= onbus                                 'and update the total count of chips on the bus
-       onbus++                                                      
+       onbus++
        IF onbus> 119                                                'until loop expires or maximum number of elements in the array is reached
-         Stop
+         stop
          QUIT
-     Stop                                                           'After each call send a stop signal to avoid confusion
-   
-       
-PUB CallChip(ChipAddr) | acknak, t                                  'Address the chip until it acknowledges or timeout
+     stop                                                           'After each call send a stop signal to avoid confusion
+
+
+PUB callChip(ChipAddr) | acknak, t                                  'Address the chip until it acknowledges or timeout
 
   t:= CNT                                                           'Set start time
-  REPEAT                                                            
-     Start                                                          'Prepare chips for responding
-     acknak:= WriteBus(ChipAddr)                                    'Address the chip
+  REPEAT
+     start                                                          'Prepare chips for responding
+     acknak:= writeBus(ChipAddr)                                    'Address the chip
      IF CNT > t+ 10*mSec                                            'and break if timeout
-       RETURN NAK     
+       RETURN NAK
   UNTIL acknak == ACK                                               'or until it acknowledges
   RETURN ACK
 
 
-PUB Start                                                           'Check that no chip is holding down SCL, then signal 'start'
+PUB start                                                           'Check that no chip is holding down SCL, then signal 'start'
 
-   DIRA[PINsda] := 0                                                
-   DIRA[PINscl] := 0                                                
+   DIRA[PINsda] := 0
+   DIRA[PINscl] := 0
    WAITPEQ(|<PINscl,|<PINscl, 0)                                    'Check/ wait for SCL to be released
    DIRA[PINsda] := 1                                                'Signal 'start'
-   DIRA[PINscl] := 1                                                
+   DIRA[PINscl] := 1
 
-  
-PUB WriteBus(BusByte) | acknak                                      'Clock out 8 bits to the bus
+
+PUB writeBus(BusByte) | acknak                                      'Clock out 8 bits to the bus
 
    BusByte := (BusByte ^ $FF) << 24                                 'XOR all bits with '1' to invert them, then shift left to bit 31
    REPEAT 8                                                         '(output the bits as inverted because DIRA:= 1 gives pin= '0')
      DIRA[PINsda] := BusByte <-= 1                                  'send msb first and bitwise rotate left to send the next bits
-     DIRA[PINscl] := 0                                              'clock the bus 
-     DIRA[PINscl] := 1                                              'and leave SCL low 
+     DIRA[PINscl] := 0                                              'clock the bus
+     DIRA[PINscl] := 1                                              'and leave SCL low
 
    DIRA[PINsda] := 0                                                'Float SDA to read ack bit
-   DIRA[PINscl] := 0                                                'clock the bus  
+   DIRA[PINscl] := 0                                                'clock the bus
    acknak := INA[PINsda]                                            'read ack bit
    DIRA[PINscl] := 1                                                'and leave SCL low
 
    RETURN acknak
 
 
-PUB ReadBus(acknak) | BusByte                                       'Clock in  8 bits from the bus
+PUB readBus(acknak) | BusByte                                       'Clock in  8 bits from the bus
 
   DIRA[PINsda] := 0                                                 'Float SDA to read input bits
 
   REPEAT 8
     DIRA[PINscl] := 0                                               'clock the bus
-    WAITPEQ(|<PINscl,|<PINscl, 0)                                   'check/ wait for SCL to be released  
+    WAITPEQ(|<PINscl,|<PINscl, 0)                                   'check/ wait for SCL to be released
     BusByte := (BusByte << 1) | INA[PINsda]                         'read the bit
     DIRA[PINscl] := 1                                               'and leave SCL low
- 
+
   DIRA[PINsda] := !acknak                                           'output nak if finished, ack if more reads
   DIRA[PINscl] := 0                                                 'clock the bus
   DIRA[PINscl] := 1                                                 'and leave SCL low
 
-  RETURN BusByte                                           
+  RETURN BusByte
 
 
-PUB Stop                                                            'Send stop sequence
+PUB stop                                                            'Send stop sequence
 
   DIRA[PINsda] := 1                                                 'Pull SDA low
   DIRA[PINscl] := 0                                                 'float SCL and
