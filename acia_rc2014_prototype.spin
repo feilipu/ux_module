@@ -21,6 +21,23 @@
 ''      A7 --------------------------------+
 ''
 ''
+'' I/O Address line mapping (OBSOLETE):
+'' Only 1 PROTOTYPE device built.
+''
+''             P7  P6  P5  P4  P3  P2  P1  P0
+''             0   x   x   1   x   0   x   x
+''             |   |   |   |   |   |   |   |
+''             |   |   |   |   |   |   |   |
+''      /IORQ -+   |   |   |   |   |   |   |
+''      /RD -------+   |   |   |   |   |   |
+''      /WR -----------+   |   |   |   |   |
+''      /M1 ---------------+   |   |   |   |
+''      A0 --------------------+   |   |   |
+''      A5|A4|A3|A2|A1 ------------+   |   |
+''      A6 ----------------------------+   |
+''      A7 --------------------------------+
+''
+''
 '' I/O Data line mapping:
 ''
 ''             P15 P14 P13 P12 P11 P10 P9  P8
@@ -53,17 +70,16 @@ CON
   DATA_PINS   =   %1111_1111          '8 bit data bus
 
   INT_PIN_NUM =   25
-  RESET_PIN_NUM = 5
   INT_PIN     =   |< INT_PIN_NUM
   WAIT_PIN    =   |< 24
 
-  RD_PIN      =   |< 7
-  WR_PIN      =   |< 6
-  RESET_PIN   =   |< RESET_PIN_NUM
+  IORQ_PIN    =   |< 7
+  RD_PIN      =   |< 6
+  WR_PIN      =   |< 5
   M1_PIN      =   |< 4
 
   A0_PIN      =   |< 3
-  A5_A1_PINS  =   |< 2                'NOR Gated, so will be logic high for 0
+  A5_A1_PINS  =   |< 2
   A6_PIN      =   |< 1
   A7_PIN      =   |< 0
 
@@ -74,17 +90,17 @@ CON
 
 CON
 
-  PORT_00     =   A5_A1_PINS
-  PORT_01     =   A5_A1_PINS | A0_PIN
+  PORT_00     =   0
+  PORT_01     =   A0_PIN
 
-  PORT_40     =   A6_PIN | A5_A1_PINS
-  PORT_41     =   A6_PIN | A5_A1_PINS | A0_PIN
+  PORT_40     =   A6_PIN
+  PORT_41     =   A6_PIN | A0_PIN
 
-  PORT_80     =   A7_PIN | A5_A1_PINS
-  PORT_81     =   A7_PIN | A5_A1_PINS | A0_PIN
+  PORT_80     =   A7_PIN
+  PORT_81     =   A7_PIN | A0_PIN
 
-  PORT_C0     =   A7_PIN | A6_PIN | A5_A1_PINS
-  PORT_C1     =   A7_PIN | A6_PIN | A5_A1_PINS | A0_PIN
+  PORT_C0     =   A7_PIN | A6_PIN
+  PORT_C1     =   A7_PIN | A6_PIN | A0_PIN
 
   PORT_MASK   =   A7_PIN | A6_PIN | A5_A1_PINS
 
@@ -263,7 +279,7 @@ wait
                                                         ' including /WAIT pin
 
                         waitpne outa,port_active_mask
-                        waitpeq outa,port_active_mask wr' wait until we see our addresses (including /IORQ within A5_A1_PINS)
+                        waitpeq outa,port_active_mask wr' wait until we see our addresses, together with /IORQ low
                                                         ' use wr effect to set /WAIT low on match (/INT gets hit as a side effect)
 
                         andn    outa,bus_int            ' reset /INT pin (modified as a side effect of the waitpeq outa wr effect)
@@ -398,7 +414,7 @@ bus_m1                  long    M1_PIN
 
 bus_a0                  long    A0_PIN
 
-port_active_mask        long    WAIT_PIN | M1_PIN | PORT_MASK
+port_active_mask        long    WAIT_PIN | IORQ_PIN | M1_PIN | PORT_MASK
 data_active_mask        long    DATA_PINS << DATA_BASE
 
 acia_config_initial     long    ( CR_TDI_RTS0 | CR_8N1 | CR_DIV_64 ) << DATA_BASE

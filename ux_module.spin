@@ -145,7 +145,7 @@ PUB start
   repeat
     readZ80
     kbdWriteZ80
-'   termWriteZ80
+    termWriteZ80
 
 
 CON
@@ -252,7 +252,8 @@ PUB kbdWriteZ80 | char
           next
 
         kbd#KBD_ASCII_CTRL | kbd#KBD_ASCII_ALT | kbd#KBD_ASCII_DEL:
-          reboot
+          dira[ acia#RESET_PIN_NUM ]~~                               ' Set /RESET pin to output to reset the Z80
+          dira[ acia#RESET_PIN_NUM ]~                                ' Set /RESET pin to input (measured pulse is 5,600ns)
 
         other:      ' all other input
           acia.tx (char)
