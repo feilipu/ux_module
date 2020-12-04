@@ -127,7 +127,8 @@ PUB start
   'start the serial terminal
   term.start (115200)
   term.clear                                        ' clear terminal
-  term.str (string("UX Module Initialising...",$0D))
+  term.str (string("UX Module Initialising..."))
+  term.lineFeed
 
   'start the ACIA interface
   acia.start (PORT_80)
@@ -141,7 +142,7 @@ PUB start
   'start the VGA scren
   screenInit
 
-  ' MAIN EVENT LOOP - this is where you put all your code in a non-blocking infinite loop...
+  'MAIN EVENT LOOP - this is where you put all your code in a non-blocking infinite loop...
   repeat
     readZ80
     kbdWriteZ80
@@ -193,44 +194,110 @@ PUB readZ80 | char
 
       ' get character from buffer
       char := acia.rx
-  
-      ' send it out the serial terminal (transparently)
-      term.char (char)
-  
-      ' display it on the screen
+
       case char
-        ASCII_CR: ' return
-  
+
+        ASCII_CR:                               ' return
           wmf.outScreen ( NL )
 
           gTextCursX := 0
           if (gTextCursY < gScreenRows )
             ++gTextCursY
 
-        ASCII_LF: ' line feed
-          next
+          term.lineFeed
 
-        ASCII_BS, ASCII_DEL: ' backspace (edit)
-  
+        ASCII_LF:                               ' line feed
+
+          term.lineFeed
+
+        ASCII_BS, ASCII_DEL:                    ' backspace (edit)
           if (gTextCursX < gScreenCols )
            ' move cursor back once to overwrite last character on screen
            wmf.outScreen ( BS )
            wmf.outScreen ( ASCII_SPACE )
            wmf.outScreen ( BS )
 
+           term.char ( ASCII_BS )
+           term.char ( ASCII_SPACE)
+           term.char ( ASCII_BS )
+
            --gTextCursX
+
+        ASCII_ESC:                              ' escape
+          char := acia.rx                       ' get next character after escape
+
+          case char
+
+            ASCII_LB:                           ' CSI Control Sequence Introducer
+              char := acia.rx                   ' get next character after CSI
+
+              case char
+
+                "A":                            ' cursor up
+                  if (gTextCursY > 0 )
+                    --gTextCursY
+
+                  term.str ( string (ASCII_ESC,"[A") )
+
+                "B":                            ' cursor down
+                  if (gTextCursY < gScreenRows )
+                    ++gTextCursY
+
+                  term.str ( string (ASCII_ESC,"[B") )
+
+                "C":                            ' cursor right
+                  if (gTextCursX < gScreenCols)
+                    ++gTextCursX
+
+                  term.str ( string (ASCII_ESC,"[C") )
+
+                "D":                            ' cursor left
+                  if (gTextCursX > 0 )
+                    --gTextCursX
+
+                  term.str ( string (ASCII_ESC,"[D") )
+
+                "E":                            ' cursor next line start
+                  gTextCursX := 0
+                  if (gTextCursY < gScreenRows )
+                    ++gTextCursY
+
+                  term.str ( string (ASCII_ESC,"[E") )
+
+                "F":                            ' cursor previous line start
+                  gTextCursX := 0
+                  if (gTextCursY > 0  )
+                    --gTextCursY
+
+                  term.str ( string (ASCII_ESC,"[F") )
+
+                "H":                            ' cursor home
+                  gTextCursX := gTextCursY := 0
+
+                  wmf.outScreen ( HM )
+
+                  term.str ( string (ASCII_ESC,"[H") )
+
+                other:                          ' all other cases                   
+                  next                          ' ignore CSI and following character
+
+            other:                              ' all other cases
+              next                              ' ignore ESC and following character
   
-        other:    ' all other cases
+        other:                                  ' all other cases
   
-           ' update length
-           if (gTextCursX < gScreenCols )
-             ++gTextCursX
-           else
-             ' move cursor back once to overwrite last character on screen
+          ' update length
+          if (gTextCursX < gScreenCols )
+            ++gTextCursX
+          else
+            ' move cursor back once to overwrite last character on screen
              wmf.outScreen ( BS )
   
-           ' echo character
-           wmf.outScreen ( char )
+          ' echo character
+          wmf.outScreen ( char )
+
+          ' send it out the serial terminal (transparently)
+          term.char (char)
 
 
 PUB kbdWriteZ80 | char
@@ -250,6 +317,25 @@ PUB kbdWriteZ80 | char
 
         kbd#KBD_ASCII_LF:
           next
+
+        kbd#KBD_ASCII_ESC:
+          acia.tx (ASCII_ESC)
+
+        kbd#KBD_ASCII_UP:
+          acia.txString ( string (ASCII_ESC, "[A") )
+
+        kbd#KBD_ASCII_DOWN:
+          acia.txString ( string (ASCII_ESC, "[B") )
+
+        kbd#KBD_ASCII_RIGHT:
+          acia.txString ( string (ASCII_ESC, "[C") )
+
+        kbd#KBD_ASCII_LEFT:
+          acia.txString ( string (ASCII_ESC, "[D") )
+
+        kbd#KBD_ASCII_HOME:
+          acia.txString ( string (ASCII_ESC, "[H") )
+
 
         kbd#KBD_ASCII_CTRL | kbd#KBD_ASCII_ALT | kbd#KBD_ASCII_DEL:
           dira[ acia#RESET_PIN_NUM ]~~                               ' Set /RESET pin to output to reset the Z80

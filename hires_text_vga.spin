@@ -34,7 +34,7 @@ CON
   vn = 1        'vertical normal sync state (0|1)
   pr = 77       'pixel rate in MHz at 118MHz system clock (7MHz granularity)
 }
-'{
+{
 ' 800 x 600 @ 67Hz settings: 100 x 50 characters
 
   hp = 800      'horizontal pixels
@@ -48,8 +48,8 @@ CON
   hn = 0        'horizontal normal sync state (0|1)
   vn = 0        'vertical normal sync state (0|1)
   pr = 42       'pixel rate in MHz at 118MHz system clock (7MHz granularity)
-'}
-{
+}
+'{
 ' 640 x 480 @ 85Hz settings: 80 x 40 characters
 
   hp = 640      'horizontal pixels
@@ -63,7 +63,7 @@ CON
   hn = 1        'horizontal normal sync state (0|1)
   vn = 1        'vertical normal sync state (0|1)
   pr = 35       'pixel rate in MHz at 118MHz system clock (7MHz granularity)
-}
+'}
 {
 ' 640 x 480 @ 70Hz settings: 80 x 40 characters
 

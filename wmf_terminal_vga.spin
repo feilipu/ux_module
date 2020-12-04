@@ -340,7 +340,7 @@ RETURNS: Nothing.
   if ( pInvFlag )
     repeat index from 1 to strLen
       byte[gVideoBufferPtr][vgaIndex] += 128
-      vgaIndex++
+      ++vgaIndex
 
 ' end PUB ----------------------------------------------------------------------
 
@@ -870,7 +870,7 @@ RETURNS: Number of bytes copied.
   repeat while (byte [ pSourceStrPtr ][ strIndex ] <> NULL)
   ' copy next byte
    byte [ pDestStrPtr ][ strIndex ] := byte [ pSourceStrPtr ][ strIndex ]
-   strIndex++
+   ++strIndex
 
 ' null terminate
   byte [ pDestStrPtr ][ strIndex ] := NULL
@@ -893,7 +893,7 @@ RETURNS: pStringPtr converted to uppercase.
   if ( pStringPtr <> NULL)
     repeat while (byte[ pStringPtr ] <> NULL)
       byte[ pStringPtr ] :=  ToUpper( byte[ pStringPtr ] )
-      pStringPtr++
+      ++pStringPtr
 
   ' return string
   return ( pStringPtr )
@@ -1175,22 +1175,22 @@ this method!
 
 ' consume white space
   repeat while (isSpace( byte[ pStringPtr ][index] ) <> -1)
-    index++
+    ++index
 
 ' is there a +/- sign?
   if (byte [pStringPtr][index] == "+")
   ' consume it
-    index++
+    ++index
   elseif (byte [pStringPtr][index] == "-")
   ' consume it
-    index++
+    ++index
     sign := -1
 
 ' try to determine number base
   if (byte [pStringPtr][index] == KBD_ASCII_HEX)
     index++
     repeat while ( ( isDigit(ch := byte [pStringPtr][index]) <> -1) or ( isAlpha(ch := byte [pStringPtr][index]) <> -1) )
-      index++
+      ++index
       sum := (sum << 4) + HexToDec( ToUpper(ch) )
       if (index => pLength)
         return (sum*sign)
@@ -1198,7 +1198,7 @@ this method!
     return(sum*sign)
 ' // end if hex number
   elseif (byte [pStringPtr][index] == KBD_ASCII_BIN)
-    repeat while ( isDigit(ch := byte [pStringPtr][++index]) <> -1)
+    repeat while ( isDigit(ch := byte [pStringPtr][index++]) <> -1)
       sum := (sum << 1) + (ch - KBD_ASCII_0)
       if (index => pLength)
         return (sum*sign)

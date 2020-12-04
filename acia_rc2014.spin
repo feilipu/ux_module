@@ -52,10 +52,12 @@ CON
   DATA_BASE   =   8                   'DATA bus is Pin P8 to Pin P15
   DATA_PINS   =   %1111_1111          '8 bit data bus
 
-  INT_PIN_NUM =   25
+  INT_PIN_NUM   = 25                  'Pins used for output - open collector - behind diodes
+  WAIT_PIN_NUM  = 24
   RESET_PIN_NUM = 5
+
   INT_PIN     =   |< INT_PIN_NUM
-  WAIT_PIN    =   |< 24
+  WAIT_PIN    =   |< WAIT_PIN_NUM
 
   RD_PIN      =   |< 7
   WR_PIN      =   |< 6
@@ -63,7 +65,7 @@ CON
   M1_PIN      =   |< 4
 
   A0_PIN      =   |< 3
-  A5_A1_PINS  =   |< 2                'NOR Gated, so will be logic high for 0
+  A5_A1_PINS  =   |< 2                'NOR Gated, so will be logic high for Addr Pins 0 including /IORQ
   A6_PIN      =   |< 1
   A7_PIN      =   |< 0
 
@@ -288,7 +290,7 @@ handler_data
                         testn   bus_rd,ina          wz  ' capture port data again, test for /RD pin low
             if_nz       jmp     #transmit_data
 
-                        testn    bus_wr,ina         wz  ' capture port data again, test for /WR pin low
+                        testn   bus_wr,ina          wz  ' capture port data again, test for /WR pin low
             if_nz       jmp     #receive_data
 
                         jmp     #wait                   ' then go back and wait for next address chance
