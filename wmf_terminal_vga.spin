@@ -1188,7 +1188,7 @@ this method!
 
 ' try to determine number base
   if (byte [pStringPtr][index] == KBD_ASCII_HEX)
-    index++
+    ++index
     repeat while ( ( isDigit(ch := byte [pStringPtr][index]) <> -1) or ( isAlpha(ch := byte [pStringPtr][index]) <> -1) )
       ++index
       sum := (sum << 4) + HexToDec( ToUpper(ch) )
@@ -1198,6 +1198,7 @@ this method!
     return(sum*sign)
 ' // end if hex number
   elseif (byte [pStringPtr][index] == KBD_ASCII_BIN)
+    ++index
     repeat while ( isDigit(ch := byte [pStringPtr][index++]) <> -1)
       sum := (sum << 1) + (ch - KBD_ASCII_0)
       if (index => pLength)

@@ -43,6 +43,7 @@ CON
   '    Control Character Constants
   '─────────────────────────────────────
 
+  CS =  0  ''CS: Clear Screen
   HM =  1  ''HM: HoMe cursor
   PC =  2  ''PC: Position Cursor in x,y
 
@@ -63,8 +64,6 @@ CON
   PX = 14  ''PX: Position cursor in X
   PY = 15  ''PY: Position cursor in Y
 
-  CS = 16  ''CS: Clear Screen
-
 
 CON
 
@@ -72,7 +71,7 @@ CON
 
   ASCII_NULL    = $00 ' null character
 
-  ASCII_BELL    = $07 ' backspace
+  ASCII_BELL    = $07 ' bell
   ASCII_BS      = $08 ' backspace
   ASCII_TAB     = $09 ' horizontal tab
   ASCII_LF      = $0A ' line feed
@@ -133,20 +132,20 @@ PUB start
   'start the ACIA interface
   acia.start (PORT_80)
 
+  'start the VGA scren
+  screenInit
+
   'start the keyboard
   kbd.start (KBD_DATA_PIN, KBD_CLK_PIN)
 
   'start i2c
   i2c.init (SCL_PIN, SDA_PIN)
 
-  'start the VGA scren
-  screenInit
-
   'MAIN EVENT LOOP - this is where you put all your code in a non-blocking infinite loop...
   repeat
-    readZ80
     kbdWriteZ80
     termWriteZ80
+    readZ80
 
 
 CON
@@ -207,21 +206,22 @@ PUB readZ80 | char
           term.lineFeed
 
         ASCII_LF:                               ' line feed
-
-          term.lineFeed
+        ' eat linefeed from Z80.
+          next
 
         ASCII_BS, ASCII_DEL:                    ' backspace (edit)
           if (gTextCursX < gScreenCols )
-           ' move cursor back once to overwrite last character on screen
-           wmf.outScreen ( BS )
-           wmf.outScreen ( ASCII_SPACE )
-           wmf.outScreen ( BS )
+            ' move cursor back once to overwrite last character on screen
+            wmf.outScreen ( BS )
+            wmf.outScreen ( ASCII_SPACE )
+            wmf.outScreen ( BS )
 
-           term.char ( ASCII_BS )
-           term.char ( ASCII_SPACE)
-           term.char ( ASCII_BS )
+            ' move cursor back once to overwrite last character on terminal
+            term.char ( ASCII_BS )
+            term.char ( ASCII_SPACE)
+            term.char ( ASCII_BS )
 
-           --gTextCursX
+            --gTextCursX
 
         ASCII_ESC:                              ' escape
           char := acia.rx                       ' get next character after escape
@@ -273,7 +273,6 @@ PUB readZ80 | char
 
                 "H":                            ' cursor home
                   gTextCursX := gTextCursY := 0
-
                   wmf.outScreen ( HM )
 
                   term.str ( string (ASCII_ESC,"[H") )
@@ -282,7 +281,19 @@ PUB readZ80 | char
                   next                          ' ignore CSI and following character
 
             other:                              ' all other cases
-              next                              ' ignore ESC and following character
+
+              ' update length
+              if (gTextCursX < gScreenCols )
+                ++gTextCursX
+              else
+                ' move cursor back once to overwrite last character on screen
+                 wmf.outScreen ( BS )
+                 term.char ( ASCII_BS )
+      
+              ' echo character
+              wmf.outScreen ( char )
+              ' send it out the serial terminal (transparently)
+              term.char (char)
   
         other:                                  ' all other cases
   
@@ -292,10 +303,10 @@ PUB readZ80 | char
           else
             ' move cursor back once to overwrite last character on screen
              wmf.outScreen ( BS )
+             term.char ( ASCII_BS )
   
           ' echo character
           wmf.outScreen ( char )
-
           ' send it out the serial terminal (transparently)
           term.char (char)
 
@@ -340,6 +351,10 @@ PUB kbdWriteZ80 | char
         kbd#KBD_ASCII_CTRL | kbd#KBD_ASCII_ALT | kbd#KBD_ASCII_DEL:
           dira[ acia#RESET_PIN_NUM ]~~                               ' Set /RESET pin to output to reset the Z80
           dira[ acia#RESET_PIN_NUM ]~                                ' Set /RESET pin to input (measured pulse is 5,600ns)
+
+          gTextCursX := gTextCursY := 0
+          wmf.outScreen ( CS )
+          term.clear
 
         other:      ' all other input
           acia.tx (char)
