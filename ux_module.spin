@@ -200,7 +200,7 @@ PUB readZ80 | char
           wmf.outScreen ( NL )
 
           gTextCursX := 0
-          if (gTextCursY < gScreenRows )
+          if (gTextCursY < gScreenRows-1 )
             ++gTextCursY
 
           term.lineFeed
@@ -210,7 +210,7 @@ PUB readZ80 | char
           next
 
         ASCII_BS, ASCII_DEL:                    ' backspace (edit)
-          if (gTextCursX < gScreenCols )
+          if (gTextCursX < gScreenCols-1 )
             ' move cursor back once to overwrite last character on screen
             wmf.outScreen ( BS )
             wmf.outScreen ( ASCII_SPACE )
@@ -240,13 +240,13 @@ PUB readZ80 | char
                   term.str ( string (ASCII_ESC,"[A") )
 
                 "B":                            ' cursor down
-                  if (gTextCursY < gScreenRows )
+                  if (gTextCursY < gScreenRows-1 )
                     ++gTextCursY
 
                   term.str ( string (ASCII_ESC,"[B") )
 
                 "C":                            ' cursor right
-                  if (gTextCursX < gScreenCols)
+                  if (gTextCursX < gScreenCols-1 )
                     ++gTextCursX
 
                   term.str ( string (ASCII_ESC,"[C") )
@@ -259,7 +259,7 @@ PUB readZ80 | char
 
                 "E":                            ' cursor next line start
                   gTextCursX := 0
-                  if (gTextCursY < gScreenRows )
+                  if (gTextCursY < gScreenRows-1 )
                     ++gTextCursY
 
                   term.str ( string (ASCII_ESC,"[E") )
@@ -283,7 +283,7 @@ PUB readZ80 | char
             other:                              ' all other cases
 
               ' update length
-              if (gTextCursX < gScreenCols )
+              if (gTextCursX < gScreenCols-1 )
                 ++gTextCursX
               else
                 ' move cursor back once to overwrite last character on screen
@@ -298,7 +298,7 @@ PUB readZ80 | char
         other:                                  ' all other cases
   
           ' update length
-          if (gTextCursX < gScreenCols )
+          if (gTextCursX < gScreenCols-1 )
             ++gTextCursX
           else
             ' move cursor back once to overwrite last character on screen
@@ -357,7 +357,8 @@ PUB kbdWriteZ80 | char
           term.clear
 
         other:      ' all other input
-          acia.tx (char)
+          if char <= $7F
+            acia.tx (char)
 
 
 PUB termWriteZ80

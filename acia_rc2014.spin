@@ -357,6 +357,7 @@ transmit_data                                           ' check for head <> tail
                         shl     bus,#DATA_BASE          ' shift data so that the LSB corresponds with DATA_BASE
                         or      outa,bus                ' write byte to Parallel FIFO
                         or      dira,data_active_mask   ' set data lines to active (output)
+                        nop                             ' wait for data lines to settle
                         or      outa,bus_wait           ' set /WAIT line high to continue
                         waitpeq bus_rd,bus_rd           ' wait for /RD to raise
                         andn    dira,data_active_mask   ' set data lines to inactive (input)
