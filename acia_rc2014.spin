@@ -52,7 +52,7 @@ CON
   DATA_BASE   =   8                   'DATA bus is Pin P8 to Pin P15
   DATA_PINS   =   %1111_1111          '8 bit data bus
 
-  INT_PIN_NUM   = 25                  'Pins used for output - open collector - behind diodes
+  INT_PIN_NUM   = 25                  'Pins used for output - open collector inverters - behind transistors
   WAIT_PIN_NUM  = 24
   RESET_PIN_NUM = 5
 
@@ -154,6 +154,7 @@ PUB start(base) : okay
   port_base_addr := base                                ' Use DAT variables to make the assignment stick for later cog usage
   acia_config := constant (( CR_TDI_RTS0 | CR_8N1 | CR_DIV_64 ) << DATA_BASE )
   acia_status := constant ( SR_TDRE << DATA_BASE )      ' Always ready to receive bytes from the Z80
+  dira[ INT_PIN_NUM ]~~                                 ' Set INT as an output
   buffer_ptr := @rx_buffer                              ' Record the origin address of the Rx and Tx buffers
   okay := cog := cognew(@entry,@rx_head) + 1
 
@@ -189,8 +190,8 @@ PUB tx(txbyte)
 
   if acia_config & constant ( CR_RIE << DATA_BASE )     ' If the Rx interrupt (Z80 perspective) is not set, then set it
     acia_status |= constant ( SR_IRQ << DATA_BASE )     ' Set the interrupt status byte (cleared in driver cog)
-    dira[ INT_PIN_NUM ]~~                               ' Set /INT pin to output to wake up the Z80 (minimum 136ns pulse = 1 RC2014 standard clock)
-    dira[ INT_PIN_NUM ]~                                ' Set /INT pin to input (measured pulse is 5,600ns)
+    outa[ INT_PIN_NUM ]~~                               ' Set the INT pin high to wake up the Z80 (minimum 136ns pulse = 1 RC2014 standard clock)
+    outa[ INT_PIN_NUM ]~                                ' Clear the INT pin low 
 
 
 PUB rx : rxbyte
@@ -253,22 +254,16 @@ entry
                         add     txbuff,#BUFFER_MASK     ' BUFFER_LENGTH := BUFFER_MASK + 1
                         add     txbuff,#1
 
-                        mov     dira,bus_wait           ' set /WAIT pin to output
-                        mov     outa,bus_wait           ' clear /WAIT high by default
-                                                        ' it is behind a diode, and the bus is open collector
+                        mov     dira,bus_wait           ' set WAIT pin to output, it is low by default
+                        or      dira,bus_int            ' also set INT pin to output (all other pins remain as inputs)
 
-                        or      port_base_addr,bus_m1   ' add in the /M1 pin to tighten addressing
-                        or      port_base_addr,bus_wait ' add the /WAIT pin to the address for waitpeq wr effect
+                        or      port_base_addr,#M1_PIN  ' add in the /M1 pin to tighten our addressing to I/O only
 
-wait
-                        mov     outa,port_base_addr     ' configure the base address to compare with ina
-                                                        ' including /WAIT pin
+wait                                                    ' wait until we see our addresses (including /IORQ within A5_A1_PINS)
+                        waitpne port_base_addr,port_active_mask
+                        waitpeq port_base_addr,port_active_mask
 
-                        waitpne outa,port_active_mask
-                        waitpeq outa,port_active_mask wr' wait until we see our addresses (including /IORQ within A5_A1_PINS)
-                                                        ' use wr effect to set /WAIT low on match (/INT gets hit as a side effect)
-
-                        andn    outa,bus_int            ' reset /INT pin (modified as a side effect of the waitpeq outa wr effect)
+                        or      outa,bus_wait           ' set WAIT high on match to stop the Z80
 
                         testn   bus_a0,ina          wz  ' isolate the base address
             if_z        jmp     #handler_data           ' handle data, otherwise fall through for handling command/status at base address
@@ -296,7 +291,7 @@ handler_data
                         jmp     #wait                   ' then go back and wait for next address chance
 
 receive_command
-                        or      outa,bus_wait           ' set /WAIT line high to continue
+                        andn    outa,bus_wait           ' set WAIT line low to continue
                         mov     bus,ina                 ' capture the command byte (stored shifted by DATA_BASE)
                         waitpeq bus_wr,bus_wr           ' wait for /WR high
                         and     bus,data_active_mask    ' mask received command byte
@@ -313,14 +308,14 @@ transmit_status
                         and     bus,data_active_mask    ' mask transmitted status byte
                         or      outa,bus                ' transmit the status byte (stored shifted by DATA_BASE)
                         or      dira,data_active_mask   ' set data lines to active (output)
-                        or      outa,bus_wait           ' set /WAIT line high to continue
+                        andn    outa,bus_wait           ' set WAIT line low to continue
                         waitpeq bus_rd,bus_rd           ' wait for /RD to raise
                         andn    dira,data_active_mask   ' set data lines to inactive (input)
                         andn    outa,data_active_mask   ' set data lines to zero
                         jmp     #wait
 
 receive_data
-                        or      outa,bus_wait           ' set /WAIT line high to continue
+                        andn    outa,bus_wait           ' set WAIT line low to continue
                         mov     bus,ina                 ' capture the data byte
                         waitpeq bus_wr,bus_wr           ' wait for /WR high
                         shr     bus,#DATA_BASE          ' shift data so that the LSB corresponds with D0
@@ -358,7 +353,9 @@ transmit_data                                           ' check for head <> tail
                         or      outa,bus                ' write byte to Parallel FIFO
                         or      dira,data_active_mask   ' set data lines to active (output)
                         nop                             ' wait for data lines to settle
-                        or      outa,bus_wait           ' set /WAIT line high to continue
+                        nop
+                        nop
+                        andn    outa,bus_wait           ' set WAIT line low to continue
                         waitpeq bus_rd,bus_rd           ' wait for /RD to raise
                         andn    dira,data_active_mask   ' set data lines to inactive (input)
                         andn    outa,data_active_mask   ' set data lines to zero
@@ -383,10 +380,10 @@ transmit_data                                           ' check for head <> tail
 
 set_interrupt
                         rdlong  t1,acia_status_addr
-                        or      dira,bus_int            ' set /INT pin to output for minimum 136ns (1 RC2014 clock)
+                        or      outa,bus_int            ' ensure the INT pin is set high for minimum 136ns (1 RC2014 clock)
                         or      t1,acia_status_irq      ' set the interrupt status bit
                         wrlong  t1,acia_status_addr
-                        andn    dira,bus_int            ' clear /INT pin
+                        andn    outa,bus_int            ' clear INT pin low
                         jmp     #wait                   ' set interrupt done
 
 '
@@ -397,11 +394,10 @@ bus_int                 long    INT_PIN
 
 bus_rd                  long    RD_PIN
 bus_wr                  long    WR_PIN
-bus_m1                  long    M1_PIN
 
 bus_a0                  long    A0_PIN
 
-port_active_mask        long    WAIT_PIN | M1_PIN | PORT_MASK
+port_active_mask        long    M1_PIN | PORT_MASK
 data_active_mask        long    DATA_PINS << DATA_BASE
 
 acia_config_initial     long    ( CR_TDI_RTS0 | CR_8N1 | CR_DIV_64 ) << DATA_BASE
