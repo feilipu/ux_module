@@ -345,20 +345,20 @@ transmit_data                                           ' check for head <> tail
                         add     t3,txbuff               ' add address of txbuff to value of tx_tail
                         rdbyte  bus,t3                  ' read byte from the tail of the buffer into bus
                         sub     t3,txbuff               ' subtract address of bus (Result is tx_tail)
-            if_ne       add     t3,#1                   ' increment t3 by 1 byte (same as tx_tail + 1)
-            if_ne       and     t3,#BUFFER_MASK         ' and check for range (if > #BUFFER_MASK then rollover)
-            if_ne       wrlong  t3,t1                   ' write long value of t3 into address tx_tail
 
                         shl     bus,#DATA_BASE          ' shift data so that the LSB corresponds with DATA_BASE
                         or      outa,bus                ' write byte to Parallel FIFO
                         or      dira,data_active_mask   ' set data lines to active (output)
-                        nop                             ' wait for data lines to settle
-                        nop
-                        nop
-                        andn    outa,bus_wait           ' set WAIT line low to continue
+                                                        ' wait for data lines to settle before releasing WAIT
+
+            if_ne       add     t3,#1                   ' increment t3 by 1 byte (same as tx_tail + 1)
+            if_ne       and     t3,#BUFFER_MASK         ' and check for range (if > #BUFFER_MASK then rollover)
+            if_ne       wrlong  t3,t1                   ' write long value of t3 into address tx_tail
+
+                        andn    outa,bus_wait           ' clear WAIT line low to continue
                         waitpeq bus_rd,bus_rd           ' wait for /RD to raise
-                        andn    dira,data_active_mask   ' set data lines to inactive (input)
-                        andn    outa,data_active_mask   ' set data lines to zero
+                        andn    dira,data_active_mask   ' clear data lines to inactive (input)
+                        andn    outa,data_active_mask   ' clear data lines to zero
 
             if_e        rdlong  t1,acia_status_addr
             if_e        andn    t1,acia_status_rdrf     ' if no further bytes, clear RDRF
