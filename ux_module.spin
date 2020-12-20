@@ -349,18 +349,15 @@ PUB kbdWriteZ80 | char
 
 
         kbd#KBD_ASCII_CTRL | kbd#KBD_ASCII_ALT | kbd#KBD_ASCII_DEL:
-          dira[ acia#RESET_PIN_NUM ]~~                               ' Set RESET as an output
-          outa[ acia#RESET_PIN_NUM ]~~                               ' Set RESET pin to high to reset the Z80
-          outa[ acia#RESET_PIN_NUM ]~                                ' Set RESET pin to low (measured pulse is 5,600ns)
-          dira[ acia#RESET_PIN_NUM ]~                                ' Set RESET as an input
+          dira[ acia#RESET_PIN_NUM ]~~                               ' Set /RESET pin to output to reset the Z80
+          dira[ acia#RESET_PIN_NUM ]~                                ' Set /RESET pin to input
 
           gTextCursX := gTextCursY := 0
           wmf.outScreen ( CS )
           term.clear
 
         other:      ' all other input
-          if char <= $7F
-            acia.tx (char)
+          acia.tx (char)
 
 
 PUB termWriteZ80
