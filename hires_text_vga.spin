@@ -19,29 +19,29 @@
 
 CON
 
-{
+'{
 ' 1024 x 768 @ 76Hz settings: 128 x 64 characters
 
   hp = 1024     'horizontal pixels
   vp = 768      'vertical pixels
-  hf = 24       'horizontal front porch pixels
+  hf = 30       'horizontal front porch pixels
   hs = 136      'horizontal sync pixels
-  hb = 144      'horizontal back porch pixels
+  hb = 138      'horizontal back porch pixels
   vf = 3        'vertical front porch lines
   vs = 6        'vertical sync lines
   vb = 29       'vertical back porch lines
   hn = 1        'horizontal normal sync state (0|1)
   vn = 1        'vertical normal sync state (0|1)
   pr = 77       'pixel rate in MHz at 118MHz system clock (7MHz granularity)
-}
+'}
 {
 ' 800 x 600 @ 67Hz settings: 100 x 50 characters
 
   hp = 800      'horizontal pixels
   vp = 600      'vertical pixels
-  hf = 16       'horizontal front porch pixels
+  hf = 22        'horizontal front porch pixels
   hs = 80       'horizontal sync pixels
-  hb = 160      'horizontal back porch pixels
+  hb = 154      'horizontal back porch pixels
   vf = 1        'vertical front porch lines
   vs = 3        'vertical sync lines
   vb = 21       'vertical back porch lines
@@ -49,29 +49,29 @@ CON
   vn = 0        'vertical normal sync state (0|1)
   pr = 42       'pixel rate in MHz at 118MHz system clock (7MHz granularity)
 }
-'{
+{
 ' 640 x 480 @ 85Hz settings: 80 x 40 characters
 
   hp = 640      'horizontal pixels
   vp = 480      'vertical pixels
-  hf = 24       'horizontal front porch pixels
+  hf = 30       'horizontal front porch pixels
   hs = 40       'horizontal sync pixels
-  hb = 128      'horizontal back porch pixels
+  hb = 122      'horizontal back porch pixels
   vf = 9        'vertical front porch lines
   vs = 2        'vertical sync lines
   vb = 29       'vertical back porch lines
   hn = 1        'horizontal normal sync state (0|1)
   vn = 1        'vertical normal sync state (0|1)
   pr = 35       'pixel rate in MHz at 118MHz system clock (7MHz granularity)
-'}
+}
 {
 ' 640 x 480 @ 70Hz settings: 80 x 40 characters
 
   hp = 640      'horizontal pixels
   vp = 480      'vertical pixels
-  hf = 16       'horizontal front porch pixels
+  hf = 22       'horizontal front porch pixels
   hs = 96       'horizontal sync pixels
-  hb = 48       'horizontal back porch pixels
+  hb = 42       'horizontal back porch pixels
   vf = 10       'vertical front porch lines
   vs = 2        'vertical sync lines
   vb = 33       'vertical back porch lines

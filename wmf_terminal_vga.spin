@@ -1,8 +1,8 @@
 '' ===========================================================================
 ''
-''  File: WMF_Terminal_Services_010.spin
+''  File: WMF_Terminal_VGA.spin
 ''
-'' This file contains general "terminal services" for the VGA driver VGA_HiRes_Text_***.
+'' This file contains general "terminal services" for the VGA driver HiRes_Text_VGA.
 '' This is a work in progress and over time as the version iterates more functionality
 '' will be added. However, for now, the object contains the following general sets
 '' of functionality:
@@ -778,7 +778,7 @@ PARMS: pRow - row to set the cursor to.
 RETURNS: Nothing.
 }}
 
-  gScreenRow := pRow// gScreenNumRows
+  gScreenRow := pRow // gScreenNumRows
 
 ' end PUB ----------------------------------------------------------------------
 
@@ -797,7 +797,7 @@ RETURNS: Nothing.
   gScreenCol := pCol // gScreenNumCols
 
 ' set Terminal y/row cursor position
-  gScreenRow := pRow// gScreenNumRows
+  gScreenRow := pRow // gScreenNumRows
 
 ' end PUB ----------------------------------------------------------------------
 
@@ -1073,7 +1073,7 @@ RETURNS: The converted ASCII digit.
 ' end PUB ----------------------------------------------------------------------
 
 
-PUB itoa(pNumber, pBase, pDigits, pStringPtr) | divisor, digit, zflag, dividend
+PUB itoa( pNumber, pBase, pDigits, pStringPtr ) | divisor, digit, zflag, dividend
 {{
 DESCRIPTION: "C-like" method that converts pNumber to string; decimal, hex, or binary formats. Caller
 should make sure that conversion will fit in string, otherwise method will overwrite
@@ -1151,7 +1151,7 @@ RETURNS: Pointer back to the pStringPtr with the converted results.
   ' end PUB ----------------------------------------------------------------------
 
 
-PUB atoi(pStringPtr, pLength) | index, sum, ch, sign
+PUB atoi( pStringPtr, pLength ) | index, sum, ch, sign
 {{
 DESCRIPTION: "C-like" method that tries to convert the string to a number, supports binary %, hex $, decimal (default)
 pStringPtr can be to a null terminated string, or the pLength can be overridden by sending the pLength shorter

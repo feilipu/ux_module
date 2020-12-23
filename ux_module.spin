@@ -197,11 +197,11 @@ PUB readZ80 | char
       case char
 
         ASCII_CR:                               ' return
-          wmf.outScreen ( NL )
-
           gTextCursX := 0
           if (gTextCursY < gScreenRows-1 )
             ++gTextCursY
+
+          wmf.outScreen ( NL )
 
           term.lineFeed
 
@@ -210,7 +210,10 @@ PUB readZ80 | char
           next
 
         ASCII_BS, ASCII_DEL:                    ' backspace (edit)
+
           if (gTextCursX < gScreenCols-1 )
+            --gTextCursX
+
             ' move cursor back once to overwrite last character on screen
             wmf.outScreen ( BS )
             wmf.outScreen ( ASCII_SPACE )
@@ -220,8 +223,6 @@ PUB readZ80 | char
             term.char ( ASCII_BS )
             term.char ( ASCII_SPACE)
             term.char ( ASCII_BS )
-
-            --gTextCursX
 
         ASCII_ESC:                              ' escape
           char := acia.rx                       ' get next character after escape
@@ -280,20 +281,8 @@ PUB readZ80 | char
                 other:                          ' all other cases                   
                   next                          ' ignore CSI and following character
 
-            other:                              ' all other cases
-
-              ' update length
-              if (gTextCursX < gScreenCols-1 )
-                ++gTextCursX
-              else
-                ' move cursor back once to overwrite last character on screen
-                 wmf.outScreen ( BS )
-                 term.char ( ASCII_BS )
-      
-              ' echo character
-              wmf.outScreen ( char )
-              ' send it out the serial terminal (transparently)
-              term.char (char)
+            other:                              ' all other cases after ESC
+              next
   
         other:                                  ' all other cases
   
@@ -301,10 +290,10 @@ PUB readZ80 | char
           if (gTextCursX < gScreenCols-1 )
             ++gTextCursX
           else
-            ' move cursor back once to overwrite last character on screen
-             wmf.outScreen ( BS )
-             term.char ( ASCII_BS )
-  
+            gTextCursX := 0
+            if (gTextCursY < gScreenRows-1 )
+              ++gTextCursY
+
           ' echo character
           wmf.outScreen ( char )
           ' send it out the serial terminal (transparently)

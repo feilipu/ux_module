@@ -313,8 +313,8 @@ transmit_status
                         and     bus,data_active_mask    ' mask transmitted status byte
                         or      outa,bus                ' transmit the status byte (stored shifted by DATA_BASE)
                         or      dira,data_active_mask   ' set data lines to active (output)
-                     '  nop                             ' wait for data lines to settle before releasing /WAIT
-                     '  nop
+                        nop                             ' wait for data lines to settle before releasing /WAIT
+                        nop
                         or      outa,bus_wait           ' set /WAIT line high to continue
                         waitpeq bus_rd,bus_rd           ' wait for /RD to raise
                         andn    dira,data_active_mask   ' set data lines to inactive (input)
