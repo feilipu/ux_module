@@ -420,11 +420,11 @@ acia_status_rdrf        long    ( SR_RDRF ) << DATA_BASE
 
 port_base_addr          long    0
 
-acia_config_addr        long    0
-acia_status_addr        long    0
-
 '
-' Uninitialized data
+' Uninitialized data 
+
+acia_config_addr        res     1
+acia_status_addr        res     1
 '
 
 rxbuff                  res     1
