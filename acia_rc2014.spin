@@ -418,13 +418,14 @@ acia_config_int_tx_mask long    ( CR_TXI_MASK ) << DATA_BASE
 acia_status_irq         long    ( SR_IRQ ) << DATA_BASE
 acia_status_rdrf        long    ( SR_RDRF ) << DATA_BASE
 
+port_base_addr          long    0
+
 '
-' Uninitialized data
-'
-port_base_addr          res     1
+' Uninitialized data 
 
 acia_config_addr        res     1
 acia_status_addr        res     1
+'
 
 rxbuff                  res     1
 txbuff                  res     1
