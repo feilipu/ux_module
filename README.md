@@ -29,7 +29,7 @@ It is designed to operate as an MC65B50 ACIA device (the standard RC2014 Serial 
 </tbody>
 <tbody>
 <tr>
-<td style="border: 1px solid #cccccc; padding: 6px;"><a href="https://raw.githubusercontent.com/feilipu/ux_module/main/pcb/RC2014_UX_MODULE_SCH.png" target="_blank"><img src="https://raw.githubusercontent.com/feilipu/ux_module/main/pcb/RC2014_UX_MODULE_SCH.png"/></a></td>
+<td style="border: 1px solid #cccccc; padding: 6px;"><a href="https://raw.githubusercontent.com/feilipu/ux_module/main/pcb/RC2014_UX_MODULE_BRD.png" target="_blank"><img src="https://raw.githubusercontent.com/feilipu/ux_module/main/pcb/RC2014_UX_MODULE_BRD.png"/></a></td>
 </tr>
 <tr>
 <th style="border: 1px solid #cccccc; padding: 6px;"><centre>User Experience Module for RC2014 - Production Board Layout</center></th>
