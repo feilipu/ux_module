@@ -312,13 +312,13 @@ transmit_status
                         rdlong  bus,acia_status_addr    ' get the status byte
                         and     bus,data_active_mask    ' mask transmitted status byte
                         or      outa,bus                ' transmit the status byte (stored shifted by DATA_BASE)
-                        or      dira,data_active_mask   ' set data lines to active (output)
-                        nop                             ' wait for data lines to settle before releasing /WAIT
+                        or      dira,data_active_mask   ' set data bus lines to active (output)
+                        nop                             ' wait for data bus lines to settle before releasing /WAIT
                         nop
                         or      outa,bus_wait           ' set /WAIT line high to continue
                         waitpeq bus_rd,bus_rd           ' wait for /RD to raise
-                        andn    dira,data_active_mask   ' set data lines to inactive (input)
-                        andn    outa,data_active_mask   ' set data lines to zero
+                        andn    dira,data_active_mask   ' clear data bus lines to inactive (input)
+                        andn    outa,data_active_mask   ' ensure data bus pins are cleared to zero
                         jmp     #wait
 
 receive_data
@@ -355,35 +355,29 @@ transmit_data                                           ' check for head <> tail
 
                         shl     bus,#DATA_BASE          ' shift data so that the LSB corresponds with DATA_BASE
                         or      outa,bus                ' write byte to Parallel FIFO
-                        or      dira,data_active_mask   ' set data lines to active (output)
-                                                        ' wait for data lines to settle before releasing /WAIT
+                        or      dira,data_active_mask   ' set data bus lines to active (output)
+                                                        ' wait for data bus lines to settle before releasing /WAIT
 
             if_ne       add     t3,#1                   ' increment t3 by 1 byte (same as tx_tail + 1)
             if_ne       and     t3,#BUFFER_MASK         ' and check for range (if > #BUFFER_MASK then rollover)
-            if_ne       wrlong  t3,t1                   ' write long value of t3 into address tx_tail
 
                         or      outa,bus_wait           ' clear /WAIT line high to continue
                         waitpeq bus_rd,bus_rd           ' wait for /RD to raise
-                        andn    dira,data_active_mask   ' clear data lines to inactive (input)
-                        andn    outa,data_active_mask   ' clear data lines to zero
+                        andn    dira,data_active_mask   ' clear data bus lines to inactive (input)
+                        andn    outa,data_active_mask   ' ensure data bus pins are cleared to zero
 
+            if_ne       wrlong  t3,t1                   ' write long value of t3 into address tx_tail
+
+                        cmp     t2,t3               wz  ' compare tx_tail and tx_head
             if_e        rdlong  t1,acia_status_addr
             if_e        andn    t1,acia_status_rdrf     ' if no further bytes, clear RDRF
-            if_e        and     t1,data_active_mask     ' mask transmitted byte
+            if_e        and     t1,data_active_mask     ' mask status byte
             if_e        wrlong  t1,acia_status_addr
             if_e        jmp     #wait                   ' transmit byte done
 
                         rdlong  t1,acia_config_addr
-                        test    t1,acia_config_int_rx wz' test whether the rx interrupt pin should be set
+                        test    t1,acia_config_int_rx wz' test whether the rx interrupt should be triggered
             if_z        jmp     #wait
-
-                        mov     t1,par                  ' get address of rx_head assign it to t1
-                        add     t1,#8                   ' increment t1 by 8 bytes. Result is address of tx_head
-                        rdlong  t2,t1                   ' copy value of tx_head into t2
-                        add     t1,#4                   ' increment t1 by 4 bytes. Result is address of tx_tail
-                        rdlong  t3,t1                   ' copy value of tx_tail into t3
-                        cmp     t2,t3               wz  ' compare tx_tail and tx_head, continue if no bytes available
-            if_z        jmp     #wait                   ' transmit byte done
 
 set_interrupt
                         rdlong  t1,acia_status_addr
