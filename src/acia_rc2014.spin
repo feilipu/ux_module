@@ -315,6 +315,8 @@ transmit_status
                         or      dira,data_active_mask   ' set data bus lines to active (output)
                         nop                             ' wait for data bus lines to settle before releasing /WAIT
                         nop
+                        nop
+                        nop
                         or      outa,bus_wait           ' set /WAIT line high to continue
                         waitpeq bus_rd,bus_rd           ' wait for /RD to raise
                         andn    dira,data_active_mask   ' clear data bus lines to inactive (input)
@@ -360,13 +362,12 @@ transmit_data                                           ' check for head <> tail
 
             if_ne       add     t3,#1                   ' increment t3 by 1 byte (same as tx_tail + 1)
             if_ne       and     t3,#BUFFER_MASK         ' and check for range (if > #BUFFER_MASK then rollover)
+            if_ne       wrlong  t3,t1                   ' write long value of t3 into address tx_tail
 
                         or      outa,bus_wait           ' clear /WAIT line high to continue
                         waitpeq bus_rd,bus_rd           ' wait for /RD to raise
                         andn    dira,data_active_mask   ' clear data bus lines to inactive (input)
                         andn    outa,data_active_mask   ' ensure data bus pins are cleared to zero
-
-            if_ne       wrlong  t3,t1                   ' write long value of t3 into address tx_tail
 
                         cmp     t2,t3               wz  ' compare tx_tail and tx_head
             if_e        rdlong  t1,acia_status_addr
