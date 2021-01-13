@@ -420,7 +420,6 @@ port_base_addr          long    0
 
 acia_config_addr        res     1
 acia_status_addr        res     1
-'
 
 rxbuff                  res     1
 txbuff                  res     1
