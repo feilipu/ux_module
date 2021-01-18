@@ -14,6 +14,15 @@ It is designed to operate as an MC65B50 ACIA device (the standard RC2014 Serial 
 <table style="border: 2px solid #cccccc;">
 <tbody>
 <tr>
+<td style="border: 1px solid #cccccc; padding: 6px;"><a href="https://raw.githubusercontent.com/feilipu/ux_module/main/docs/RC2014_UX_MODULE_PRODUCTION_BOARD.JPG" target="_blank"><img src="https://raw.githubusercontent.com/feilipu/ux_module/main/docs/RC2014_UX_MODULE_PRODUCTION_BOARD.JPG"/></a></td>
+</tr>
+<tr>
+<th style="border: 1px solid #cccccc; padding: 6px;"><centre>User Experience Module for RC2014 - Production</center></th>
+</tr>
+</tbody>
+<tbody>
+<tbody>
+<tr>
 <td style="border: 1px solid #cccccc; padding: 6px;"><a href="https://raw.githubusercontent.com/feilipu/ux_module/main/docs/RC2014_UX_MODULE_PREPRODUCTION.JPG" target="_blank"><img src="https://raw.githubusercontent.com/feilipu/ux_module/main/docs/RC2014_UX_MODULE_PREPRODUCTION.JPG"/></a></td>
 </tr>
 <tr>
