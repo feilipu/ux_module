@@ -57,7 +57,7 @@ Building the UX Module is fairly straightforward. Some notes are included below 
 
 The BOM for the UX Module can be found in the Production PCB section of this repository, both listing [by parts](https://github.com/feilipu/ux_module/blob/main/pcb/RC2014_UX_MODULE_ListByParts.csv), and listing [by values](https://github.com/feilipu/ux_module/blob/main/pcb/RC2014_UX_MODULE_ListByValues.csv).
 
-Also, a complete ordering [Cart is available at Digikey AU](https://www.digikey.com.au/short/47vhf4).
+Also, a complete ordering [Cart is available at Digikey AU](https://www.digikey.com.au/short/47vbdp).
 
 Note that sockets are not included in the BOM, but can be used if desired. See the notes on Overclocking below
 
