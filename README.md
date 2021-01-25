@@ -59,7 +59,9 @@ The BOM for the UX Module can be found in the Production PCB section of this rep
 
 Also, a complete ordering [Cart is available at Digikey AU](https://www.digikey.com.au/short/47vbdp).
 
-Note that sockets are not included in the BOM, but can be used if desired. See the notes on Overclocking below
+Note that the 74HC4078 NOR device is not included in the Digikey BOM. This device is obsolete, but can be obtained from UT Source or other ebay sources (or as an option on Tindie).
+
+Note that sockets are not included in the BOM, but can be used if desired. See the notes on Overclocking below.
 
 ### SMD
 
