@@ -128,7 +128,7 @@ When the UX Module has been programmed successfully, it should boot with `UX Mod
 
 To reboot the UX Module the DTR on the FTDI interface needs to be toggled. This can be done with the PropellerIDE, or with any serial terminal that can trigger DTR toggle. This functionality is used by the Arduino family, so the function is quite common within serial terminals.
 
-Once the UX Module is running the ACIA interface is running, so the RC2014 Z80 can now be rebooted. This can be done by pressing the reset button on the RC2014 or, if a PS/2 keyboard is attached, by pressing `CTRL+ALT+DEL`. This will now initiate a normal RC2014 boot sequence.
+Once the UX Module is running the ACIA emulation is enabled, so the RC2014 Z80 can now be rebooted. This can be done by pressing the reset button on the RC2014 or, if a PS/2 keyboard is attached, by pressing `CTRL+ALT+DEL`. This will now initiate a normal RC2014 boot sequence.
 
 ### Ports
 
