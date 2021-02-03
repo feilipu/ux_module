@@ -115,16 +115,16 @@ ux_module
 |
 |---> terminal_ftdi 
 |---> keyboard_ps2
-|---> wmf_terminal_vga
-|     |
-|     |---> hires_text_vga
-|---> i2c
 |---> acia_rc2014
+|---> i2c
+|---> wmf_terminal_vga
+      |
+      |---> hires_text_vga
 ```
 
 ## Usage Notes
 
-When the UX Module has been programmed successfully, it should boot with `UX Module Initialising...` appearing on both VGA interface (screen) and on the FTDI Serial interface.
+When the UX Module has been programmed successfully, it should boot with `UX Module Initialised` appearing on both VGA interface (screen) and on the FTDI Serial interface.
 
 To reboot the UX Module the DTR on the FTDI interface needs to be toggled. This can be done with the PropellerIDE, or with any serial terminal that can trigger DTR toggle. This functionality is used by the Arduino family, so the function is quite common within serial terminals.
 

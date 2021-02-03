@@ -193,6 +193,13 @@ PUB tx(txbyte)
     dira[ INT_PIN_NUM ]~                                ' Clear /INT pin to input (measured pulse is 5,600ns)
 
 
+PUB txFlush
+
+  '' Flush transmit buffer
+
+  tx_tail := tx_head := 0
+
+
 PUB rx : rxbyte
 
   '' Receive single-byte character.  Waits until character received.

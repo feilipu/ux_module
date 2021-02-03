@@ -100,7 +100,7 @@ PUB start
   'start the serial terminal
   term.start (115200)
   term.clear                                        ' clear terminal
-  term.str (string("UX Module Initialising..."))
+  term.str (string("UX Module Initialised"))
   term.lineFeed
 
   'start the ACIA interface
@@ -155,7 +155,7 @@ PUB screenInit | retVal
   ' VGA buffer encoded in upper 16-bits of return value
   gScreenBufferPtr := retVal >> 16
 
-  wmf.strScreenLn (string("UX Module Initialising..."))
+  wmf.strScreenLn (string("UX Module Initialised"))
   ++gTextCursY
 
   ' return to caller
@@ -312,12 +312,14 @@ PUB kbdWriteZ80 | char
           acia.txString ( string (ASCII_ESC, "[H") )
 
         kbd#KBD_ASCII_CTRL | kbd#KBD_ASCII_ALT | kbd#KBD_ASCII_DEL:
-          dira[ acia#RESET_PIN_NUM ]~~                               ' Set /RESET pin to output to reset the Z80
-          dira[ acia#RESET_PIN_NUM ]~                                ' Set /RESET pin to input
 
-          gTextCursX := gTextCursY := 0
-          wmf.outScreen ( wmf#CS )
-          term.clear
+          acia.txFlush                                               ' remove any pending transmit queue to Z80
+          dira[ acia#RESET_PIN_NUM ]~~                               ' set /RESET pin to output to reset the Z80
+          dira[ acia#RESET_PIN_NUM ]~                                ' set /RESET pin to input
+
+          term.clear                                                 ' clear the serial terminal
+          wmf.outScreen ( wmf#CS )                                   ' clear the screen
+          gTextCursX := gTextCursY := 0                              ' move cursor to home position
 
         other:      ' all other input
           acia.tx (char)
