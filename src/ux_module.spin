@@ -83,6 +83,8 @@ VAR
 
   long  gScreenBufferPtr                              ' holds the address of the video buffer passed back from the VGA driver
 
+  long  termStack [64]                                ' small stack for the serial input cog
+
 
 OBJ
 
@@ -113,10 +115,12 @@ PUB start
   'start i2c
   i2c.init (SCL_PIN, SDA_PIN)
 
-  'MAIN EVENT LOOP - this is where you put all your code in a non-blocking infinite loop...
+  'start serial input in a separate cog
+  cognew (termWriteZ80, @termStack)
+
+  'MAIN COG EVENT LOOP - this is where you put all your code in a non-blocking infinite loop...
   repeat
     kbdWriteZ80
-    termWriteZ80
     readZ80
 
 
@@ -321,9 +325,10 @@ PUB kbdWriteZ80 | char
 
 PUB termWriteZ80
 
-    ' if no input from terminal then return
-    repeat while term.rxCheck
-      acia.tx (term.charIn)
+  'COG EVENT LOOP - this is where you put all your code in a non-blocking infinite loop...
+  repeat
+    ' if no input from terminal then wait till there is
+    acia.tx (term.charIn)
 
 
 DAT
