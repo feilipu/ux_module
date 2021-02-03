@@ -175,57 +175,53 @@ CON
   CTHEME_GREMLIN_INV_FG     = %%111
   CTHEME_GREMLIN_INV_BG     = %%030
 
-  ' keyboard keycodes for ease of parser development
+  ' ASCII codes for ease of parser development
 
-  KBD_ASCII_NULL   = $00 ' null character
-  KBD_ASCII_TAB    = $09 ' horizontal tab
-  KBD_ASCII_LF     = $0A ' line feed
-  KBD_ASCII_CR     = $0D ' carriage return
+  ASCII_NULL   = $00 ' null character
+  ASCII_TAB    = $09 ' horizontal tab
+  ASCII_LF     = $0A ' line feed
+  ASCII_CR     = $0D ' carriage return
 
-  KBD_ASCII_SPACE  = $20 ' space
-  KBD_ASCII_HASH   = $23 ' #
-  KBD_ASCII_HEX    = $24 ' $ for hex
-  KBD_ASCII_BIN    = $25 ' % for binary
-  KBD_ASCII_COMMA  = $2C ' ,
-  KBD_ASCII_PERIOD = $2E ' .
+  ASCII_SPACE  = $20 ' space
+  ASCII_HASH   = $23 ' #
+  ASCII_HEX    = $24 ' $ for hex
+  ASCII_BIN    = $25 ' % for binary
+  ASCII_COMMA  = $2C ' ,
+  ASCII_PERIOD = $2E ' .
 
-  KBD_ASCII_SEMI   = $3A ' ;
-  KBD_ASCII_EQUALS = $3D ' =
+  ASCII_SEMI   = $3A ' ;
+  ASCII_EQUALS = $3D ' =
 
-  KBD_ASCII_LB     = $5B ' [
-  KBD_ASCII_RB     = $5D ' ]
+  ASCII_LB     = $5B ' [
+  ASCII_RB     = $5D ' ]
 
-  KBD_ASCII_0      = 48
-  KBD_ASCII_9      = 57
-  KBD_ASCII_A      = 65
-  KBD_ASCII_B      = 66
-  KBD_ASCII_C      = 67
-  KBD_ASCII_D      = 68
-  KBD_ASCII_E      = 69
-  KBD_ASCII_F      = 70
-  KBD_ASCII_G      = 71
-  KBD_ASCII_H      = 72
-  KBD_ASCII_O      = 79
-  KBD_ASCII_P      = 80
-  KBD_ASCII_Z      = 90
+  ASCII_0      = 48
+  ASCII_9      = 57
+  ASCII_A      = 65
+  ASCII_B      = 66
+  ASCII_C      = 67
+  ASCII_D      = 68
+  ASCII_E      = 69
+  ASCII_F      = 70
+  ASCII_G      = 71
+  ASCII_H      = 72
+  ASCII_O      = 79
+  ASCII_P      = 80
+  ASCII_Z      = 90
 
-  KBD_ASCII_LEFT   = $C0
-  KBD_ASCII_RIGHT  = $C1
-  KBD_ASCII_UP     = $C2
-  KBD_ASCII_DOWN   = $C3
-  KBD_ASCII_HOME   = $C4
-  KBD_ASCII_END    = $C5
-  KBD_ASCII_BS     = $C8 ' backspace
-  KBD_ASCII_DEL    = $C9 ' delete
-  KBD_ASCII_INS    = $CA ' insert
-  KBD_ASCII_ESC    = $CB ' escape
+  ' control character constants used by outScreen
 
-  ' keyboard kecode modifier keys
+  CS           =  $00  ''CS: Clear Screen
+  HM           =  $01  ''HM: HoMe cursor
+  BS           =  $08  ''BS: BackSpace
+  TB           =  $09  ''TB: Tab
 
-  KBD_ASCII_SHIFT  = $100' eg. Ctrl-Alt-Delete = $6C9
-  KBD_ASCII_CTRL   = $200
-  KBD_ASCII_ALT    = $400
-  KBD_ASCII_WIN    = $800
+  PX           =  $0A  ''PX: Position cursor in X (X follows)
+  PY           =  $0B  ''PY: Position cursor in Y (Y follows)
+  PC           =  $0C  ''PC: set color (color follows)
+
+  NL           =  $0D  ''NL: New Line
+
 
 OBJ
   '---------------------------------------------------------------------------
@@ -709,15 +705,15 @@ direct mode access uses the register model and controls the engine from the low 
 
 PARMS: pChar - character to print with the following extra controls:
 
-
      $00 = clear screen
      $01 = home
      $08 = backspace
-     $09 = tab (8 spaces per)
+     $09 = tab (4 spaces per)
      $0A = set X position (X follows)
      $0B = set Y position (Y follows)
      $0C = set color (color follows)
      $0D = return
+
      others = prints to the screen
 
      +128 to any other printable character, draw in inverse video
@@ -737,7 +733,7 @@ RETURNS: Nothing.
 
            $09: repeat
                   PrintScreen(" ")
-                while gScreenCol & 7
+                while gScreenCol & 3
 
            $0A..$0C: gScreenFlag := pChar
                      return
@@ -948,7 +944,7 @@ PARMS: pChar - character to test for white space.
 RETURNS: pChar if its a white space character, -1 otherwise.
 }}
 
-  if ( (pChar == KBD_ASCII_SPACE) OR (pChar == KBD_ASCII_LF) OR (pChar == KBD_ASCII_CR) or (pChar == KBD_ASCII_TAB))
+  if ( (pChar == ASCII_SPACE) OR (pChar == ASCII_CR) OR (pChar == ASCII_LF) OR (pChar == ASCII_TAB))
     return ( pChar )
   else
     return( -1 )
@@ -982,8 +978,8 @@ PARMS: pChar - character to test.
 RETURNS: pChar if its in the ASCII set [0..9], -1 otherwise.
 }}
 
-  if ( (pChar => KBD_ASCII_0) AND (pChar =< KBD_ASCII_9) )
-    return ( pChar-KBD_ASCII_0 )
+  if ( (pChar => ASCII_0) AND (pChar =< ASCII_9) )
+    return ( pChar-ASCII_0 )
   else
     return(-1)
 
@@ -1003,7 +999,7 @@ RETURNS: pChar if the sent character is in the set [a...zA....Z] or -1 otherwise
 ' first convert to uppercase to simplify testing
   pChar := ToUpper( pChar )
 
-  if ( (pChar => KBD_ASCII_A) AND (pChar =< KBD_ASCII_Z))
+  if ( (pChar => ASCII_A) AND (pChar =< ASCII_Z))
     return ( pChar )
   else
     return( -1 )
@@ -1039,11 +1035,11 @@ PARMS: ASCII hex digit ["0"..."9", "A..."F"|"a"..."f"]
 
 RETURNS:
 }}
-  if ( (pChar => "0") and (pChar =< "9") )
-    return (pChar - KBD_ASCII_0)
-  elseif ( (pChar => "A") and (pChar =< "F") )
+  if ( (pChar => "0") AND (pChar =< "9") )
+    return (pChar - ASCII_0)
+  elseif ( (pChar => "A") AND (pChar =< "F") )
     return (pChar - "A" + 10)
-  elseif ( (pChar => "a") and (pChar =< "f") )
+  elseif ( (pChar => "a") AND (pChar =< "f") )
     return (pChar - "a" + 10)
   else
     return ( 0 )
@@ -1187,9 +1183,9 @@ this method!
     sign := -1
 
 ' try to determine number base
-  if (byte [pStringPtr][index] == KBD_ASCII_HEX)
+  if (byte [pStringPtr][index] == ASCII_HEX)
     ++index
-    repeat while ( ( isDigit(ch := byte [pStringPtr][index]) <> -1) or ( isAlpha(ch := byte [pStringPtr][index]) <> -1) )
+    repeat while ( ( isDigit(ch := byte [pStringPtr][index]) <> -1) OR ( isAlpha(ch := byte [pStringPtr][index]) <> -1) )
       ++index
       sum := (sum << 4) + HexToDec( ToUpper(ch) )
       if (index => pLength)
@@ -1197,10 +1193,10 @@ this method!
 
     return(sum*sign)
 ' // end if hex number
-  elseif (byte [pStringPtr][index] == KBD_ASCII_BIN)
+  elseif (byte [pStringPtr][index] == ASCII_BIN)
     ++index
     repeat while ( isDigit(ch := byte [pStringPtr][index++]) <> -1)
-      sum := (sum << 1) + (ch - KBD_ASCII_0)
+      sum := (sum << 1) + (ch - ASCII_0)
       if (index => pLength)
         return (sum*sign)
 
@@ -1209,7 +1205,7 @@ this method!
   else
   ' must be in default base 10, assume that
     repeat while ( isDigit(ch := byte [pStringPtr][index++]) <> -1)
-      sum := (sum * 10) + (ch - KBD_ASCII_0)
+      sum := (sum * 10) + (ch - ASCII_0)
       if (index => pLength)
         return (sum*sign)
 

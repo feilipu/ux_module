@@ -39,33 +39,6 @@ CON
 
 CON
 
-
-  '    Control Character Constants
-
-  CS =  0  ''CS: Clear Screen
-  HM =  1  ''HM: HoMe cursor
-  PC =  2  ''PC: Position Cursor in x,y
-
-  ML =  3  ''ML: Move cursor Left
-  MR =  4  ''MR: Move cursor Right
-  MU =  5  ''MU: Move cursor Up
-  MD =  6  ''MD: Move cursor Down
-
-  BP =  7  ''BP: BeeP speaker
-  BS =  8  ''BS: BackSpace
-  TB =  9  ''TB: TaB
-
-  LF = 10  ''LF: Line Feed
-  CE = 11  ''CE: Clear to End of line
-  CB = 12  ''CB: Clear lines Below
-  NL = 13  ''NL: New Line
-
-  PX = 14  ''PX: Position cursor in X
-  PY = 15  ''PY: Position cursor in Y
-
-
-CON
-
   ' ASCII control codes
 
   ASCII_NULL    = $00 ' null character
@@ -200,8 +173,7 @@ PUB readZ80 | char
           if (gTextCursY < gScreenRows-1 )
             ++gTextCursY
 
-          wmf.outScreen ( NL )
-
+          wmf.outScreen ( wmf#NL )
           term.lineFeed
 
         ASCII_LF:                               ' line feed
@@ -214,9 +186,9 @@ PUB readZ80 | char
             --gTextCursX
 
             ' move cursor back once to overwrite last character on screen
-            wmf.outScreen ( BS )
+            wmf.outScreen ( wmf#BS )
             wmf.outScreen ( ASCII_SPACE )
-            wmf.outScreen ( BS )
+            wmf.outScreen ( wmf#BS )
 
             ' move cursor back once to overwrite last character on terminal
             term.char ( ASCII_BS )
@@ -273,14 +245,14 @@ PUB readZ80 | char
 
                 "H":                            ' cursor home
                   gTextCursX := gTextCursY := 0
-                  wmf.outScreen ( HM )
+                  wmf.outScreen ( wmf#HM )
 
                   term.str ( string (ASCII_ESC,"[H") )
 
                 other:                          ' all other cases                   
-                  next                          ' ignore CSI and following character
+                  next                          ' ignore ESC + CSI + following character
 
-            other:                              ' all other cases after ESC
+            other:                              ' all other cases after ESC + CSI
               next
   
         other:                                  ' all other cases
@@ -309,10 +281,10 @@ PUB kbdWriteZ80 | char
       case char
 
         kbd#KBD_ASCII_BS, kbd#KBD_ASCII_DEL:
-          acia.tx (BS)
+          acia.tx (ASCII_BS)
 
         kbd#KBD_ASCII_CR, kbd#KBD_ASCII_PAD_CR:
-          acia.tx (NL)
+          acia.tx (ASCII_CR)
 
         kbd#KBD_ASCII_LF:
           next
@@ -335,13 +307,12 @@ PUB kbdWriteZ80 | char
         kbd#KBD_ASCII_HOME:
           acia.txString ( string (ASCII_ESC, "[H") )
 
-
         kbd#KBD_ASCII_CTRL | kbd#KBD_ASCII_ALT | kbd#KBD_ASCII_DEL:
           dira[ acia#RESET_PIN_NUM ]~~                               ' Set /RESET pin to output to reset the Z80
           dira[ acia#RESET_PIN_NUM ]~                                ' Set /RESET pin to input
 
           gTextCursX := gTextCursY := 0
-          wmf.outScreen ( CS )
+          wmf.outScreen ( wmf#CS )
           term.clear
 
         other:      ' all other input
