@@ -200,12 +200,20 @@ PUB readZ80 | char
             term.char ( ASCII_BS )
 
         ASCII_ESC:                              ' escape
+
+          term.char (char)                      ' ESC to terminal
+
           char := acia.rx                       ' get next character after escape
+
+          term.char (char)                      ' possible CSI to terminal
 
           case char
 
             ASCII_LB:                           ' CSI Control Sequence Introducer
+
               char := acia.rx                   ' get next character after CSI
+
+              term.char (char)                  ' possible modifier to terminal
 
               case char
 
@@ -213,54 +221,57 @@ PUB readZ80 | char
                   if (gTextCursY > 0 )
                     --gTextCursY
 
-                  term.str ( string (ASCII_ESC,"[A") )
-
                 "B":                            ' cursor down
                   if (gTextCursY < gScreenRows-1 )
                     ++gTextCursY
-
-                  term.str ( string (ASCII_ESC,"[B") )
 
                 "C":                            ' cursor right
                   if (gTextCursX < gScreenCols-1 )
                     ++gTextCursX
 
-                  term.str ( string (ASCII_ESC,"[C") )
-
                 "D":                            ' cursor left
                   if (gTextCursX > 0 )
                     --gTextCursX
-
-                  term.str ( string (ASCII_ESC,"[D") )
 
                 "E":                            ' cursor next line start
                   gTextCursX := 0
                   if (gTextCursY < gScreenRows-1 )
                     ++gTextCursY
 
-                  term.str ( string (ASCII_ESC,"[E") )
-
                 "F":                            ' cursor previous line start
                   gTextCursX := 0
                   if (gTextCursY > 0  )
                     --gTextCursY
 
-                  term.str ( string (ASCII_ESC,"[F") )
-
                 "H":                            ' cursor home
                   gTextCursX := gTextCursY := 0
                   wmf.outScreen ( wmf#HM )
 
-                  term.str ( string (ASCII_ESC,"[H") )
+                other:                          ' all other cases after ESC + CSI
+                  ' update length
+                  if (gTextCursX < gScreenCols-1 )
+                    ++gTextCursX
+                  else
+                    gTextCursX := 0
+                    if (gTextCursY < gScreenRows-1 )
+                      ++gTextCursY
+        
+                  ' echo character
+                  wmf.outScreen ( char )
 
-                other:                          ' all other cases                   
-                  next                          ' ignore ESC + CSI + following character
-
-            other:                              ' all other cases after ESC + CSI
-              next
+            other:                              ' all other cases after ESC
+                ' update length
+                if (gTextCursX < gScreenCols-1 )
+                  ++gTextCursX
+                else
+                  gTextCursX := 0
+                  if (gTextCursY < gScreenRows-1 )
+                    ++gTextCursY
+      
+                ' echo character
+                wmf.outScreen ( char )
   
         other:                                  ' all other cases
-  
           ' update length
           if (gTextCursX < gScreenCols-1 )
             ++gTextCursX
@@ -269,9 +280,10 @@ PUB readZ80 | char
             if (gTextCursY < gScreenRows-1 )
               ++gTextCursY
 
-          ' echo character
+          ' echo other characters
           wmf.outScreen ( char )
-          ' send it out the serial terminal (transparently)
+
+          ' send other characters out the serial terminal
           term.char (char)
 
 
@@ -319,7 +331,7 @@ PUB kbdWriteZ80 | char
 
           term.clear                                                 ' clear the serial terminal
           wmf.outScreen ( wmf#CS )                                   ' clear the screen
-          gTextCursX := gTextCursY := 0                              ' move cursor to home position
+          gTextCursX := gTextCursY := 0                              ' move screen cursor to home position
 
         other:      ' all other input
           acia.tx (char)
