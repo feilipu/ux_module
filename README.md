@@ -161,6 +161,14 @@ The VGA timings (front porch and back porch) have been developed using the Venti
 
 The keyboard is presumed to be a [USA standard](https://github.com/feilipu/ux_module/blob/main/src/keyboard_ps2.spin) keyboard. Optional different key maps are possible, and can be added to your own build of the firmware.
 
+## Errata
+
+The Propeller MCU `/RESET` pin is driven by the serial interface `DTR` pin, which is normally held high when the port is ready. However sometimes both Linux (MacOS) and Windows toggle `DTR` when opening a new serial interface. This impacts our ability to use the serial interface to upload code to the RC2014.
+
+There are several options proposed on the internet to avoid this issue (mainly driven by Arduino users wanting to have "long running" code). The solutions are written into the [`serial_tool.py`](https://github.com/feilipu/ux_module/blob/main/serial_tool.py) which is included to simplify uploading BASIC programs to the RC2014.
+
+For some machines, none of the software options work so the final solution is to remove the `DTR` pin from the FTDI connector. Then an optional connection can be provided to enable Propeller reprogramming. Photos demonstrating one method to do this are provided in the [`docs`](https://github.com/feilipu/ux_module/docs) directory.
+
 
 ## Code of conduct
 
