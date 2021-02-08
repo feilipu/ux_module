@@ -22,7 +22,7 @@ USAGE:
 
 CON
 
-   BUFFER_LENGTH = 512                                  'Recommended as 64 or higher, but can be 2, 4, 8, 16, 32, 64, 128, 256 or 512.
+   BUFFER_LENGTH = 256                                  'Recommended as 64 or higher, but can be 2, 4, 8, 16, 32, 64, 128, 256 or 512.
    BUFFER_MASK   = BUFFER_LENGTH - 1
 
    MAXSTR_LENGTH = 255                                  'Maximum length of received numerical string (not including zero terminator).
