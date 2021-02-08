@@ -130,6 +130,13 @@ To reboot the UX Module the DTR on the FTDI interface needs to be toggled. This 
 
 Once the UX Module is running the ACIA emulation is enabled, so the RC2014 Z80 can now be rebooted. This can be done by pressing the reset button on the RC2014 or, if a PS/2 keyboard is attached, by pressing `CTRL+ALT+DEL`. This will now initiate a normal RC2014 boot sequence.
 
+This video below shows the expected output of a session.
+
+[![UX Module for RC2014 Operation](https://img.youtube.com/vi/dZT0yxjd9zs/0.jpg)](https://www.youtube.com/watch?v=dZT0yxjd9zs)
+<BR>
+CLICK TO VIEW!
+
+
 ### Ports
 
 The UX Module emulates an ACIA interface on base port `0x80`, as per the standard RC2014 usage. Ports `0x80` and `0x81` are required for the implementation.
