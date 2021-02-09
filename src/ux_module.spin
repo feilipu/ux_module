@@ -11,12 +11,12 @@ CON
   _clkmode      = XTAL1 + PLL16X
   _xinfreq      = 7_372_800
 
+
 CON
 
   ' import some constants from the ACIA Emulation
   PORT_40       = acia#PORT_40
   PORT_80       = acia#PORT_80    ' Default ACIA base port
-  PORT_C0       = acia#PORT_C0
 
 
 CON
@@ -27,10 +27,6 @@ CON
   ' set these constants based on the Propeller PS/2 hardware
   KBD_DATA_PIN  = 27  ' KEYBOARD data pin
   KBD_CLK_PIN   = 26  ' KEYBOARD clock pin
-
-  ' import some constants from the I2C hardware
-  SDA_PIN       = i2c#SDA_PIN  ' I2C data pin
-  SCL_PIN       = i2c#SCL_PIN  ' I2C clock pin
 
   ' import some constants from the Propeller Window Manager
   VGACOLS       = wmf#VGACOLS
@@ -91,20 +87,22 @@ OBJ
       term            : "terminal_ftdi"
       kbd             : "keyboard_ps2"
       wmf             : "wmf_terminal_vga"
-      i2c             : "i2c"
-      acia            : "acia_rc2014"
+      acia[2]         : "acia_rc2014"
 
 
 PUB start
 
   'start the serial terminal
   term.start (115200)
-  term.clear                                        ' clear terminal
+  term.clear                                          ' clear terminal
   term.str (string("UX Module Initialised"))
   term.lineFeed
 
-  'start the ACIA interface
-  acia.start (PORT_80)
+  'start the acia0 interface
+  acia[0].start (PORT_80)
+
+  'start the acia1 interface
+  acia[1].start (PORT_40)
 
   'start the VGA scren
   screenInit
@@ -112,16 +110,15 @@ PUB start
   'start the keyboard
   kbd.start (KBD_DATA_PIN, KBD_CLK_PIN)
 
-  'start i2c
-  i2c.init (SCL_PIN, SDA_PIN)
-
   'start serial input in a separate cog
-  cognew (termWriteZ80, @termStack)
+  cognew (termToZ80, @termStack)
 
   'MAIN COG EVENT LOOP - this is where you put all your code in a non-blocking infinite loop...
   repeat
+    ' if no input from keyboard then continue	
     kbdWriteZ80
-    readZ80
+    ' if no input from acia[0] then continue
+    screenReadZ80
 
 
 CON
@@ -162,13 +159,13 @@ PUB screenInit | retVal
   return
 
 
-PUB readZ80 | char
+PUB screenReadZ80 | char
 
     ' if no input from ACIA then return
-    repeat while acia.rxCheck
+    repeat while acia[0].rxCheck
 
       ' get character from buffer
-      char := acia.rx
+      char := acia[0].rx
 
       case char
 
@@ -178,7 +175,6 @@ PUB readZ80 | char
             ++gTextCursY
 
           wmf.outScreen ( wmf#NL )
-          term.lineFeed
 
         ASCII_LF:                               ' line feed
         ' eat linefeed from Z80.
@@ -194,26 +190,15 @@ PUB readZ80 | char
             wmf.outScreen ( ASCII_SPACE )
             wmf.outScreen ( wmf#BS )
 
-            ' move cursor back once to overwrite last character on terminal
-            term.char ( ASCII_BS )
-            term.char ( ASCII_SPACE)
-            term.char ( ASCII_BS )
-
         ASCII_ESC:                              ' escape
 
-          term.char (char)                      ' ESC to terminal
-
-          char := acia.rx                       ' get next character after escape
-
-          term.char (char)                      ' possible CSI to terminal
+          char := acia[0].rx                    ' get next character after escape
 
           case char
 
             ASCII_LB:                           ' CSI Control Sequence Introducer
 
-              char := acia.rx                   ' get next character after CSI
-
-              term.char (char)                  ' possible modifier to terminal
+              char := acia[0].rx                ' get next character after CSI
 
               case char
 
@@ -283,9 +268,6 @@ PUB readZ80 | char
           ' echo other characters
           wmf.outScreen ( char )
 
-          ' send other characters out the serial terminal
-          term.char (char)
-
 
 PUB kbdWriteZ80 | char
 
@@ -297,35 +279,36 @@ PUB kbdWriteZ80 | char
       case char
 
         kbd#KBD_ASCII_BS, kbd#KBD_ASCII_DEL:
-          acia.tx (ASCII_BS)
+          acia[0].tx (ASCII_BS)
 
         kbd#KBD_ASCII_CR, kbd#KBD_ASCII_PAD_CR:
-          acia.tx (ASCII_CR)
+          acia[0].tx (ASCII_CR)
 
         kbd#KBD_ASCII_LF:
           next
 
         kbd#KBD_ASCII_ESC:
-          acia.tx (ASCII_ESC)
+          acia[0].tx (ASCII_ESC)
 
         kbd#KBD_ASCII_UP:
-          acia.txString ( string (ASCII_ESC, "[A") )
+          acia[0].txString ( string (ASCII_ESC, "[A") )
 
         kbd#KBD_ASCII_DOWN:
-          acia.txString ( string (ASCII_ESC, "[B") )
+          acia[0].txString ( string (ASCII_ESC, "[B") )
 
         kbd#KBD_ASCII_RIGHT:
-          acia.txString ( string (ASCII_ESC, "[C") )
+          acia[0].txString ( string (ASCII_ESC, "[C") )
 
         kbd#KBD_ASCII_LEFT:
-          acia.txString ( string (ASCII_ESC, "[D") )
+          acia[0].txString ( string (ASCII_ESC, "[D") )
 
         kbd#KBD_ASCII_HOME:
-          acia.txString ( string (ASCII_ESC, "[H") )
+          acia[0].txString ( string (ASCII_ESC, "[H") )
 
         kbd#KBD_ASCII_CTRL | kbd#KBD_ASCII_ALT | kbd#KBD_ASCII_DEL:
 
-          acia.txFlush                                               ' remove any pending transmit queue to Z80
+          acia[0].txFlush                                            ' remove any pending transmit queue to Z80
+          acia[1].txFlush                                            ' remove any pending transmit queue to Z80
           dira[ acia#RESET_PIN_NUM ]~~                               ' set /RESET pin to output to reset the Z80
           dira[ acia#RESET_PIN_NUM ]~                                ' set /RESET pin to input
 
@@ -334,15 +317,20 @@ PUB kbdWriteZ80 | char
           gTextCursX := gTextCursY := 0                              ' move screen cursor to home position
 
         other:      ' all other input
-          acia.tx (char)
+          acia[0].tx (char)
 
 
-PUB termWriteZ80
+PUB termToZ80
 
-  'COG EVENT LOOP - this is where you put all your code in a non-blocking infinite loop...
-  repeat
-    ' if no input from terminal then wait till there is
-    acia.tx (term.charIn)
+    repeat
+
+      ' if no input from terminal then continue	
+      repeat while term.rxCheck
+        acia[1].tx (term.charIn)
+  
+      ' if no input from acia[1] then continue	
+      repeat while acia[1].rxCheck
+        term.char (acia[1].rx)
 
 
 DAT
