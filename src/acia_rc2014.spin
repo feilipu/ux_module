@@ -311,13 +311,15 @@ receive_command
                         xor     bus,acia_config_reset wz' master reset if we've received the RESET command
             if_nz       jmp     #wait
 
-                        wrlong  acia_config_initial,acia_config_addr  ' reset config
                         wrlong  acia_status_initial,acia_status_addr  ' reset status
                         jmp     #wait
 
 transmit_status
                         rdlong  bus,acia_status_addr    ' get the status byte
                         and     bus,data_active_mask    ' mask transmitted status byte
+                        rdlong  t1,acia_config_addr     ' get the command byte
+                        xor     t1,acia_config_reset wz ' check whether RESET was last issued
+            if_z        mov     bus,#0                  ' if we're in RESET, then return a NULL as status (for RomWBW probing)
                         or      outa,bus                ' transmit the status byte (stored shifted by DATA_BASE)
                         or      dira,data_active_mask   ' set data bus lines to active (output)
                         nop                             ' wait for data bus lines to settle before releasing /WAIT
