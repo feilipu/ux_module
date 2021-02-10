@@ -123,8 +123,8 @@ PUB main
   repeat
     ' if no input from keyboard then continue	
     kbdWriteZ80
-    ' if no input from acia[0] then continue
-    screenReadZ80
+    ' if no input from ACIA then continue
+    readZ80
 
 
 CON
@@ -165,7 +165,7 @@ PUB screenInit | retVal
   return
 
 
-PUB screenReadZ80 | char
+PUB readZ80 | char
 
     ' if no input from ACIA then return
     repeat while acia.rxCheck
