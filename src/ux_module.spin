@@ -11,6 +11,7 @@ CON
   _clkmode      = XTAL1 + PLL16X
   _xinfreq      = 7_372_800
 
+
 CON
 
   ' import some constants from the ACIA Emulation
@@ -83,7 +84,7 @@ VAR
 
   long  gScreenBufferPtr                              ' holds the address of the video buffer passed back from the VGA driver
 
-  long  termStack [64]                                ' small stack for the serial input cog
+  long  termStack [32]                                ' small stack for the serial input cog
 
 
 OBJ
@@ -95,11 +96,11 @@ OBJ
       acia            : "acia_rc2014"
 
 
-PUB start
+PUB main
 
   'start the serial terminal
   term.start (115200)
-  term.clear                                        ' clear terminal
+  term.clear                                          ' clear terminal
   term.str (string("UX Module Initialised"))
   term.lineFeed
 
@@ -115,13 +116,15 @@ PUB start
   'start i2c
   i2c.init (SCL_PIN, SDA_PIN)
 
-  'start serial input in a separate cog
-  cognew (termWriteZ80, @termStack)
+  'start serial processing in a separate cog
+  cognew (termToZ80, @termStack)
 
   'MAIN COG EVENT LOOP - this is where you put all your code in a non-blocking infinite loop...
   repeat
+    ' if no input from keyboard then continue	
     kbdWriteZ80
-    readZ80
+    ' if no input from acia[0] then continue
+    screenReadZ80
 
 
 CON
@@ -162,7 +165,7 @@ PUB screenInit | retVal
   return
 
 
-PUB readZ80 | char
+PUB screenReadZ80 | char
 
     ' if no input from ACIA then return
     repeat while acia.rxCheck
@@ -337,7 +340,7 @@ PUB kbdWriteZ80 | char
           acia.tx (char)
 
 
-PUB termWriteZ80
+PUB termToZ80
 
   'COG EVENT LOOP - this is where you put all your code in a non-blocking infinite loop...
   repeat

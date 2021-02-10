@@ -131,16 +131,17 @@ VAR
 
   long  cog                         'cog flag/id
 
-                                    '7 contiguous longs
+                                    '8 contiguous longs
   long  rx_head                     '#0   index into rx_buffer
   long  rx_tail                     '#4
   long  tx_head                     '#8
   long  tx_tail                     '#12
-  long  acia_config                 '#16  ACIA configuration byte stored shifted by DATA_BASE
-  long  acia_status                 '#20  ACIA status byte stored shifted by DATA_BASE
-  long  buffer_ptr                  '#24
-  byte  rx_buffer[BUFFER_LENGTH]    '#28  transmit and receive buffers for ACIA emulation
-  byte  tx_buffer[BUFFER_LENGTH]    '#28 + BUFFER_LENGTH
+  long  acia_base                   '#16  ACIA base address (allowing for multiple instances)
+  long  acia_config                 '#20  ACIA configuration byte stored shifted by DATA_BASE
+  long  acia_status                 '#24  ACIA status byte stored shifted by DATA_BASE
+  long  buffer_ptr                  '#28
+  byte  rx_buffer[BUFFER_LENGTH]    '#32  transmit and receive buffers for ACIA emulation
+  byte  tx_buffer[BUFFER_LENGTH]    '#32 + BUFFER_LENGTH
 
 
 PUB start(base) : okay
@@ -151,7 +152,7 @@ PUB start(base) : okay
 
   stop
   longfill(@rx_head, 0, 4)                              ' These are indexes to bytes in the buffer, not pointers
-  port_base_addr := base                                ' Use DAT variables to make the assignment stick for later cog usage
+  acia_base := base
   acia_config := constant (( CR_TDI_RTS0 | CR_8N1 | CR_DIV_64 ) << DATA_BASE )
   acia_status := constant ( SR_TDRE << DATA_BASE )      ' Always ready to receive bytes from the Z80
   buffer_ptr := @rx_buffer                              ' Record the origin address of the Rx and Tx buffers
@@ -164,7 +165,7 @@ PUB stop
 
   if cog
       cogstop(cog~ - 1)
-      longfill(@rx_head, 0, 7)
+      longfill(@rx_head, 0, 8)
 
 
 PUB txString( pStringPtr )
@@ -246,30 +247,35 @@ DAT
 ' Entry
 '
 entry
-                        mov     t1,par                  ' get structure address
+                        mov     t1,par                  ' get structure address #0
 
-                        add     t1,#16                  ' get acia_config address
+                        add     t1,#16                  ' get acia_base address #16
+                        mov     acia_base_addr,t1
+
+                        add     t1,#4                   ' get acia_config address #20
                         mov     acia_config_addr,t1
 
-                        add     t1,#4                   ' get acia_status address
+                        add     t1,#4                   ' get acia_status address #24
                         mov     acia_status_addr,t1
 
-                        add     t1,#4                   ' resolve buffer addresses using buffer_ptr
+                        add     t1,#4                   ' resolve buffer addresses using buffer_ptr #28
                         rdlong  rxbuff,t1               ' rx_buffer base address is stored there
                         mov     txbuff,rxbuff           ' tx_buffer base address is rx_buffer + BUFFER_LENGTH
                         add     txbuff,#BUFFER_MASK     ' BUFFER_LENGTH := BUFFER_MASK + 1
                         add     txbuff,#1
 
+                        rdlong  t1,acia_base_addr
+                        or      t1,#M1_PIN              ' add in the /M1 pin to tighten our addressing to I/O only
+                        or      t1,bus_wait             ' add the /WAIT pin to the address for waitpeq wr effect
+                        wrlong  t1,acia_base_addr       ' save the tightened addressing for later
+
                         mov     dira,bus_wait           ' set /WAIT pin to output (all other pins remain as inputs)
                         mov     outa,bus_wait           ' clear /WAIT high by default
                                                         ' it is behind a diode, and the bus is open collector
 
-                        or      port_base_addr,#M1_PIN  ' add in the /M1 pin to tighten our addressing to I/O only
-                        or      port_base_addr,bus_wait ' add the /WAIT pin to the address for waitpeq wr effect
-
 wait
-                        mov     outa,port_base_addr     ' configure the base address to compare with ina
-                                                        ' including /WAIT pin
+                        rdlong  outa,acia_base_addr     ' configure the base address to compare with ina
+                                                        ' including /M1 and /WAIT pin
 
                         waitpne outa,port_active_mask
                         waitpeq outa,port_active_mask wr' wait until we see our addresses (including /IORQ within A5_A1_PINS)
@@ -318,8 +324,8 @@ transmit_status
                         rdlong  bus,acia_status_addr    ' get the status byte
                         and     bus,data_active_mask    ' mask transmitted status byte
                         rdlong  t1,acia_config_addr     ' get the command byte
-                        xor     t1,acia_config_reset wz ' check whether RESET was last issued
-            if_z        mov     bus,#0                  ' if we're in RESET, then return a NULL as status (for RomWBW probing)
+                        xor     t1,acia_config_reset wz ' check whether RESET was the last issued command
+            if_z        mov     bus,#0                  ' if we're in RESET, then return a NULL as status (for RomWBW)
                         or      outa,bus                ' transmit the status byte (stored shifted by DATA_BASE)
                         or      dira,data_active_mask   ' set data bus lines to active (output)
                         nop                             ' wait for data bus lines to settle before releasing /WAIT
@@ -422,11 +428,10 @@ acia_config_int_tx_mask long    ( CR_TXI_MASK ) << DATA_BASE
 acia_status_irq         long    ( SR_IRQ ) << DATA_BASE
 acia_status_rdrf        long    ( SR_RDRF ) << DATA_BASE
 
-port_base_addr          long    0
-
 '
 ' Uninitialized data 
 
+acia_base_addr          res     1
 acia_config_addr        res     1
 acia_status_addr        res     1
 
