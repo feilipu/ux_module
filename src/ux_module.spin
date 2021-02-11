@@ -105,7 +105,8 @@ PUB main
   term.lineFeed
 
   'start the ACIA interface
-  acia.start (PORT_80)
+  acia.start (PORT_80)      'default for RC2014 ROM
+' acia.start (PORT_40)      'optional for RomWBW
 
   'start the VGA scren
   screenInit

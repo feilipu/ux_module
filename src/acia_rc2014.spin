@@ -188,7 +188,7 @@ PUB tx(txbyte)
 
   acia_status |= constant ( SR_RDRF << DATA_BASE  )     ' Byte ready to transmit to Z80
 
-  if acia_config & constant ( CR_RIE << DATA_BASE )     ' If the Rx interrupt (Z80 perspective) is not set, then set it
+  if acia_config & constant ( CR_RIE << DATA_BASE )     ' If the Rx interrupt (Z80 perspective) should be set, then set it
     acia_status |= constant ( SR_IRQ << DATA_BASE )     ' Set the interrupt status byte (cleared in driver cog)
     dira[ INT_PIN_NUM ]~~                               ' Set the /INT pin to output to wake up the Z80 (minimum 136ns pulse = 1 RC2014 standard clock)
     dira[ INT_PIN_NUM ]~                                ' Clear /INT pin to input (measured pulse is 5,600ns)

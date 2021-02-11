@@ -49,6 +49,64 @@ It is designed to operate as an MC68B50 ACIA device (the standard RC2014 Serial 
 </table>
 </div>
 
+## Supported System ROMs
+
+### RC2014 Standard
+
+The UX Module emulates an ACIA interface on base port `0x80`, as per the standard RC2014 usage. Ports `0x80` and `0x81` are required for the implementation.
+
+This supports the use of [standard RC2014 ROMs](https://github.com/RC2014Z80/RC2014/blob/master/ROMs/Factory/README.md) for MS Basic and CP/M as distributed. These ROMs include:
+
+ - R - Microsoft BASIC, for 32k RAM, 68B50 ACIA, with origin 0x0000
+ - K - Microsoft BASIC, for 56k RAM, 68B50 ACIA, with origin 0x0000
+ - 1 - CP/M Monitor, for pageable ROM, 64k RAM, 68B50 ACIA, CF Module at 0x10, with origin at 0x0000
+ - 88 - Small Computer Monitor for pageable ROM, 64k RAM, SIO/2 or 68B50 ACIA, with Microsoft BASIC and CP/M boot options
+ - 9 - Small Computer Monitor for any ROM, any RAM, any UART
+
+### CP/M-IDE
+
+The [CP/M-IDE for ACIA](https://github.com/RC2014Z80/RC2014/tree/master/ROMs/CPM-IDE) can be used where an [IDE Interface Module](https://www.tindie.com/products/semachthemonkey/rc2014-ide-hard-drive-module/) is available.
+
+### RomWBW
+
+[RomWBW](https://github.com/wwarthen/RomWBW) is supported, and the UX Module appears as an ACIA port. The UX Module was not compatible with the ACIA device detection mechanism in the 3.0.1 Release, due to the UX Module's tight addressing. However, the device detection mechanism has been improved in the 3.1.1 development branch and it works with the UX Module.
+
+An optimal configuration of RomWBW is to have the UX Module mapped to `0x40`, and a SIO Module providing `TTY` ports. The minimal boot message for this looks like this...
+
+```sh
+
+RomWBW HBIOS v3.1.1-pre.43, 2021-02-11
+
+RC2014 Z80 @ 7.372MHz
+0 MEM W/S, 1 I/O W/S, INT MODE 1, Z2 MMU
+512KB ROM, 512KB RAM
+
+ACIA0: IO=0x40 ACIA MODE=115200,8,N,1
+SIO0: IO=0x80 SIO MODE=115200,8,N,1
+SIO1: IO=0x82 SIO MODE=115200,8,N,1
+MD: UNITS=2 ROMDISK=384KB RAMDISK=256KB
+PPIDE: IO=0x20 PPI NOT PRESENT
+
+Unit        Device      Type              Capacity/Mode
+----------  ----------  ----------------  --------------------
+Char 0      ACIA0:      RS-232            115200,8,N,1
+Char 1      SIO0:       RS-232            115200,8,N,1
+Char 2      SIO1:       RS-232            115200,8,N,1
+Disk 0      MD1:        RAM Disk          256KB,LBA
+Disk 1      MD0:        ROM Disk          384KB,LBA
+
+
+RC2014 Boot Loader
+
+Boot [H=Help]:
+```
+
+To ensure that the UX Module appears as the first Char Unit (Char 0), the serial detection order must be manually tweaked to ensure the ACIA is detected before the SIO in `hbios.asm` in three places.
+[Line 1615](https://github.com/wwarthen/RomWBW/blob/master/Source/HBIOS/hbios.asm#L1615)
+[Line 1649](https://github.com/wwarthen/RomWBW/blob/master/Source/HBIOS/hbios.asm#L1649)
+[Line  2772](https://github.com/wwarthen/RomWBW/blob/master/Source/HBIOS/hbios.asm#L2972)
+
+
 ## Construction
 
 Building the UX Module is fairly straightforward. Some notes are included below describing options and potential issues that may arise.
@@ -143,19 +201,7 @@ CLICK IMAGE TO VIEW!
 
 The UX Module emulates an ACIA interface on base port `0x80`, as per the standard RC2014 usage. Ports `0x80` and `0x81` are required for the implementation.
 
-This supports the use of [standard RC2014 ROMs](https://github.com/RC2014Z80/RC2014/blob/master/ROMs/Factory/README.md) for MS Basic and CP/M as distributed. These ROMs include:
-
- - R - Microsoft BASIC, for 32k RAM, 68B50 ACIA, with origin 0x0000
- - K - Microsoft BASIC, for 56k RAM, 68B50 ACIA, with origin 0x0000
- - 1 - CP/M Monitor, for pageable ROM, 64k RAM, 68B50 ACIA, CF Module at 0x10, with origin at 0x0000
- - 88 - Small Computer Monitor for pageable ROM, 64k RAM, SIO/2 or 68B50 ACIA, with Microsoft BASIC and CP/M boot options
- - 9 - Small Computer Monitor for any ROM, any RAM, any UART
-
-Also the [CP/M-IDE for ACIA](https://github.com/RC2014Z80/RC2014/tree/master/ROMs/CPM-IDE) can be used where an [IDE Interface Module](https://www.tindie.com/products/semachthemonkey/rc2014-ide-hard-drive-module/) is available.
-
 The UX Module can be optionally located on ports `0x40`, `0x41` and/or on `0xC0`, `0xC1`.
-
-It is possible to implement two independent ACIA interfaces, on base ports `0x40` and on `0x80` for example, to support TTY and CON for CP/M through a simple reconfiguration of the firmware. This is the [default ACIA addressing for RomWBW](https://github.com/wwarthen/RomWBW/blob/master/Source/HBIOS/cfg_rcz80.asm#L76), and will be a future supported option.
 
 It will (enhancement plan) be possible to implement a graphics interface. It is likely that the graphics interface will use the `0xC0` and `0xC1` ports, and may be configured by settings on other ports.
 
