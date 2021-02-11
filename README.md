@@ -102,9 +102,10 @@ Boot [H=Help]:
 ```
 
 To ensure that the UX Module appears as the first Char Unit (Char 0), the serial detection order must be manually tweaked to ensure the ACIA is detected before the SIO in `hbios.asm` in three places.
-[Line 1615](https://github.com/wwarthen/RomWBW/blob/master/Source/HBIOS/hbios.asm#L1615)
-[Line 1649](https://github.com/wwarthen/RomWBW/blob/master/Source/HBIOS/hbios.asm#L1649)
-[Line  2772](https://github.com/wwarthen/RomWBW/blob/master/Source/HBIOS/hbios.asm#L2972)
+
+ - [Line 1615](https://github.com/wwarthen/RomWBW/blob/master/Source/HBIOS/hbios.asm#L1615)
+ - [Line 1649](https://github.com/wwarthen/RomWBW/blob/master/Source/HBIOS/hbios.asm#L1649)
+ - [Line  2772](https://github.com/wwarthen/RomWBW/blob/master/Source/HBIOS/hbios.asm#L2972)
 
 
 ## Construction
