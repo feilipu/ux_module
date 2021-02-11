@@ -101,12 +101,21 @@ RC2014 Boot Loader
 Boot [H=Help]:
 ```
 
-To ensure that the UX Module appears as the first Char Unit (Char 0), the serial detection order must be manually tweaked to ensure the ACIA is detected before the SIO in `hbios.asm` in three places.
+To ensure that the UX Module appears as the first Char Unit (Char 0) and is the console port, the serial detection order must be manually tweaked using the `FORCECON` configuration. The key elements of the configuration file are noted below.
 
- - [Line 1615](https://github.com/wwarthen/RomWBW/blob/master/Source/HBIOS/hbios.asm#L1615)
- - [Line 1649](https://github.com/wwarthen/RomWBW/blob/master/Source/HBIOS/hbios.asm#L1649)
- - [Line  2772](https://github.com/wwarthen/RomWBW/blob/master/Source/HBIOS/hbios.asm#L2972)
-
+```sh
+UARTENABLE	.SET	FALSE		; UART: DISABLE 8250/16550-LIKE SERIAL DRIVER (UART.ASM)
+;
+ACIAENABLE	.SET	TRUE		; ACIA: ENABLE MOTOROLA 6850 ACIA DRIVER (ACIA.ASM)
+ACIA0BASE	.SET	$40		    ; ACIA 0: REGISTERS BASE ADDR
+;
+SIOENABLE	.SET	TRUE		; SIO: ENABLE ZILOG SIO SERIAL DRIVER (SIO.ASM)
+SIOCNT		.SET	1			; SIO: NUMBER OF CHIPS TO DETECT (1-2), 2 CHANNELS PER CHIP
+;
+TMSENABLE	.SET	FALSE		; TMS: DISABLE TMS9918 VIDEO/KBD DRIVER (TMS.ASM)
+;
+FORCECON	.SET	2			; SET ACIA AS CONSOLE, ASSUMING 1 SIO MODULE CONFIGURED WITH 2 CHANNELS
+```
 
 ## Construction
 
