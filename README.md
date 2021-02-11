@@ -143,6 +143,10 @@ The UX Module is expecting a 7.3728MHz oscillator, the same standard clock as th
 
 It is possible to use a slower oscillator at 5MHz, or 6.25MHz, or other if desired, or in the unlikely event your selected Propeller device doesn't work at 118MHz. In this case the clock rate specification [`_xinfreq`](https://github.com/feilipu/ux_module/blob/main/src/ux_module.spin#L12) will have to be adjusted in the firmware to suit, and the VGA video timing will need to be adjusted to suit. If you are concerned about this it would be sensible to mount the oscillator in a socket to enable it to be simply swapped as needed.
 
+### Potential Tx/Rx Line Conflict
+
+When multiple serial Modules are used on one RC2014 Backplane, there is a potential for conflict on the Tx/Rx lines. The UX Module drives these lines and if you do not want to have the UX Module controlling these lines, then either straighten these two pins, or remove the pins from the UX Module. Conflict on the the Tx/Rx lines will prevent the RC2014 from booting correctly.
+
 ## Firmware Development
 
 The UX Module firmware is developed in Propeller SPIN, and in Propeller Assembly (PASM). The individual functions are mainly built in PASM, with connecting higher level logic running in SPIN.
