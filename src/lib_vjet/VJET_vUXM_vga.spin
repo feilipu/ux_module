@@ -1,23 +1,9 @@
-{{
-///////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
-// VGA64 6 Bits Per Pixel Engine
-//
-// Author: Kwabena W. Agyeman
-// Updated: 11/17/2010
-// Designed For: P8X32A
-// Version: 1.0
-//
-// Copyright (c) 2010 Kwabena W. Agyeman
-// See end of file for terms of use.
-//
-// Update History:
-//
-// v1.0 - Original release - 11/17/2009.
-//
-// For each included copy of this object only one spin interpreter should access it at a time.
-//
-// Nyamekye,
-///////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+'' VECTORJET for UX Module (based on v1.0)
+'' Special version, don't re-use if you don't know what you're doing
+'' (C)2021 IRQsome Software
+'' VGA output code (based on work by Kwabena W. Agyeman)
+
+{{                   
 
 ///////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 // Video Circuit:
@@ -85,110 +71,11 @@ CON
   #$3C, Light_Teal, #$28, Teal, #$14, Dark_Teal
   #$FF, White, #$00, Black
 
+VAR
 
-PUB plotBox(color, xPixelStart, yPixelStart, xPixelEnd, yPixelEnd) '' 8 Stack Longs
+long cogNumber
 
-'' ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
-'' // Plots a one color box of pixels on screen.
-'' //
-'' // Color - The color of the box of pixels to display on screen. A color byte (%RR_GG_BB_xx).
-'' // XPixelStart - The X cartesian pixel start coordinate. X between 0 and 159. Y between 0 and 119.
-'' // YPixelStart - The Y cartesian pixel start coordinate. Note that this axis is inverted like on all other graphics drivers.
-'' // XPixelEnd - The X cartesian pixel end coordinate. X between 0 and 159. Y between 0 and 119.
-'' // YPixelEnd - The Y cartesian pixel end coordinate. Note that this axis is inverted like on all other graphics drivers.
-'' ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
-
-  xPixelEnd := ((xPixelEnd <# 159) #> 0)
-  yPixelEnd := (((yPixelEnd <# 119) #> 0) * 160)
-  xPixelStart := ((xPixelStart <# xPixelEnd) #> 0)
-  yPixelStart := (((yPixelStart * 160) <# yPixelEnd) #> 0)
-
-  yPixelEnd += xPixelStart
-  yPixelStart += xPixelStart
-  xPixelEnd -= --xPixelStart
-
-  repeat result from yPixelStart to yPixelEnd step 160
-    bytefill(@displayBuffer + result, (color | $3), xPixelEnd)
-
-PUB plotPixel(color, xPixel, yPixel) '' 6 Stack Longs
-
-'' ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
-'' // Plots a one color pixel on screen.
-'' //
-'' // Color - The color of the pixel to display on screen. A color byte (%RR_GG_BB_xx).
-'' // XPixel - The X cartesian pixel coordinate. X between 0 and 159. Y between 0 and 119.
-'' // YPixel - The Y cartesian pixel coordinate. Note that this axis is inverted like on all other graphics drivers.
-'' ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
-
-  displayBuffer.byte[((xPixel <# 159) #> 0) + (160 * ((yPixel <# 119) #> 0))] := (color | $3)
-
-PUB displayClear '' 3 Stack Longs
-
-'' ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
-'' // Clears the screen to black.
-'' ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
-
-  longfill(@displayBuffer, 0, constant((160 * 120) / 4))
-
-PUB displayPointer '' 3 Stack Longs
-
-'' ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
-'' // Returns a pointer to the display buffer.
-'' //
-'' // The display buffer is an array of 160 by 120 bytes. Each byte represents a pixel on the screen.
-'' //
-'' // Each pixel is a color byte (%RR_GG_BB_xx). Where RR, GG, and BB are the two bit values of red, green, blue respectively.
-'' ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
-
-  return @displayBuffer
-
-PUB displayState(state) '' 4 Stack Longs
-
-'' ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
-'' // Enables or disables the PIX Driver's video output - turning the monitor off or putting it into standby mode.
-'' //
-'' // State - True for active and false for inactive.
-'' ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
-
-  displayIndicator := state
-
-PUB displayRate(rate) '' 4 Stack Longs
-
-'' ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
-'' // Returns true or false depending on the time elasped according to a specified rate.
-'' //
-'' // Rate - A display rate to return at. 0=0.234375Hz, 1=0.46875Hz, 2=0.9375Hz, 3=1.875Hz, 4=3.75Hz, 5=7.5Hz, 6=15Hz, 7=30Hz.
-'' ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
-
-  result or= (($80 >> ((rate <# 7) #> 0)) & syncIndicator)
-
-PUB displayWait(frames) '' 4 Stack Longs
-
-'' ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
-'' // Waits for the display vertical refresh.
-'' //
-'' // The best time to draw on screen for flicker free operation is right after this function returns.
-'' //
-'' // Frames - Number of vertical refresh frames to wait for.
-'' ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
-
-  repeat (frames #> 0)
-    result := syncIndicator
-    repeat until(result <> syncIndicator)
-
-PUB displayColor(redAmount, greenAmount, blueAmount) '' 6 Stack Longs
-
-'' ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
-'' // Builds a color byte (%RR_GG_BB_xx) from red, green, and blue componets.
-'' //
-'' // RedAmount - The amount of red to add to the color byte. Between 0 and 3.
-'' // GreenAmount - The amount of green to add to the color byte. Between 0 and 3.
-'' // BlueAmount - The amount of blue to add to the color byte. Between 0 and 3.
-'' ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
-
-  return ((((redAmount <# 3) #> 0) << 6) | (((greenAmount <# 3) #> 0) << 4) | (((blueAmount <# 3) #> 0) << 2) | $3)
-
-PUB PIXEngineStart(pinGroup) '' 7 Stack Longs
+PUB start(pinGroup,lineBuffers,statusLong) '' 7 Stack Longs
 
 '' ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 '' // Starts up the PIX driver running on a cog.
@@ -198,14 +85,14 @@ PUB PIXEngineStart(pinGroup) '' 7 Stack Longs
 '' // PinGroup - Pin group to use to drive the video circuit. Between 0 and 3.
 '' ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
-  PIXEngineStop
+  stop
   if(chipver == 1)
 
     pinGroup := ((pinGroup <# 3) #> 0)
     directionState := ($FF << (8 * pinGroup))
     videoState := ($30_00_00_FF | (pinGroup << 9))
 
-    pinGroup := constant((25_175_000 + 1_600) / 4)
+    pinGroup := constant((20_000_000) / 2)
     frequencyState := 1
 
     repeat 32
@@ -215,12 +102,11 @@ PUB PIXEngineStart(pinGroup) '' 7 Stack Longs
         pinGroup -= clkfreq
         frequencyState += 1
 
-    displayIndicatorAddress := @displayIndicator
-    syncIndicatorAddress := @syncIndicator
-    cogNumber := cognew(@initialization, @displayBuffer)
+    syncIndicatorAddress := statusLong
+    cogNumber := cognew(@initialization, lineBuffers)
     result or= ++cogNumber
 
-PUB PIXEngineStop '' 3 Stack Longs
+PUB stop '' 3 Stack Longs
 
 '' ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 '' // Shuts down the PIX driver running on a cog.
@@ -247,13 +133,17 @@ initialization          mov     vcfg,           videoState                 ' Set
 '                       Active Video
 ' /////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
-loop                    mov     displayCounter, par                        ' Set/Reset tiles fill counter.
-                        mov     tilesCounter,   #120                       '
+loop                    mov     tilesCounter,   #0                         '
 
-tilesDisplay            mov     tileCounter,    #4                         ' Set/Reset tile fill counter.
+tilesDisplay
+                        test    tilesCounter,   #7      wz
+              if_z      mov     displayCounter, par                        ' Set/Reset tiles fill counter. 
+                        mov     tileCounter,    #2                         ' Set/Reset tile fill counter.
+                        
+                        wrlong  tilesCounter,   syncIndicatorAddress
 
 tileDisplay             mov     vscl,           visibleScale               ' Set/Reset the video scale.
-                        mov     counter,        #40                        '
+                        mov     counter,        #256/4                     '
 
 ' //////////////////////Visible Video//////////////////////////////////////////////////////////////////////////////////////////
 
@@ -273,22 +163,25 @@ videoLoop               rdlong  buffer,         displayCounter             ' Dow
 
 ' //////////////////////Repeat/////////////////////////////////////////////////////////////////////////////////////////////////
 
-                        sub     displayCounter, #160                       ' Repeat.
+                        sub     displayCounter, #256                       ' Repeat line.
                         djnz    tileCounter,    #tileDisplay               '
 
-                        add     displayCounter, #160                       ' Repeat.
-                        djnz    tilesCounter,   #tilesDisplay              '
+                        add     displayCounter, #256                       ' Next line.
+                        add     tilesCounter,   #1
+                        cmp     tilesCounter,   #240    wc,wz
+              if_b      jmp     #tilesDisplay                              '
 
 ' /////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 '                       Inactive Video
 ' /////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
-                        add     refreshCounter, #1                         ' Update sync indicator.
-                        wrbyte  refreshCounter, syncIndicatorAddress       '
+                        'add     refreshCounter, #1                         ' Update sync indicator.
+                        'wrbyte refreshCounter, syncIndicatorAddress       '
 
 ' //////////////////////Front Porch////////////////////////////////////////////////////////////////////////////////////////////
 
                         mov     counter,        #11                        ' Set loop counter.
+                        wrlong  FPorchStatus,   syncIndicatorAddress
 
 frontPorch              mov     vscl,           blankPixels                ' Invisible lines.
                         waitvid HSyncColors,    #0                         '
@@ -300,7 +193,8 @@ frontPorch              mov     vscl,           blankPixels                ' Inv
 
 ' //////////////////////Vertical Sync//////////////////////////////////////////////////////////////////////////////////////////
 
-                        mov     counter,        #(2 + 2)                   ' Set loop counter.
+                        mov     counter,        #(2)                       ' Set loop counter.
+                        wrlong  VSyncStatus,    syncIndicatorAddress
 
 verticalSync            mov     vscl,           blankPixels                ' Invisible lines.
                         waitvid VSyncColors,    #0                         '
@@ -313,6 +207,7 @@ verticalSync            mov     vscl,           blankPixels                ' Inv
 ' //////////////////////Back Porch/////////////////////////////////////////////////////////////////////////////////////////////
 
                         mov     counter,        #31                        ' Set loop counter.
+                        wrlong  BPorchStatus,   syncIndicatorAddress
 
 backPorch               mov     vscl,           blankPixels                ' Invisible lines.
                         waitvid HSyncColors,    #0                         '
@@ -324,8 +219,8 @@ backPorch               mov     vscl,           blankPixels                ' Inv
 
 ' //////////////////////Update Display Settings////////////////////////////////////////////////////////////////////////////////
 
-                        rdbyte  buffer,         displayIndicatorAddress wz ' Update display settings.
-                        muxnz   dira,           directionState             '
+                        'rdbyte buffer,         displayIndicatorAddress wz ' Update display settings.
+                        or      dira,           directionState             '
 
 ' //////////////////////Loop///////////////////////////////////////////////////////////////////////////////////////////////////
 
@@ -335,13 +230,17 @@ backPorch               mov     vscl,           blankPixels                ' Inv
 '                       Data
 ' /////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
-invisibleScale          long    (16 << 12) + 160                           ' Scaling for inactive video.
+invisibleScale          long    (12 << 12) + 256                           ' Scaling for inactive video.
 visibleScale            long    (4 << 12) + 16                             ' Scaling for active video.
-blankPixels             long    640                                        ' Blank scanline pixel length.
-syncPixels              long    $00_00_3F_FC                               ' F-porch, h-sync, and b-porch.
+blankPixels             long    1024                                       ' Blank scanline pixel length.
+syncPixels              long    $0F_FF_FF_F0                               ' F-porch, h-sync, and b-porch.
 HSyncColors             long    $01_03_01_03                               ' Horizontal sync color mask.
 VSyncColors             long    $00_02_00_02                               ' Vertical sync color mask.
 HVSyncColors            long    $03_03_03_03                               ' Horizontal and vertical sync colors.
+
+FPorchStatus            long    %001 << 16 + 240
+VSyncStatus             long    %011 << 16
+BPorchStatus            long    %101 << 16
 
 ' //////////////////////Configuration Settings/////////////////////////////////////////////////////////////////////////////////
 
@@ -351,7 +250,6 @@ frequencyState          long    0
 
 ' //////////////////////Addresses//////////////////////////////////////////////////////////////////////////////////////////////
 
-displayIndicatorAddress long    0
 syncIndicatorAddress    long    0
 
 ' //////////////////////Run Time Variables/////////////////////////////////////////////////////////////////////////////////////
@@ -362,7 +260,6 @@ buffer                  res     1
 tileCounter             res     1
 tilesCounter            res     1
 
-refreshCounter          res     1
 displayCounter          res     1
 
 ' /////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
@@ -370,13 +267,6 @@ displayCounter          res     1
                         fit     496
 
 DAT
-
-' //////////////////////Variable Arrary////////////////////////////////////////////////////////////////////////////////////////
-
-displayBuffer           long    0[(160 * 120) / 4]                         ' Display buffer.
-displayIndicator        byte    1                                          ' Video output control.
-syncIndicator           byte    0                                          ' Video update control.
-cogNumber               byte    0                                          ' Cog ID.
 
 ' /////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
