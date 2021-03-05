@@ -3,7 +3,7 @@ CON
   _clkmode      = XTAL1 + PLL16X
   _xinfreq      = 7_372_800
 
-  DLIST_SIZE = 150
+  DLIST_SIZE = 900
 
   WIDTH = 256
   HEIGHT = 240
@@ -21,7 +21,7 @@ long framecount,vga_status,dlist_ptr
 long dlist1[DLIST_SIZE],dlist2[DLIST_SIZE] 
 long linebuffers[(256*8)/4]                
 
-PUB main |i,j,x,j2
+PUB main | i,j,x,j2
 
 vga.start(16/8,@linebuffers,@vga_status)
 
@@ -46,7 +46,7 @@ repeat
   \draw
   gl.done
   framecount++
-  
+
 
 PRI draw | cx,cy
 
@@ -89,7 +89,7 @@ gl.triangle(128<<16 + sin(0000+framecount<<5)*100,90<<16 + sin(2048+framecount<<
 gl.text_centered(WIDTH>>1,200,0,2,string(" WOOO! SPINNING TRIANGLES!"),font.get,$FFFF)
    
 PUB sin(angle) : s | c,z
-              'angle: 0..8192 = 360°
+              'angle: 0..8192 = 360deg
   s := angle
   if angle & $800
     s := -s

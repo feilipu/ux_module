@@ -10,29 +10,38 @@
 //
 //     0   1   2   3 Pin Group
 //
-//                     240OHM
+//                     270OHM
 // Pin 0,  8, 16, 24 ----R-------- Vertical Sync
 //
-//                     240OHM
+//                     270OHM
 // Pin 1,  9, 17, 25 ----R-------- Horizontal Sync
 //
-//                     470OHM
+//                     560OHM
 // Pin 2, 10, 18, 26 ----R-------- Blue Video
-//                            |
-//                     240OHM |
-// Pin 3, 11, 19, 27 ----R-----
+//                            | |
+//                     270OHM | |
+// Pin 3, 11, 19, 27 ----R----- |
+//                              R 130OHM
+//                              |
+//                             GND
 //
-//                     470OHM
+//                     560OHM
 // Pin 4, 12, 20, 28 ----R-------- Green Video
-//                            |
-//                     240OHM |
-// Pin 5, 13, 21, 29 ----R-----
+//                            | |
+//                     270OHM | |
+// Pin 5, 13, 21, 29 ----R----- |
+//                              R 130OHM
+//                              |
+//                             GND
 //
-//                     470OHM
+//                     560OHM
 // Pin 6, 14, 22, 30 ----R-------- Red Video
-//                            |
-//                     240OHM |
-// Pin 7, 15, 23, 31 ----R-----
+//                            | |
+//                     270OHM | |
+// Pin 7, 15, 23, 31 ----R----- |
+//                              R 130OHM
+//                              |
+//                             GND
 //
 //                            5V
 //                            |
@@ -71,9 +80,11 @@ CON
   #$3C, Light_Teal, #$28, Teal, #$14, Dark_Teal
   #$FF, White, #$00, Black
 
+
 VAR
 
-long cogNumber
+long cogNumber           ' Cog ID.
+
 
 PUB start(pinGroup,lineBuffers,statusLong) '' 7 Stack Longs
 
@@ -106,6 +117,7 @@ PUB start(pinGroup,lineBuffers,statusLong) '' 7 Stack Longs
     cogNumber := cognew(@initialization, lineBuffers)
     result or= ++cogNumber
 
+
 PUB stop '' 3 Stack Longs
 
 '' ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
@@ -114,6 +126,7 @@ PUB stop '' 3 Stack Longs
 
   if(cogNumber)
     cogstop(-1 + cogNumber~)
+
 
 DAT
 
@@ -126,32 +139,32 @@ DAT
 ' //////////////////////Initialization/////////////////////////////////////////////////////////////////////////////////////////
 
 initialization          mov     vcfg,           videoState                 ' Setup video hardware.
-                        mov     frqa,           frequencyState             '
-                        movi    ctra,           #%0_00001_101              '
+                        mov     frqa,           frequencyState
+                        movi    ctra,           #%0_00001_101
 
 ' /////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 '                       Active Video
 ' /////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
-loop                    mov     tilesCounter,   #0                         '
+loop                    mov     tilesCounter,   #0
 
 tilesDisplay
                         test    tilesCounter,   #7      wz
               if_z      mov     displayCounter, par                        ' Set/Reset tiles fill counter. 
                         mov     tileCounter,    #2                         ' Set/Reset tile fill counter.
-                        
+  
                         wrlong  tilesCounter,   syncIndicatorAddress
 
 tileDisplay             mov     vscl,           visibleScale               ' Set/Reset the video scale.
-                        mov     counter,        #256/4                     '
+                        mov     counter,        #256/4
 
 ' //////////////////////Visible Video//////////////////////////////////////////////////////////////////////////////////////////
 
 videoLoop               rdlong  buffer,         displayCounter             ' Download new pixels.
-                        add     displayCounter, #4                         '
+                        add     displayCounter, #4
 
                         or      buffer,         HVSyncColors               ' Update display scanline.
-                        waitvid buffer,         #%%3210                    '
+                        waitvid buffer,         #%%3210
 
                         djnz    counter,        #videoLoop                 ' Repeat.
 
@@ -164,19 +177,17 @@ videoLoop               rdlong  buffer,         displayCounter             ' Dow
 ' //////////////////////Repeat/////////////////////////////////////////////////////////////////////////////////////////////////
 
                         sub     displayCounter, #256                       ' Repeat line.
-                        djnz    tileCounter,    #tileDisplay               '
+                        djnz    tileCounter,    #tileDisplay
 
                         add     displayCounter, #256                       ' Next line.
                         add     tilesCounter,   #1
                         cmp     tilesCounter,   #240    wc,wz
-              if_b      jmp     #tilesDisplay                              '
+              if_b      jmp     #tilesDisplay
 
 ' /////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 '                       Inactive Video
 ' /////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
-                        'add     refreshCounter, #1                         ' Update sync indicator.
-                        'wrbyte refreshCounter, syncIndicatorAddress       '
 
 ' //////////////////////Front Porch////////////////////////////////////////////////////////////////////////////////////////////
 
@@ -184,10 +195,10 @@ videoLoop               rdlong  buffer,         displayCounter             ' Dow
                         wrlong  FPorchStatus,   syncIndicatorAddress
 
 frontPorch              mov     vscl,           blankPixels                ' Invisible lines.
-                        waitvid HSyncColors,    #0                         '
+                        waitvid HSyncColors,    #0
 
                         mov     vscl,           invisibleScale             ' Horizontal Sync.
-                        waitvid HSyncColors,    syncPixels                 '
+                        waitvid HSyncColors,    syncPixels
 
                         djnz    counter,        #frontPorch                ' Repeat # times.
 
@@ -197,10 +208,10 @@ frontPorch              mov     vscl,           blankPixels                ' Inv
                         wrlong  VSyncStatus,    syncIndicatorAddress
 
 verticalSync            mov     vscl,           blankPixels                ' Invisible lines.
-                        waitvid VSyncColors,    #0                         '
+                        waitvid VSyncColors,    #0
 
                         mov     vscl,           invisibleScale             ' Vertical Sync.
-                        waitvid VSyncColors,    syncPixels                 '
+                        waitvid VSyncColors,    syncPixels
 
                         djnz    counter,        #verticalSync              ' Repeat # times.
 
@@ -210,7 +221,7 @@ verticalSync            mov     vscl,           blankPixels                ' Inv
                         wrlong  BPorchStatus,   syncIndicatorAddress
 
 backPorch               mov     vscl,           blankPixels                ' Invisible lines.
-                        waitvid HSyncColors,    #0                         '
+                        waitvid HSyncColors,    #0
 
                         mov     vscl,           invisibleScale             ' Horizontal Sync.
                         waitvid HSyncColors,    syncPixels                 '
@@ -219,12 +230,14 @@ backPorch               mov     vscl,           blankPixels                ' Inv
 
 ' //////////////////////Update Display Settings////////////////////////////////////////////////////////////////////////////////
 
-                        'rdbyte buffer,         displayIndicatorAddress wz ' Update display settings.
-                        or      dira,           directionState             '
+                        or      dira,           directionState
 
 ' //////////////////////Loop///////////////////////////////////////////////////////////////////////////////////////////////////
 
                         jmp     #loop                                      ' Loop.
+
+
+DAT
 
 ' /////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 '                       Data

@@ -21,7 +21,8 @@ long framecount,vga_status,dlist_ptr
 long dlist1[DLIST_SIZE],dlist2[DLIST_SIZE] 
 long linebuffers[(256*8)/4]                
 
-PUB main |i,j,x,j2
+
+PUB main | i,j,x,j2
 
 vga.start(16/8,@linebuffers,@vga_status)
 
