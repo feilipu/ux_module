@@ -5,9 +5,10 @@ CON
 
   DLIST_SIZE = 900
 
-  WIDTH = 256
-  HEIGHT = 240
+  WIDTH = render#WIDTH
+  HEIGHT = render#NUM_LINES
   
+
 OBJ
 vga: "VJET_vUXM_vga.spin"
 render: "VJET_vUXM_rendering.spin"
@@ -19,7 +20,7 @@ VAR
 
 long framecount,vga_status,dlist_ptr
 long dlist1[DLIST_SIZE],dlist2[DLIST_SIZE] 
-long linebuffers[(256*8)/4]                
+long linebuffers[(WIDTH*8)/4]                
 
 PUB main | i,j,x,j2
 
@@ -52,10 +53,19 @@ PRI draw | cx,cy
 
 gl.set_clip(0,HEIGHT<<16,0,WIDTH<<16)
 
+gl.triangle(constant((WIDTH/2)<<16),constant(-HEIGHT<<16),constant(-WIDTH<<16),constant(HEIGHT<<16),constant(2*WIDTH<<16),constant(HEIGHT<<16),$ECEC)
 
+gl.triangle(208<<16 + sin(0000+framecount<<5)*75,90<<16 + sin(2048+framecount<<5)*75,{
+           }208<<16 + sin(2730+framecount<<5)*75,90<<16 + sin(4778+framecount<<5)*75,{
+           }208<<16 + sin(5460+framecount<<5)*75,90<<16 + sin(7508+framecount<<5)*75, $0055)
+           
 gl.triangle(192<<16 + sin(0000+framecount<<5)*80,90<<16 + sin(2048+framecount<<5)*80,{
            }192<<16 + sin(2730+framecount<<5)*80,90<<16 + sin(4778+framecount<<5)*80,{
-           }192<<16 + sin(5460+framecount<<5)*80,90<<16 + sin(7508+framecount<<5)*80, $5555)
+           }192<<16 + sin(5460+framecount<<5)*80,90<<16 + sin(7508+framecount<<5)*80, $5555) 
+
+gl.triangle(176<<16 + sin(0000+framecount<<5)*85,90<<16 + sin(2048+framecount<<5)*85,{
+           }176<<16 + sin(2730+framecount<<5)*85,90<<16 + sin(4778+framecount<<5)*85,{
+           }176<<16 + sin(5460+framecount<<5)*85,90<<16 + sin(7508+framecount<<5)*85, $55AA)
 
 gl.triangle(160<<16 + sin(0000+framecount<<5)*90,90<<16 + sin(2048+framecount<<5)*90,{
            }160<<16 + sin(2730+framecount<<5)*90,90<<16 + sin(4778+framecount<<5)*90,{
@@ -81,12 +91,16 @@ gl.triangle(128<<16 + sin(0500-framecount<<4)*500,90<<16 + sin(2548-framecount<<
            }128<<16 + sin(0600-framecount<<4)*500,90<<16 + sin(2648-framecount<<4)*500,{
            }128<<16                              ,90<<16                              , $4848)
 
+                                                                                              
+gl.triangle(144<<16 + sin(0000+framecount<<5)*95,90<<16 + sin(2048+framecount<<5)*95,{
+           }144<<16 + sin(2730+framecount<<5)*95,90<<16 + sin(4778+framecount<<5)*95,{
+           }144<<16 + sin(5460+framecount<<5)*95,90<<16 + sin(7508+framecount<<5)*95, $AAFF) 
 
 gl.triangle(128<<16 + sin(0000+framecount<<5)*100,90<<16 + sin(2048+framecount<<5)*100,{
            }128<<16 + sin(2730+framecount<<5)*100,90<<16 + sin(4778+framecount<<5)*100,{
            }128<<16 + sin(5460+framecount<<5)*100,90<<16 + sin(7508+framecount<<5)*100, $FFFF)       
 
-gl.text_centered(WIDTH>>1,200,0,2,string(" WOOO! SPINNING TRIANGLES!"),font.get,$FFFF)
+gl.text_centered(WIDTH>>1,192 + sin(0000+framecount<<6)~>12,0,2,string(" WOOO! SPINNING TRIANGLES!"),font.get,$FFFF)
    
 PUB sin(angle) : s | c,z
               'angle: 0..8192 = 360deg

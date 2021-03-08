@@ -1,18 +1,20 @@
 '' VECTORJET for UX Module (based on v1.0)
 '' Special version, don't re-use if you don't know what you're doing
 '' (C)2021 IRQsome Software
-'' Rendering Cog code          
-CON
-  NUM_LINES = 240
-  WIDTH = 256                          
-  Last_Scanline = NUM_LINES-1 ''final scanline for a frame
+'' Rendering Cog code 
 
+CON
+
+  WIDTH = 256   
+  NUM_LINES = 240
+
+  Last_Scanline = NUM_LINES-1 ''final scanline for a frame
 
   Sfield = 0
   DField = 9
 
 
-''   Display list format - shape header  (8 bytes)
+'' Display list format - shape header  (8 bytes)
 '' WORD pointer to next shape or null
 '' BYTE renderer sync line
 '' BYTE shape type
@@ -656,18 +658,18 @@ fit  496
 
 {{
 +------------------------------------------------------------------------------------------------------------------------------+
-¦                                    TERMS OF USE: Parallax Object Exchange License                                            ¦                                                            
-+------------------------------------------------------------------------------------------------------------------------------¦
-¦Permission is hereby granted, free of charge, to any person obtaining a copy of this software and associated documentation    ¦ 
-¦files (the "Software"), to deal in the Software without restriction, including without limitation the rights to use, copy,    ¦
-¦modify, merge, publish, distribute, sublicense, and/or sell copies of the Software, and to permit persons to whom the Software¦
-¦is furnished to do so, subject to the following conditions:                                                                   ¦
-¦                                                                                                                              ¦
-¦The above copyright notice and this permission notice shall be included in all copies or substantial portions of the Software.¦
-¦                                                                                                                              ¦
-¦THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE          ¦
-¦WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR         ¦
-¦COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE,   ¦
-¦ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.                         ¦
+ï¿½                                    TERMS OF USE: Parallax Object Exchange License                                            ï¿½                                                            
++------------------------------------------------------------------------------------------------------------------------------ï¿½
+ï¿½Permission is hereby granted, free of charge, to any person obtaining a copy of this software and associated documentation    ï¿½ 
+ï¿½files (the "Software"), to deal in the Software without restriction, including without limitation the rights to use, copy,    ï¿½
+ï¿½modify, merge, publish, distribute, sublicense, and/or sell copies of the Software, and to permit persons to whom the Softwareï¿½
+ï¿½is furnished to do so, subject to the following conditions:                                                                   ï¿½
+ï¿½                                                                                                                              ï¿½
+ï¿½The above copyright notice and this permission notice shall be included in all copies or substantial portions of the Software.ï¿½
+ï¿½                                                                                                                              ï¿½
+ï¿½THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE          ï¿½
+ï¿½WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR         ï¿½
+ï¿½COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE,   ï¿½
+ï¿½ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.                         ï¿½
 +------------------------------------------------------------------------------------------------------------------------------+
 }}

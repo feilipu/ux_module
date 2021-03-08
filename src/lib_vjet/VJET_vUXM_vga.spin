@@ -101,9 +101,9 @@ PUB start(pinGroup,lineBuffers,statusLong) '' 7 Stack Longs
 
     pinGroup := ((pinGroup <# 3) #> 0)
     directionState := ($FF << (8 * pinGroup))
-    videoState := ($30_00_00_FF | (pinGroup << 9))
+    videoState := (%0_01_1_0_0_000_00000000000_000_0_11111111 | (pinGroup << 9))
 
-    pinGroup := constant((20_000_000) / 2)
+    pinGroup := constant(20_000_000 / 2)
     frequencyState := 1
 
     repeat 32
@@ -140,7 +140,9 @@ DAT
 
 initialization          mov     vcfg,           videoState                 ' Setup video hardware.
                         mov     frqa,           frequencyState
-                        movi    ctra,           #%0_00001_101
+                        movi    ctra,           #%0_00001_101              ' PLL internal (video mode) VCO/4
+
+                        or      dira,           directionState             ' Setup video output pins
 
 ' /////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 '                       Active Video
@@ -227,10 +229,6 @@ backPorch               mov     vscl,           blankPixels                ' Inv
                         waitvid HSyncColors,    syncPixels                 '
 
                         djnz    counter,        #backPorch                 ' Repeat # times.
-
-' //////////////////////Update Display Settings////////////////////////////////////////////////////////////////////////////////
-
-                        or      dira,           directionState
 
 ' //////////////////////Loop///////////////////////////////////////////////////////////////////////////////////////////////////
 

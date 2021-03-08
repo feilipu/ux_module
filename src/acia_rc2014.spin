@@ -379,6 +379,9 @@ transmit_data                                           ' check for head <> tail
             if_ne       and     t3,#BUFFER_MASK         ' and check for range (if > #BUFFER_MASK then rollover)
             if_ne       wrlong  t3,t1                   ' write long value of t3 into address tx_tail
 
+                        nop                             ' additional delay(s) necessary
+                        'nop                            ' if RC2014 bus is heavily loaded
+
                         or      outa,bus_wait           ' clear /WAIT line high to continue
                         waitpeq bus_rd,bus_rd           ' wait for /RD to raise
                         andn    dira,data_active_mask   ' clear data bus lines to inactive (input)

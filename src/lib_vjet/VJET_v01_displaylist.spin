@@ -11,8 +11,11 @@ VAR
   long link ' last list link word
   long topclip,bottomclip,leftclip,rightclip
   long prevlink ' previous link 
+
+
 PUB set_clip(t,b,l,r)
   longmove(@topclip,@t,4)
+
 PUB start(ptr,size)
 head := ptr
 spaceleft := size
@@ -39,35 +42,33 @@ long[head] := x
 head += 4
 
 PUB putword(x)
-if (spaceleft -= 2) < 0
-  abort 3
-'if head & 1
-  'abort 4
-word[head] := x
-head += 2
+  if (spaceleft -= 2) < 0
+    abort 3
+  'if head & 1
+    'abort 4
+  word[head] := x
+  head += 2
 
 PUB putbyte(x)
-if (--spaceleft) < 0
-  abort 5
-byte[head++] := x
+  if (--spaceleft) < 0
+    abort 5
+  byte[head++] := x
 
 PUB skipspace(x)
-head+=x
-spaceleft -= x
+  head+=x
+  spaceleft -= x
+
 PUB getpos
   return head
-PUB slopeCalc(x1,x2,y1,y2)
 
+PUB slopeCalc(x1,x2,y1,y2)
   return ((x1-x2))/((y1~>16)-(y2~>16)+1)
   
 PUB slopeCalc2(x1,x2,y1,y2)
-
   return ((x1-x2))/(y1-y2+1)
 
-
 PUB point(x,y,colors)
-
-box(x,y,x+1,y+1,colors)
+  box(x,y,x+1,y+1,colors)
 
 PUB line(x1,y1,x2,y2,colors) : ihead | tmp '' TODO: Add dedicated line shape type?
 if y1 > y2
@@ -135,10 +136,6 @@ else
   ihead+=4
 
 head:=ihead
-
-
-
-
 
 PUB line_triangle(x1,y1,x2,y2,x3,y3,colors)
   line(x1,y1,x2,y2,colors)
@@ -555,7 +552,6 @@ PUB text_ljust(x,y,xscale,yscale,str,font,colors)
 return text(x-((strsize(str)*9)<<xscale),y,xscale,yscale,str,font,colors)
 
 PUB text_inline(x,y,xscale,yscale,str,font,colors) | len,tmp
-          
 len := (strsize(str)+4)&!3 ' include zero terminator and align to long size
 if (spaceleft -= len) < 0
   abort 6
