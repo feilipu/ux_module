@@ -86,7 +86,7 @@ VAR
 long cogNumber           ' Cog ID.
 
 
-PUB start(pinGroup,lineBuffers,statusLong) '' 7 Stack Longs
+PUB start(pinGroup,lineBuffers,statusLong) | pixelClock '' 7 Stack Longs
 
 '' ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 '' // Starts up the PIX driver running on a cog.
@@ -103,14 +103,14 @@ PUB start(pinGroup,lineBuffers,statusLong) '' 7 Stack Longs
     directionState := ($FF << (8 * pinGroup))
     videoState := (%0_01_1_0_0_000_00000000000_000_0_11111111 | (pinGroup << 9))
 
-    pinGroup := constant(20_000_000 / 2)
+    pixelClock := constant(20_000_000 / 2)
     frequencyState := 1
 
     repeat 32
-      pinGroup <<= 1
+      pixelClock <<= 1
       frequencyState <-= 1
-      if(pinGroup => clkfreq)
-        pinGroup -= clkfreq
+      if(pixelClock => clkfreq)
+        pixelClock -= clkfreq
         frequencyState += 1
 
     syncIndicatorAddress := statusLong
@@ -206,7 +206,7 @@ frontPorch              mov     vscl,           blankPixels                ' Inv
 
 ' //////////////////////Vertical Sync//////////////////////////////////////////////////////////////////////////////////////////
 
-                        mov     counter,        #(2)                       ' Set loop counter.
+                        mov     counter,        #2                         ' Set loop counter.
                         wrlong  VSyncStatus,    syncIndicatorAddress
 
 verticalSync            mov     vscl,           blankPixels                ' Invisible lines.
