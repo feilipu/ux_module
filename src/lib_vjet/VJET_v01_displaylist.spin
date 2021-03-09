@@ -3,7 +3,11 @@
 '' Display list helper
 
 
-#1,SHP_TRAPSTACK,SHP_BOX,SHP_TEXT
+#1
+SHP_TRAPSTACK         ' Shape type 1 header - trapezoid stack (16 bytes)
+SHP_BOX               ' Shape type 2 header - box (8 bytes)
+SHP_TEXT              ' Shape type 3 header - text (12 bytes)
+
 
 VAR
   long head ' current write position
@@ -579,6 +583,3 @@ return text(x,y,xscale,yscale,tmp,font,colors)
 // ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 ///////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 }}
-
-
-   

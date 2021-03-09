@@ -48,7 +48,11 @@ CON
 '' WORD left x
 '' WORD unused                
  
-#1,SHP_TRAPSTACK,SHP_BOX,SHP_TEXT
+#1
+SHP_TRAPSTACK         ' Shape type 1 header - trapezoid stack (16 bytes)
+SHP_BOX               ' Shape type 2 header - box (8 bytes)
+SHP_TEXT              ' Shape type 3 header - text (12 bytes)
+
 
 PUB start(cognum,totalcogs,scanbuffer,dlistPtrAdr,videoSync,readyptr)
 '' Start Rendering Engine
@@ -59,8 +63,10 @@ PUB start(cognum,totalcogs,scanbuffer,dlistPtrAdr,videoSync,readyptr)
   cognew(@Entry, readyptr)
   repeat 10000 'wait for cog to boot...
 
+
 PUB Return_Address ''used to get address where assembly code is so we can re-purpose space
     return(@Entry)
+
 
 DAT
         org
@@ -75,8 +81,8 @@ request_scanline        long -1 ''next scanline to render
 a0      mov a0, Par  ''read parameter
 d0      rdbyte currentscanline, a0 wz''is ready?
 d1 if_z jmp #d0 'if not, repeat
-        
-        
+  
+
 '        rdlong Tiles_Adr, tile_adr ''read address of where tiles are at
 
 ''Main loop for renderer
@@ -269,7 +275,7 @@ if_c    jmp #:traplp
         call #draw_span
 
         ' write back edges
-        
+
         adds poly_left,slope_left    
         wrlong poly_left,poly_edgebuf
         add poly_edgebuf,#4     
@@ -282,7 +288,7 @@ if_c    jmp #:traplp
         cmp poly_bottom,d0 wz
 if_e    neg d0,#1
         wrbyte d0,poly_syncptr
-    
+
  
 :nextshape
         tjnz dlist_next,#:shapeloop
@@ -310,8 +316,8 @@ if_z_and_nc jmp #new_frame
         cmps currentrequest, prevline wz, wc
 :waitjmp
 if_be   jmp #:linewait
-        
-                                                                             
+
+
 :scanlinedone
         mov prevline,currentscanline
         ' Line is done, increment to the next one this cog will handle                        
@@ -342,9 +348,7 @@ if_ne   jmp #:nextshape_sync
 
         call #draw_span
         jmp #:nextshape_sync
-        
-        
-        
+ 
 
 :textshape
         '' TEXT DRAWING
@@ -436,8 +440,6 @@ if_nz   jmp #:tplp
         add poly_left,text_pxperchr
 
         jmp #:chrloop
-        
-            
 
 
 draw_span
@@ -658,18 +660,18 @@ fit  496
 
 {{
 +------------------------------------------------------------------------------------------------------------------------------+
-�                                    TERMS OF USE: Parallax Object Exchange License                                            �                                                            
-+------------------------------------------------------------------------------------------------------------------------------�
-�Permission is hereby granted, free of charge, to any person obtaining a copy of this software and associated documentation    � 
-�files (the "Software"), to deal in the Software without restriction, including without limitation the rights to use, copy,    �
-�modify, merge, publish, distribute, sublicense, and/or sell copies of the Software, and to permit persons to whom the Software�
-�is furnished to do so, subject to the following conditions:                                                                   �
-�                                                                                                                              �
-�The above copyright notice and this permission notice shall be included in all copies or substantial portions of the Software.�
-�                                                                                                                              �
-�THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE          �
-�WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR         �
-�COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE,   �
-�ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.                         �
+|                                    TERMS OF USE: Parallax Object Exchange License                                            |                                                            
++------------------------------------------------------------------------------------------------------------------------------|
+|Permission is hereby granted, free of charge, to any person obtaining a copy of this software and associated documentation    | 
+|files (the "Software"), to deal in the Software without restriction, including without limitation the rights to use, copy,    |
+|modify, merge, publish, distribute, sublicense, and/or sell copies of the Software, and to permit persons to whom the Software|
+|is furnished to do so, subject to the following conditions:                                                                   |
+|                                                                                                                              |
+|The above copyright notice and this permission notice shall be included in all copies or substantial portions of the Software.|
+|                                                                                                                              |
+|THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE          |
+|WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR         |
+|COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE,   |
+|ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.                         |
 +------------------------------------------------------------------------------------------------------------------------------+
 }}
