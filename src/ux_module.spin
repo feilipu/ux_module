@@ -59,6 +59,11 @@ CON
   ASCII_COMMA   = $2C ' ,
   ASCII_PERIOD  = $2E ' .
 
+  ASCII_SEMI    = $3B ' ;
+
+  ASCII_0       = $30 ' 0
+  ASCII_9       = $39 ' 9
+
   ASCII_LB      = $5B ' [
   ASCII_RB      = $5D ' ]
 
@@ -166,7 +171,7 @@ PUB screenInit | retVal
   return
 
 
-PUB readZ80 | char
+PUB readZ80 | char, n, m
 
     ' if no input from ACIA then return
     repeat while acia.rxCheck
@@ -207,88 +212,149 @@ PUB readZ80 | char
 
           term.char (char)                      ' ESC to terminal
 
-          char := acia.rx                       ' get next character after escape
-
+          char := acia.rx                       ' get next character after ESC
           term.char (char)                      ' possible CSI to terminal
 
           case char
 
             ASCII_LB:                           ' CSI Control Sequence Introducer
 
-              char := acia.rx                   ' get next character after CSI
+              n := 0
 
-              term.char (char)                  ' possible modifier to terminal
+              repeat
+                char := acia.rx                 ' get next characters after CSI
+                term.char (char)                ' possible modifier char to terminal
+
+                if ( (char => "0") AND (char =< "9") )
+                  n := n*10 + char - ASCII_0
+
+              while ( char => "0" AND char =< "9" )
 
               case char
 
                 "A":                            ' cursor up
-                  if (gTextCursY > 0 )
-                    --gTextCursY
+                  if ( gTextCursY > n // gScreenRows - 1 )
+                    gTextCursY := gTextCursY - n // gScreenRows
+                    wmf.outScreen (wmf#PY)
+                    wmf.outScreen (gTextCursY)
 
                 "B":                            ' cursor down
-                  if (gTextCursY < gScreenRows-1 )
-                    ++gTextCursY
+                  if ( gTextCursY < gScreenRows - n // gScreenRows )
+                    gTextCursY := gTextCursY + n // gScreenRows
+                    wmf.outScreen (wmf#PY)
+                    wmf.outScreen (gTextCursY)
 
                 "C":                            ' cursor right
-                  if (gTextCursX < gScreenCols-1 )
-                    ++gTextCursX
+                  if ( gTextCursX < gScreenCols - n // gScreenCols )
+                    gTextCursX := gTextCursX + n  // gScreenCols
+                    wmf.outScreen (wmf#PX)
+                    wmf.outScreen (gTextCursX)
 
                 "D":                            ' cursor left
-                  if (gTextCursX > 0 )
-                    --gTextCursX
+                  if ( gTextCursX > n // gScreenCols - 1 )
+                    gTextCursX := gTextCursX - n // gScreenCols
+                    wmf.outScreen (wmf#PX)
+                    wmf.outScreen (gTextCursX)
 
-                "E":                            ' cursor next line start
-                  gTextCursX := 0
-                  if (gTextCursY < gScreenRows-1 )
-                    ++gTextCursY
-
-                "F":                            ' cursor previous line start
-                  gTextCursX := 0
-                  if (gTextCursY > 0  )
-                    --gTextCursY
-
-                "H":                            ' cursor home
-                  gTextCursX := gTextCursY := 0
-                  wmf.outScreen ( wmf#HM )
-
-                other:                          ' all other cases after ESC + CSI
-                  ' update length
-                  if (gTextCursX < gScreenCols-1 )
-                    ++gTextCursX
-                  else
+                "E":                            ' cursor next line n start
+                  if ( gTextCursY < gScreenRows - n // gScreenRows )
+                    gTextCursY := gTextCursY + n // gScreenRows
                     gTextCursX := 0
-                    if (gTextCursY < gScreenRows-1 )
-                      ++gTextCursY
-        
-                  ' echo character
-                  wmf.outScreen ( char )
+                    wmf.outScreen (wmf#PY)
+                    wmf.outScreen (gTextCursY)
+                    wmf.outScreen (wmf#PX)
+                    wmf.outScreen (gTextCursX)
+
+                "F":                            ' cursor previous line n start
+                  if ( gTextCursY > n // gScreenRows - 1 )
+                    gTextCursY := gTextCursY - n // gScreenRows
+                    gTextCursX := 0
+                    wmf.outScreen (wmf#PY)
+                    wmf.outScreen (gTextCursY)
+                    wmf.outScreen (wmf#PX)
+                    wmf.outScreen (gTextCursX)
+
+                "G":                            ' cursor to column n
+                  gTextCursX := ( n // gScreenCols ) - 1
+                  wmf.outScreen (wmf#PX)
+                  wmf.outScreen (gTextCursX)
+
+                "H":                            ' cursor to row n, column 1
+                  gTextCursY := ( n // gScreenRows ) - 1
+                  gTextCursX := 0
+                  wmf.outScreen (wmf#PY)
+                  wmf.outScreen (gTextCursY)
+                  wmf.outScreen (wmf#PX)
+                  wmf.outScreen (gTextCursX)
+
+                "J":                            ' clear screen, cursor home
+                  if ( n == 0 )
+                    bytefill( gScreenBufferPtr + gTextCursY*gScreenCols + gTextCursX, ASCII_SPACE, gScreenCols*gScreenCols - gTextCursY*gScreenCols - gTextCursX )
+                  elseif ( n == 1 )
+                    bytefill( gScreenBufferPtr, ASCII_SPACE, gTextCursY*gScreenCols + gTextCursX )
+                  elseif ( n == 2 )
+                    gTextCursX := gTextCursY := 0
+                    wmf.outScreen ( wmf#CS )
+
+                "K":                            ' clear line, cursor home
+                  if ( n == 0 )
+                    bytefill( gScreenBufferPtr + gTextCursY*gScreenCols + gTextCursX, ASCII_SPACE, gScreenCols - gTextCursX )
+                  elseif ( n == 1 )
+                    bytefill( gScreenBufferPtr + gTextCursY*gScreenCols, ASCII_SPACE,  gTextCursX )
+                  elseif ( n == 2 )
+                    bytefill( gScreenBufferPtr + gTextCursY*gScreenCols, ASCII_SPACE, gScreenCols )
+                    gTextCursX := 0
+                    wmf.outScreen (wmf#PX)
+                    wmf.outScreen (gTextCursX)
+
+                "m":                            ' set graphics rendition parameters
+                  if ( n == 0 )
+                    wmf.setLineColor ( gTextCursY, wmf#CTHEME_DEFAULT_FG, wmf#CTHEME_DEFAULT_BG )
+                  elseif ( n == 7 )
+                    wmf.setLineColor ( gTextCursY, wmf#CTHEME_DEFAULT_BG, wmf#CTHEME_DEFAULT_FG )
+
+                ASCII_SEMI:
+
+                  m :=0
+
+                  repeat
+                    char := acia.rx             ' get next characters after semicolon
+                    term.char (char)            ' possible modifier char to terminal
+
+                    if ( (char => "0") AND (char =< "9") )
+                      m := m*10 + char - ASCII_0
+
+                  while ( char => "0" AND char =< "9" )
+
+                  if ( char == "H" )            ' cursor to row n, column m
+                    gTextCursY := ( n // gScreenRows ) - 1
+                    gTextCursX := ( m // gScreenCols ) - 1
+                    wmf.outScreen (wmf#PY)
+                    wmf.outScreen (gTextCursY)
+                    wmf.outScreen (wmf#PX)
+                    wmf.outScreen (gTextCursX)
 
             other:                              ' all other cases after ESC
-                ' update length
-                if (gTextCursX < gScreenCols-1 )
-                  ++gTextCursX
-                else
-                  gTextCursX := 0
-                  if (gTextCursY < gScreenRows-1 )
-                    ++gTextCursY
-      
-                ' echo character
-                wmf.outScreen ( char )
-  
+              if (gTextCursX < gScreenCols - 1 )' update cursor position
+                ++gTextCursX
+              else
+                if (gTextCursY < gScreenRows - 1 )
+                  ++gTextCursY
+                gTextCursX := 0
+
+              wmf.outScreen ( char )            ' echo non CSI character
+
         other:                                  ' all other cases
-          ' update length
-          if (gTextCursX < gScreenCols-1 )
+          if (gTextCursX < gScreenCols - 1 )    ' update cursor position
             ++gTextCursX
           else
-            gTextCursX := 0
-            if (gTextCursY < gScreenRows-1 )
+            if (gTextCursY < gScreenRows - 1 )
               ++gTextCursY
+            gTextCursX := 0
 
-          ' echo other characters
-          wmf.outScreen ( char )
+          wmf.outScreen ( char )                ' echo all other characters
 
-          ' send other characters out the serial terminal
-          term.char (char)
+          term.char (char)                      ' send other characters out the serial terminal
 
 
 PUB kbdWriteZ80 | char
