@@ -15,9 +15,9 @@ CON
 CON
 
   ' import some constants from the ACIA Emulation
-  PORT_40       = acia#PORT_40
-  PORT_80       = acia#PORT_80    ' Default ACIA base port
-  PORT_C0       = acia#PORT_C0
+  PORT_ROMWBW   = acia#PORT_40
+  PORT_DEFAULT  = acia#PORT_80    ' Default ACIA base port
+  PORT_VJET     = acia#PORT_C0
 
 
 CON
@@ -110,8 +110,8 @@ PUB main
   term.lineFeed
 
   'start the ACIA interface
-  acia.start (PORT_80)      'default for RC2014 ROM
-' acia.start (PORT_40)      'optional for RomWBW
+  acia.start (PORT_DEFAULT) 'default for RC2014 ROM
+' acia.start (PORT_ROMWBW)  'optional for RomWBW
 
   'start the VGA scren
   screenInit
@@ -233,30 +233,40 @@ PUB readZ80 | char, n, m
               case char
 
                 "A":                            ' cursor up
+                  if ( n == 0 )
+                    ++n
                   if ( gTextCursY > n // gScreenRows - 1 )
                     gTextCursY := gTextCursY - n // gScreenRows
                     wmf.outScreen (wmf#PY)
                     wmf.outScreen (gTextCursY)
 
                 "B":                            ' cursor down
+                  if ( n == 0 )
+                    ++n
                   if ( gTextCursY < gScreenRows - n // gScreenRows )
                     gTextCursY := gTextCursY + n // gScreenRows
                     wmf.outScreen (wmf#PY)
                     wmf.outScreen (gTextCursY)
 
                 "C":                            ' cursor right
+                  if ( n == 0 )
+                    ++n
                   if ( gTextCursX < gScreenCols - n // gScreenCols )
                     gTextCursX := gTextCursX + n  // gScreenCols
                     wmf.outScreen (wmf#PX)
                     wmf.outScreen (gTextCursX)
 
                 "D":                            ' cursor left
+                  if ( n == 0 )
+                    ++n
                   if ( gTextCursX > n // gScreenCols - 1 )
                     gTextCursX := gTextCursX - n // gScreenCols
                     wmf.outScreen (wmf#PX)
                     wmf.outScreen (gTextCursX)
 
                 "E":                            ' cursor next line n start
+                  if ( n == 0 )
+                    ++n
                   if ( gTextCursY < gScreenRows - n // gScreenRows )
                     gTextCursY := gTextCursY + n // gScreenRows
                     gTextCursX := 0
@@ -266,6 +276,8 @@ PUB readZ80 | char, n, m
                     wmf.outScreen (gTextCursX)
 
                 "F":                            ' cursor previous line n start
+                  if ( n == 0 )
+                    ++n
                   if ( gTextCursY > n // gScreenRows - 1 )
                     gTextCursY := gTextCursY - n // gScreenRows
                     gTextCursX := 0
@@ -275,11 +287,15 @@ PUB readZ80 | char, n, m
                     wmf.outScreen (gTextCursX)
 
                 "G":                            ' cursor to column n
+                  if ( n == 0 )
+                    ++n
                   gTextCursX := ( n // gScreenCols ) - 1
                   wmf.outScreen (wmf#PX)
                   wmf.outScreen (gTextCursX)
 
                 "H":                            ' cursor to row n, column 1
+                  if ( n == 0 )
+                    ++n
                   gTextCursY := ( n // gScreenRows ) - 1
                   gTextCursX := 0
                   wmf.outScreen (wmf#PY)
@@ -327,6 +343,10 @@ PUB readZ80 | char, n, m
                   while ( char => "0" AND char =< "9" )
 
                   if ( char == "H" )            ' cursor to row n, column m
+                    if ( n == 0 )
+                      ++n
+                    if ( m == 0 )
+                      ++m
                     gTextCursY := ( n // gScreenRows ) - 1
                     gTextCursX := ( m // gScreenCols ) - 1
                     wmf.outScreen (wmf#PY)
