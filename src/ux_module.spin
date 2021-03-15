@@ -181,32 +181,34 @@ PUB readZ80 | char, n, m
 
       case char
 
-        ASCII_CR:                               ' return
+        ASCII_CR:                               ' carriage return
+
+          term.lineFeed
+
           gTextCursX := 0
           if ( gTextCursY < gScreenRows-1 )
             ++gTextCursY
 
           wmf.outScreen (wmf#NL)
-          term.lineFeed
 
         ASCII_LF:                               ' line feed
         ' eat linefeed from Z80.
           next
 
-        ASCII_BS, ASCII_DEL:                    ' backspace (edit)
+        ASCII_BS, ASCII_DEL:                    ' backspace (edit), delete
 
-          if ( gTextCursX < gScreenCols-1 )
+          ' move cursor back once to overwrite last character on terminal
+          term.char (ASCII_BS)
+          term.char (ASCII_SPACE)
+          term.char (ASCII_BS)
+
+          if ( gTextCursX > 0 )
             --gTextCursX
 
-            ' move cursor back once to overwrite last character on screen
-            wmf.outScreen (wmf#BS)
-            wmf.outScreen (ASCII_SPACE)
-            wmf.outScreen (wmf#BS)
-
-            ' move cursor back once to overwrite last character on terminal
-            term.char (ASCII_BS)
-            term.char (ASCII_SPACE)
-            term.char (ASCII_BS)
+          ' move cursor back once to overwrite last character on screen
+          wmf.outScreen (wmf#BS)
+          wmf.outScreen (wmf#ASCII_SPACE)
+          wmf.outScreen (wmf#BS)
 
         ASCII_ESC:                              ' escape
 
@@ -305,18 +307,18 @@ PUB readZ80 | char, n, m
 
                 "J":                            ' clear screen
                   if ( n == 0 )
-                    bytefill ( gScreenBufferPtr + gTextCursY*gScreenCols + gTextCursX, ASCII_SPACE, gScreenCols*gScreenCols - gTextCursY*gScreenCols - gTextCursX )
+                    bytefill ( gScreenBufferPtr + gTextCursY*gScreenCols + gTextCursX, ASCII_SPACE, gScreenRows*gScreenCols - gTextCursY*gScreenCols - gTextCursX )
                   elseif ( n == 1 )
-                    bytefill ( gScreenBufferPtr, ASCII_SPACE, gTextCursY*gScreenCols + gTextCursX )
+                    bytefill ( gScreenBufferPtr, ASCII_SPACE, gTextCursY*gScreenCols + gTextCursX + 1 )
                   elseif ( n == 2 )
                     gTextCursX := gTextCursY := 0
                     wmf.outScreen ( wmf#CS )
 
                 "K":                            ' clear line
                   if ( n == 0 )
-                    bytefill ( gScreenBufferPtr + gTextCursY*gScreenCols + gTextCursX, ASCII_SPACE, gScreenCols - gTextCursX )
+                    bytefill ( gScreenBufferPtr + gTextCursY*gScreenCols + gTextCursX, ASCII_SPACE, gScreenCols - gTextCursX)
                   elseif ( n == 1 )
-                    bytefill ( gScreenBufferPtr + gTextCursY*gScreenCols, ASCII_SPACE,  gTextCursX )
+                    bytefill ( gScreenBufferPtr + gTextCursY*gScreenCols, ASCII_SPACE, gTextCursX + 1 )
                   elseif ( n == 2 )
                     bytefill ( gScreenBufferPtr + gTextCursY*gScreenCols, ASCII_SPACE, gScreenCols )
                     gTextCursX := 0
@@ -354,26 +356,28 @@ PUB readZ80 | char, n, m
                     wmf.outScreen (wmf#PX)
                     wmf.outScreen (gTextCursX)
 
-            other:                                ' all other cases after ESC
-              if ( gTextCursX < gScreenCols - 1 ) ' update cursor position
-                ++gTextCursX
-              else
-                if ( gTextCursY < gScreenRows - 1 )
-                  ++gTextCursY
-                gTextCursX := 0
+            other:                                  ' all other cases after ESC
+              if ( char => $20 )                    ' only printable characters to the screen
+                if ( gTextCursX < gScreenCols - 1 ) ' update cursor position
+                  ++gTextCursX
+                else
+                  if ( gTextCursY < gScreenRows - 1 )
+                    ++gTextCursY
+                  gTextCursX := 0
+                wmf.outScreen (char)            ' echo printable non CSI character
 
-              wmf.outScreen (char)                ' echo non CSI character
+        other:                                  ' all other cases
 
-        other:                                    ' all other cases
-          if ( gTextCursX < gScreenCols - 1 )     ' update cursor position
-            ++gTextCursX
-          else
-            if ( gTextCursY < gScreenRows - 1 )
-              ++gTextCursY
-            gTextCursX := 0
+          term.char (char)                      ' send other characters out the serial terminal
 
-          wmf.outScreen (char)                    ' echo all other characters
-          term.char (char)                        ' send other characters out the serial terminal
+          if ( char => $20 )                    ' only printable characters to the screen
+            if ( gTextCursX < gScreenCols - 1 ) ' update cursor position
+              ++gTextCursX
+            else
+              if ( gTextCursY < gScreenRows - 1 )
+                ++gTextCursY
+              gTextCursX := 0
+            wmf.outScreen (char)                ' echo all printable characters
 
 
 PUB kbdWriteZ80 | char
