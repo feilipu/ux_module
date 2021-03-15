@@ -69,6 +69,15 @@ CON
 
   ASCII_DEL     = $7F ' delete
 
+CON
+
+  ' XMODEM control codes
+
+  XMODEM_SOH    = $01 ' Start of Header
+  XMODEM_EOT    = $04 ' End of Transmission
+  XMODEM_ETB    = $17 ' End of Transmission Block
+  XMODEM_CAN    = $18 ' Cancel
+
 
 VAR
 
@@ -181,19 +190,21 @@ PUB readZ80 | char, n, m
 
       case char
 
-        ASCII_CR:                               ' carriage return
+        XMODEM_SOH:                             ' XMODEM Start of Header
 
-          term.lineFeed
+          term.char (char)                      ' SOH to terminal
 
-          gTextCursX := 0
-          if ( gTextCursY < gScreenRows-1 )
-            ++gTextCursY
+          n := acia.rx
+          term.char (n)                         ' Packet Number to terminal
 
-          wmf.outScreen (wmf#NL)
+          m := acia.rx
+          term.char (m)                         ' Complimented Packet Number to terminal
 
-        ASCII_LF:                               ' line feed
-        ' eat linefeed from Z80.
-          next
+          if ( n == $FF-m )
+            n := 129                            ' get another 129 (of 132/133 total) XMODEM packet characters
+            repeat
+              term.char (acia.rx)               ' get next characters after Packet Header
+            while ( --n )
 
         ASCII_BS, ASCII_DEL:                    ' backspace (edit), delete
 
@@ -209,6 +220,32 @@ PUB readZ80 | char, n, m
           wmf.outScreen (wmf#BS)
           wmf.outScreen (wmf#ASCII_SPACE)
           wmf.outScreen (wmf#BS)
+
+        ASCII_TAB:                              ' horizontal Tab
+
+          term.char (char)
+
+          if ( gTextCursY < gScreenCols-5 )
+            repeat
+              ++gTextCursY
+            while gTextCursY & 3
+
+          wmf.outScreen (wmf#TB)
+
+        ASCII_LF:                               ' line feed
+
+        ' eat linefeed from Z80.
+          next
+
+        ASCII_CR:                               ' carriage return
+
+          term.lineFeed
+
+          gTextCursX := 0
+          if ( gTextCursY < gScreenRows-1 )
+            ++gTextCursY
+
+          wmf.outScreen (wmf#NL)
 
         ASCII_ESC:                              ' escape
 
