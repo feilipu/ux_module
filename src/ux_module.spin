@@ -15,8 +15,8 @@ CON
 CON
 
   ' import some constants from the ACIA Emulation
-  PORT_ROMWBW   = acia#PORT_40
-  PORT_DEFAULT  = acia#PORT_80    ' Default ACIA base port
+  PORT_ROMWBW   = acia#PORT_40  ' Alternate ACIA base port, when used together with SIO/2 Module on 0x80
+  PORT_DEFAULT  = acia#PORT_80  ' Default ACIA base port
   PORT_VJET     = acia#PORT_C0
 
 
@@ -30,8 +30,8 @@ CON
   KBD_CLK_PIN   = 26  ' KEYBOARD clock pin
 
   ' import some constants from the I2C hardware
-  SDA_PIN       = i2c#SDA_PIN  ' I2C data pin
-  SCL_PIN       = i2c#SCL_PIN  ' I2C clock pin
+  SDA_PIN       = i2c#SDA_PIN   ' I2C data pin
+  SCL_PIN       = i2c#SCL_PIN   ' I2C clock pin
 
   ' import some constants from the Propeller Window Manager
   VGACOLS       = wmf#VGACOLS
@@ -120,7 +120,7 @@ PUB main
 
   'start the ACIA interface
   acia.start (PORT_DEFAULT) 'default for RC2014 ROM
-' acia.start (PORT_ROMWBW)  'optional for RomWBW
+' acia.start (PORT_ROMWBW)  'optional for RomWBW, when used together with SIO/2 Module on 0x80
 
   'start the VGA scren
   screenInit

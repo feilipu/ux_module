@@ -101,20 +101,20 @@ RC2014 Boot Loader
 Boot [H=Help]:
 ```
 
-To ensure that the UX Module appears as the first Char Unit (Char 0) and is the console port, the serial detection order must be manually tweaked using the `FORCECON` configuration. The key elements of the configuration file are noted below.
+To ensure that the UX Module appears as the console port, the console port must be manually tweaked using the `BOOTCON` configuration. The key elements of the configuration file are noted below.
 
 ```sh
-UARTENABLE	.SET	FALSE		; UART: DISABLE 8250/16550-LIKE SERIAL DRIVER (UART.ASM)
+UARTENABLE  .SET    FALSE       ; UART: DISABLE 8250/16550-LIKE SERIAL DRIVER (UART.ASM)
 ;
-ACIAENABLE	.SET	TRUE		; ACIA: ENABLE MOTOROLA 6850 ACIA DRIVER (ACIA.ASM)
-ACIA0BASE	.SET	$40		    ; ACIA 0: REGISTERS BASE ADDR
+ACIAENABLE  .SET    TRUE        ; ACIA: ENABLE MOTOROLA 6850 ACIA DRIVER (ACIA.ASM)
+ACIA0BASE   .SET    $40         ; ACIA 0: REGISTERS BASE ADDR TO AVOID SIO/2 BASE ADDRESS
 ;
-SIOENABLE	.SET	TRUE		; SIO: ENABLE ZILOG SIO SERIAL DRIVER (SIO.ASM)
-SIOCNT		.SET	1			; SIO: NUMBER OF CHIPS TO DETECT (1-2), 2 CHANNELS PER CHIP
+SIOENABLE   .SET    TRUE        ; SIO: ENABLE ZILOG SIO SERIAL DRIVER (SIO.ASM)
+SIOCNT      .SET    1           ; SIO: NUMBER OF CHIPS TO DETECT (1-2), 2 CHANNELS PER CHIP
 ;
-TMSENABLE	.SET	FALSE		; TMS: DISABLE TMS9918 VIDEO/KBD DRIVER (TMS.ASM)
+TMSENABLE   .SET    FALSE       ; TMS: DISABLE TMS9918 VIDEO/KBD DRIVER (TMS.ASM)
 ;
-FORCECON	.SET	2			; SET ACIA AS CONSOLE, ASSUMING 1 SIO MODULE CONFIGURED WITH 2 CHANNELS
+BOOTCON     .SET    2           ; SET ACIA AS CONSOLE, ASSUMING 1 SIO/2 MODULE CONFIGURED WITH 2 CHANNELS
 ```
 
 ## Construction
@@ -210,14 +210,13 @@ This video below shows the expected output of a session.
 <BR>
 CLICK IMAGE TO VIEW!
 
-
 ### Ports
 
 The UX Module emulates an ACIA interface on base port `0x80`, as per the standard RC2014 usage. Ports `0x80` and `0x81` are required for the implementation.
 
-The UX Module can be optionally located on ports `0x40`, `0x41` and/or on `0xC0`, `0xC1`.
+The UX Module can be alternately located on ports `0x40`, `0x41` or on `0xC0`, `0xC1`.
 
-It will (enhancement plan) be possible to implement a graphics interface. It is likely that the graphics interface will use the `0xC0` and `0xC1` ports, and may be configured by settings on other ports.
+It will (enhancement plan) be possible to implement a graphics interface (VJET library). It is likely that the graphics interface will use the `0xC0` and `0xC1` ports, and may be configured by settings on other ports.
 
 ### Video VGA
 
@@ -230,7 +229,11 @@ The VGA timings (front porch and back porch) have been developed using the Venti
 
 The keyboard is presumed to be a [USA standard](https://github.com/feilipu/ux_module/blob/main/src/keyboard_ps2.spin) keyboard. Optional different key maps are possible, and can be added to your own build of the firmware.
 
-## Errata
+### RC2014 Bus Tx/Rx Lines
+
+The UX Module is connected to the RC2014 Bus serial Tx and Rx lines, Pin 35 and 36. When using the UX Module with other serial Modules (such as the SIO/2 Module), it is necessary to disconnect one or other of the serial Modules. In practice the easiest way to do this is to straighten either the UX Module or SIO/2 Module Tx and Rx pins sufficiently so that they do not insert into the Bus connector.
+
+## Errata Propeller /RESET Pin
 
 The Propeller MCU `/RESET` pin is driven by the serial interface `DTR` pin, which is normally held high when the port is ready. However sometimes both Linux (MacOS) and Windows toggle `DTR` when opening a new serial interface. This impacts our ability to use the serial interface to upload code to the RC2014.
 
