@@ -3,7 +3,7 @@
 ''
 '' ACIA emulation
 ''
-'' Copyright (c) 2020 Phillip Stevens
+'' Copyright (c) 2021 Phillip Stevens
 ''
 '' I/O Address line mapping (Production):
 ''
@@ -69,8 +69,8 @@ CON
   A6_PIN      =   |< 1
   A7_PIN      =   |< 0
 
-  BUFFER_LENGTH = 512                 'Recommended as 64 or higher, but can be 2, 4, 8, 16, 32, 64, 128, 256 or 512.
-  BUFFER_MASK   = BUFFER_LENGTH - 1
+  BUFFER_LENGTH    = 256              'Recommended as 64 or higher, but can be 2, 4, 8, 16, 32, 64, 128, 256 or 512.
+  BUFFER_MASK      = BUFFER_LENGTH - 1
 
   MAX_STRING  =   255
 
@@ -94,12 +94,12 @@ CON
 
   CR_RIE      = |< 7                ' Receiving Interrupt Enabled (Z80 view)
 
-  CR_TXI_MASK = |< 6 | |< 5         ' Mask just the Tx Interrupt bits
+  CR_TIX_MASK = |< 6 | |< 5         ' Mask just the Tx Interrupt relevant bits (CR6,CR5)
 
-  CR_TDI_BRK  = |< 6 | |< 5         ' _RTS low,  Transmitting Interrupt Disabled, BRK on Tx
-  CR_TDI_RTS1 = |< 6                ' _RTS high, Transmitting Interrupt Disabled
-  CR_TEI_RTS0 = |< 5                ' _RTS low,  Transmitting Interrupt Enabled
-  CR_TDI_RTS0 = 0                   ' _RTS low,  Transmitting Interrupt Disabled
+  CR_TID_BRK  = |< 6 | |< 5         ' _RTS low,  Transmitting Interrupt Disabled, BRK on Tx
+  CR_TID_RTS1 = |< 6                ' _RTS high, Transmitting Interrupt Disabled
+  CR_TIE_RTS0 = |< 5                ' _RTS low,  Transmitting Interrupt Enabled
+  CR_TID_RTS0 = 0                   ' _RTS low,  Transmitting Interrupt Disabled
 
   CR_8O1      = |< 4 | |< 3 | |< 2  ' 8 Bits  Odd Parity 1 Stop Bit
   CR_8E1      = |< 4 | |< 3         ' 8 Bits Even Parity 1 Stop Bit
@@ -145,23 +145,20 @@ VAR
 
 
 PUB start(base) : okay
-  {{
-    Starts RC2014 acia bus driver in a new cog
-      okay - returns false if no cog is available.
-  }}
+{{Starts RC2014 acia bus driver in a new cog
+      okay - returns false if no cog is available.}}
 
   stop
-  longfill(@rx_head, 0, 4)                              ' These are indexes to bytes in the buffer, not pointers
+  longfill(@rx_head, 0, 4)                                ' These are indexes to bytes in the buffer, not pointers
   acia_base := base
-  acia_config := constant (( CR_TDI_RTS0 | CR_8N1 | CR_DIV_64 ) << DATA_BASE )
-  acia_status := constant ( SR_TDRE << DATA_BASE )      ' Always ready to receive bytes from the Z80
-  buffer_ptr := @rx_buffer                              ' Record the origin address of the Rx and Tx buffers
+  acia_config := constant (( CR_TID_RTS0 | CR_8N1 | CR_DIV_64 ) << DATA_BASE )
+  acia_status := constant ( SR_TDRE << DATA_BASE )        ' Initially ready to receive bytes from the Z80
+  buffer_ptr := @rx_buffer                                ' Record the origin address of the Rx and Tx buffers
   okay := cog := cognew(@entry,@rx_head) + 1
 
 
 PUB stop
-
-  '' Stops acia driver - frees a cog
+{{Stops acia driver - frees a cog}}
 
   if cog
       cogstop(cog~ - 1)
@@ -169,29 +166,37 @@ PUB stop
 
 
 PUB txString( pStringPtr )
-
-  '' Print a zero-terminated string to terminal.
-  '' pStrPtr - Pointer to null terminated string to print.
+{{Print a zero-terminated string to terminal.
+ pStrPtr - Pointer to null terminated string to print.}}
 
   repeat strsize( pStringPtr)
     tx(byte[pStringPtr++])
 
 
 PUB tx(txbyte)
+{{Sends byte. Will wait for room in buffer.}}
 
-  '' Sends byte (may wait for room in buffer)
+  repeat until (tx_tail - tx_head) & BUFFER_MASK <>  1    ' Wait until buffer is not full, checking flow control via /RTS
+    if ( tx_tail <> tx_head ) and not ( acia_config & constant ( CR_TID_RTS1 << DATA_BASE ) )
+                                                          ' if buffer is not empty and /RTS was cleared by Z80, so we can proceed
+      acia_status |= constant ( SR_RDRF << DATA_BASE  )   ' now a byte ready to transmit to Z80
 
-  repeat until (tx_tail - tx_head) & BUFFER_MASK <>  1  ' Wait until buffer is not full
+      if acia_config & constant ( CR_RIE << DATA_BASE )   ' If the Receive Interrupt Enable (Z80 perspective) should be set
+'       acia_status |= constant ( SR_IRQ << DATA_BASE )   ' Set the interrupt status byte (cleared in driver cog)
+        dira[ INT_PIN_NUM ]~~                             ' Set the /INT pin to output to wake up the Z80 (minimum 136ns pulse = 1 RC2014 standard clock)
+        dira[ INT_PIN_NUM ]~                              ' Clear /INT pin to input (measured pulse is 5,600ns)
 
   tx_buffer[tx_head] := txbyte
   tx_head := ++tx_head & BUFFER_MASK
 
-  acia_status |= constant ( SR_RDRF << DATA_BASE  )     ' Byte ready to transmit to Z80
+  if not acia_config & constant ( CR_TID_RTS1 << DATA_BASE )
+                                                          ' /RTS was cleared by Z80
+    acia_status |= constant ( SR_RDRF << DATA_BASE  )     ' now a byte is ready to transmit to Z80
 
-  if acia_config & constant ( CR_RIE << DATA_BASE )     ' If the Rx interrupt (Z80 perspective) should be set, then set it
-    acia_status |= constant ( SR_IRQ << DATA_BASE )     ' Set the interrupt status byte (cleared in driver cog)
-    dira[ INT_PIN_NUM ]~~                               ' Set the /INT pin to output to wake up the Z80 (minimum 136ns pulse = 1 RC2014 standard clock)
-    dira[ INT_PIN_NUM ]~                                ' Clear /INT pin to input (measured pulse is 5,600ns)
+    if acia_config & constant ( CR_RIE << DATA_BASE )     ' If the Receive Interrupt Enable (Z80 perspective) should be set
+'     acia_status |= constant ( SR_IRQ << DATA_BASE )     ' Set the interrupt status byte (cleared in driver cog)
+      dira[ INT_PIN_NUM ]~~                               ' Set the /INT pin to output to wake up the Z80 (minimum 136ns pulse = 1 RC2014 standard clock)
+      dira[ INT_PIN_NUM ]~                                ' Clear /INT pin to input (measured pulse is 5,600ns)
 
 
 PUB txFlush
@@ -201,36 +206,49 @@ PUB txFlush
   tx_tail := tx_head := 0
 
 
+PUB txCheck : truefalse
+{{Check and return true if space in transmit buffer; return immediately.
+  Returns: t|f}}
+
+  truefalse := tx_tail <> ((tx_head + 1) & BUFFER_MASK )
+
+
 PUB rx : rxbyte
+{{Receive single-byte character.  Waits until character received.
+  Returns: $00..$FF}}
 
-  '' Receive single-byte character.  Waits until character received.
-  '' Returns: $00..$FF
+  repeat until rxCount > 0
 
-  repeat while (!rxCheck)
   rxbyte := rx_buffer[rx_tail]
   rx_tail := ++rx_tail & BUFFER_MASK
 
 
 PUB rxCount : count
-
-  '' Get count of characters in receive buffer
-  '' Returns: number of characters waiting in receive buffer
+{{Get count of characters in receive buffer. Manages receive flow control.
+  Returns: number of characters waiting in receive buffer.}}
 
   count := rx_head - rx_tail
   count -= BUFFER_LENGTH * (count < 0)
 
+  if ( count < constant ( BUFFER_LENGTH-1 ) ) and not ( acia_status & constant ( SR_TDRE << DATA_BASE ) )
+                                                          ' Enough space in receive buffer but Transmit Data Register Empty was cleared by interrupt
+    acia_status |= constant ( SR_TDRE << DATA_BASE )      ' Set Transmit Data Register Empty
+
+    if acia_config & constant ( CR_TIE_RTS0 << DATA_BASE )' If the Transmit Interrupt Enable (Z80 perspective) should be set
+'     acia_status |= constant ( SR_IRQ << DATA_BASE )     ' Set the interrupt status byte (cleared in driver cog)
+      dira[ INT_PIN_NUM ]~~                               ' Set the /INT pin to output to wake up the Z80 (minimum 136ns pulse = 1 RC2014 standard clock)
+      dira[ INT_PIN_NUM ]~                                ' Clear /INT pin to input (measured pulse is 5,600ns)
+
 
 PUB rxFlush
-
-  '' Flush receive buffer
+{{Flush receive buffer}}
 
   rx_tail := rx_head := 0
 
 
 PUB rxCheck : truefalse
-
-  '' Check if character received; return immediately.
-  '' Returns: t|f
+{{Check if character received; return immediately.
+  Returns: t|f}}
 
   truefalse := rx_tail <> rx_head
 
@@ -283,13 +301,13 @@ wait
 
                         andn    outa,bus_int            ' reset /INT pin (modified as a side effect of the waitpeq outa wr effect)
 
-                        testn   bus_a0,ina          wz  ' isolate the base address
+                        testn   bus_a0,ina           wz ' isolate the base address
             if_z        jmp     #handler_data           ' handle data, otherwise fall through for handling command/status at base address
 
-                        testn   bus_rd,ina          wz  ' capture port data again, test for /RD pin low
+                        testn   bus_rd,ina           wz ' capture port data again, test for /RD pin low
             if_nz       jmp     #transmit_status
 
-                        testn   bus_wr,ina          wz  ' capture port data again, test for /WR pin low
+                        testn   bus_wr,ina           wz ' capture port data again, test for /WR pin low
             if_nz       jmp     #receive_command
 
                         jmp     #wait                   ' then go back and wait for next address chance
@@ -300,10 +318,10 @@ handler_data
                         and     t1,data_active_mask     ' mask to the status byte
                         wrlong  t1,acia_status_addr
 
-                        testn   bus_rd,ina          wz  ' capture port data again, test for /RD pin low
+                        testn   bus_rd,ina           wz ' capture port data again, test for /RD pin low
             if_nz       jmp     #transmit_data
 
-                        testn   bus_wr,ina          wz  ' capture port data again, test for /WR pin low
+                        testn   bus_wr,ina           wz ' capture port data again, test for /WR pin low
             if_nz       jmp     #receive_data
 
                         jmp     #wait                   ' then go back and wait for next address chance
@@ -317,7 +335,7 @@ receive_command
                         xor     bus,acia_config_reset wz' master reset if we've received the RESET command
             if_nz       jmp     #wait
 
-                        wrlong  acia_status_initial,acia_status_addr  ' reset status
+                        wrlong  acia_status_initial,acia_status_addr  ' master reset status
                         jmp     #wait
 
 transmit_status
@@ -339,72 +357,102 @@ transmit_status
                         jmp     #wait
 
 receive_data
+                        mov     t1,par                  ' assign value of rx_head to t1
+                        rdlong  t2,t1                   ' copy value of rx_head into t2
+                        add     t1,#4                   ' increment t1 by 4 bytes. Result is address of rx_tail
+                        rdlong  t3,t1                   ' copy value of rx_tail into t3
+
                         or      outa,bus_wait           ' set /WAIT line high to continue
                         mov     bus,ina                 ' capture the data byte
                         waitpeq bus_wr,bus_wr           ' wait for /WR high
                         shr     bus,#DATA_BASE          ' shift data so that the LSB corresponds with D0
-                        rdlong  t2,par                  ' assign value of rx_head to t2
-                        add     t2,rxbuff               ' create the pointer to the location to write
+
+                        add     t2,rxbuff               ' create the pointer to the head of rx_buffer to write
                         wrbyte  bus,t2                  ' write the byte (in bus) to address in t2
-                        sub     t2,rxbuff               ' recover value
-                        add     t2,#1                   ' increment the head pointer
+                        sub     t2,rxbuff               ' recover value (result is rx_head)
+
+                        add     t2,#1                   ' increment the rx_head count
                         and     t2,#BUFFER_MASK         ' and check for range (if > #BUFFER_MASK then rollover)
-                        wrlong  t2,par                  ' write the temporary value back to par
+                        wrlong  t2,par                  ' write the rx_head value back to par (rx_head)
+
+'                       rdlong  t1,acia_status_addr
+'                       andn    t1,acia_status_irq      ' clear IRQ bit
+'                       and     t1,data_active_mask     ' mask status byte
+'                       wrlong  t1,acia_status_addr
+
+                        add     t2,#1                   ' increment the rx_head count to check for buffer full
+                        and     t2,#BUFFER_MASK         ' and check for range (if > #BUFFER_MASK then rollover)
+                        cmp     t2,t3                wz ' compare rx_tail and rx_head
+            if_e        jmp     #clear_tdre             ' receive buffer is full, so disable reception
 
                         rdlong  t1,acia_config_addr
-                        and     t1,acia_config_int_tx_mask  ' mask out the tx interrupt bits.
-                        xor     t1,acia_config_int_tx wz' test whether the interrupt pin should be set
-            if_nz       jmp     #wait                   ' receive byte done
+                        test    t1,acia_config_tie   wz ' test whether the interrupt pin should be set
+            if_nz       jmp     #set_interrupt          ' set the interrupt if needed
+                        jmp     #wait                   ' receive byte done
 
-                        jmp     #set_interrupt          ' set the interrupt if needed
 
-transmit_data                                           ' check for head <> tail
+transmit_data                                           ' check for tx_head <> tx_tail
                         mov     t1,par                  ' get address of rx_head assign it to t1
                         add     t1,#8                   ' increment t1 by 8 bytes. Result is address of tx_head
                         rdlong  t2,t1                   ' copy value of tx_head into t2
                         add     t1,#4                   ' increment t1 by 4 bytes. Result is address of tx_tail
                         rdlong  t3,t1                   ' copy value of tx_tail into t3
-                        cmp     t2,t3               wz  ' compare tx_tail and tx_head
 
                         add     t3,txbuff               ' add address of txbuff to value of tx_tail
-                        rdbyte  bus,t3                  ' read byte from the tail of the buffer into bus
-                        sub     t3,txbuff               ' subtract address of bus (Result is tx_tail)
+                        rdbyte  bus,t3                  ' read byte from the tail of the tx_buffer into bus
+                        sub     t3,txbuff               ' subtract address of bus (result is tx_tail)
 
                         shl     bus,#DATA_BASE          ' shift data so that the LSB corresponds with DATA_BASE
                         or      outa,bus                ' write byte to Parallel FIFO
                         or      dira,data_active_mask   ' set data bus lines to active (output)
                                                         ' wait for data bus lines to settle before releasing /WAIT
 
-            if_ne       add     t3,#1                   ' increment t3 by 1 byte (same as tx_tail + 1)
-            if_ne       and     t3,#BUFFER_MASK         ' and check for range (if > #BUFFER_MASK then rollover)
-            if_ne       wrlong  t3,t1                   ' write long value of t3 into address tx_tail
+                        add     t3,#1                   ' increment t3 by 1 byte (same as tx_tail + 1)
+                        and     t3,#BUFFER_MASK         ' and check for range (if > #BUFFER_MASK then rollover)
+                        wrlong  t3,t1                   ' write long value of t3 into address tx_tail
 
-                        nop                             ' additional delay(s) potentially necessary
-                        nop                             ' if RC2014 bus is heavily loaded
+'                       rdlong  t1,acia_status_addr
+'                       andn    t1,acia_status_irq      ' clear IRQ bit
+'                       and     t1,data_active_mask     ' mask status byte
+'                       wrlong  t1,acia_status_addr
 
                         or      outa,bus_wait           ' clear /WAIT line high to continue
                         waitpeq bus_rd,bus_rd           ' wait for /RD to raise
                         andn    dira,data_active_mask   ' clear data bus lines to inactive (input)
                         andn    outa,data_active_mask   ' ensure data bus pins are cleared to zero
 
-                        cmp     t2,t3               wz  ' compare tx_tail and tx_head
-            if_e        rdlong  t1,acia_status_addr
-            if_e        andn    t1,acia_status_rdrf     ' if no further bytes, clear RDRF
-            if_e        and     t1,data_active_mask     ' mask status byte
-            if_e        wrlong  t1,acia_status_addr
-            if_e        jmp     #wait                   ' transmit byte done
+                        cmp     t2,t3                wz ' compare tx_tail and tx_head
+            if_e        jmp     #clear_rdrf             ' if buffer empty, clear RDRF
 
                         rdlong  t1,acia_config_addr
-                        test    t1,acia_config_int_rx wz' test whether the rx interrupt should be triggered
-            if_z        jmp     #wait
+                        test    t1,acia_config_rts1  wz ' test whether /RTS is low
+            if_nz       jmp     #clear_rdrf             ' clear data ready flag and return to wait
+
+                        rdlong  t1,acia_config_addr
+                        test    t1,acia_config_rie   wz ' test whether RIE is set and interrupt should be triggered
+            if_z        jmp     #wait                   ' if not we're done
 
 set_interrupt
-                        rdlong  t1,acia_status_addr
                         or      dira,bus_int            ' set /INT pin to output for minimum 136ns (1 RC2014 clock)
+                        rdlong  t1,acia_status_addr
                         or      t1,acia_status_irq      ' set the interrupt status bit
-                        wrlong  t1,acia_status_addr
                         andn    dira,bus_int            ' clear /INT pin to input
+                        wrlong  t1,acia_status_addr
                         jmp     #wait                   ' set interrupt done
+
+clear_tdre
+                        rdlong  t1,acia_status_addr
+                        andn    t1,acia_status_tdre     ' clear TDRE bit
+                        and     t1,data_active_mask     ' mask status byte
+                        wrlong  t1,acia_status_addr
+                        jmp     #wait                   ' transmit byte done
+
+clear_rdrf
+                        rdlong  t1,acia_status_addr
+                        andn    t1,acia_status_rdrf     ' clear RDRF bit
+                        and     t1,data_active_mask     ' mask status byte
+                        wrlong  t1,acia_status_addr
+                        jmp     #wait                   ' transmit byte done
 
 '
 ' Constants
@@ -420,19 +468,22 @@ bus_a0                  long    A0_PIN
 port_active_mask        long    WAIT_PIN | M1_PIN | PORT_MASK
 data_active_mask        long    DATA_PINS << DATA_BASE
 
-acia_config_initial     long    ( CR_TDI_RTS0 | CR_8N1 | CR_DIV_64 ) << DATA_BASE
+acia_config_initial     long    ( CR_TID_RTS0 | CR_8N1 | CR_DIV_64 ) << DATA_BASE
 acia_status_initial     long    ( SR_TDRE ) << DATA_BASE
 
 acia_config_reset       long    ( CR_RESET ) << DATA_BASE
-acia_config_int_rx      long    ( CR_RIE ) << DATA_BASE
-acia_config_int_tx      long    ( CR_TEI_RTS0 ) << DATA_BASE
-acia_config_int_tx_mask long    ( CR_TXI_MASK ) << DATA_BASE
+acia_config_rie         long    ( CR_RIE ) << DATA_BASE
+acia_config_rts1        long    ( CR_TID_RTS1 ) << DATA_BASE
+
+acia_config_tie         long    ( CR_TIE_RTS0 ) << DATA_BASE
+acia_config_tx_mask     long    ( CR_TIX_MASK ) << DATA_BASE
 
 acia_status_irq         long    ( SR_IRQ ) << DATA_BASE
+acia_status_tdre        long    ( SR_TDRE ) << DATA_BASE
 acia_status_rdrf        long    ( SR_RDRF ) << DATA_BASE
 
 '
-' Uninitialized data 
+' Uninitialized data
 
 acia_base_addr          res     1
 acia_config_addr        res     1

@@ -2,7 +2,7 @@
 ''*  User Experience Module             *
 ''*  Designed for RC2014                *
 ''*  Author: Phillip Stevens            *
-''*  Copyright (c) 2020                 *
+''*  Copyright (c) 2021                 *
 ''*  See end of file for licence        *
 ''***************************************
 
@@ -98,7 +98,7 @@ VAR
 
   long  gScreenBufferPtr                              ' holds the address of the video buffer passed back from the VGA driver
 
-  long  termStack [32]                                ' small stack for the serial input cog
+  long  termStack [64]                                ' small stack for the serial terminal input cog
 
 
 OBJ
@@ -137,7 +137,7 @@ PUB main
   'MAIN COG EVENT LOOP - this is where you put all your code in a non-blocking infinite loop...
   repeat
     ' if no input from keyboard then continue	
-    kbdWriteZ80
+    kbdToZ80
     ' if no input from ACIA then continue
     readZ80
 
@@ -183,7 +183,7 @@ PUB screenInit | retVal
 PUB readZ80 | char, n, m
 
     ' if no input from ACIA then return
-    repeat while acia.rxCheck
+    repeat while acia.rxCount > 0               ' check whether any bytes have arrived (with XON/XOFF)
 
       ' get character from buffer
       char := acia.rx
@@ -192,26 +192,26 @@ PUB readZ80 | char, n, m
 
         XMODEM_SOH:                             ' XMODEM Start of Header
 
-          term.char (char)                      ' SOH to terminal
+          term.tx (char)                        ' SOH to terminal
 
           n := acia.rx
-          term.char (n)                         ' Packet Number to terminal
+          term.tx (n)                           ' Packet Number to terminal
 
           m := acia.rx
-          term.char (m)                         ' Complimented Packet Number to terminal
+          term.tx (m)                           ' Complimented Packet Number to terminal
 
           if ( n == $FF-m )
             n := 129                            ' get another 129 (of 132/133 total) XMODEM packet characters
             repeat
-              term.char (acia.rx)               ' get next characters after Packet Header
+              term.tx (acia.rx)                 ' get next characters after Packet Header
             while ( --n )
 
         ASCII_BS, ASCII_DEL:                    ' backspace (edit), delete
 
           ' move cursor back once to overwrite last character on terminal
-          term.char (ASCII_BS)
-          term.char (ASCII_SPACE)
-          term.char (ASCII_BS)
+          term.tx (ASCII_BS)
+          term.tx (ASCII_SPACE)
+          term.tx (ASCII_BS)
 
           if ( gTextCursX > 0 )
             --gTextCursX
@@ -223,7 +223,7 @@ PUB readZ80 | char, n, m
 
         ASCII_TAB:                              ' horizontal Tab
 
-          term.char (char)
+          term.tx (char)
 
           if ( gTextCursY < gScreenCols-5 )
             repeat
@@ -249,10 +249,10 @@ PUB readZ80 | char, n, m
 
         ASCII_ESC:                              ' escape
 
-          term.char (char)                      ' ESC to terminal
+          term.tx (char)                        ' ESC to terminal
 
           char := acia.rx                       ' get next character after ESC
-          term.char (char)                      ' possible CSI to terminal
+          term.tx (char)                        ' possible CSI to terminal
 
           case char
 
@@ -262,7 +262,7 @@ PUB readZ80 | char, n, m
 
               repeat
                 char := acia.rx                 ' get next characters after CSI
-                term.char (char)                ' possible modifier char to terminal
+                term.tx (char)                  ' possible modifier char to terminal
 
                 if ( char => "0" AND char =< "9" )
                   n := n*10 + char - ASCII_0
@@ -374,7 +374,7 @@ PUB readZ80 | char, n, m
 
                   repeat
                     char := acia.rx             ' get next characters after semicolon
-                    term.char (char)            ' possible modifier char to terminal
+                    term.tx (char)              ' possible modifier char to terminal
 
                     if ( char => "0" AND char =< "9" )
                       m := m*10 + char - ASCII_0
@@ -405,7 +405,7 @@ PUB readZ80 | char, n, m
 
         other:                                  ' all other cases
 
-          term.char (char)                      ' send other characters out the serial terminal
+          term.tx (char)                        ' send other characters out the serial terminal
 
           if ( char => $20 )                    ' only printable characters to the screen
             if ( gTextCursX < gScreenCols - 1 ) ' update cursor position
@@ -417,10 +417,10 @@ PUB readZ80 | char, n, m
             wmf.outScreen (char)                ' echo all printable characters
 
 
-PUB kbdWriteZ80 | char
+PUB kbdToZ80 | char
 
     ' if no input from keyboard then return
-    repeat while kbd.gotKey
+    repeat while acia.txCheck and kbd.gotKey
 
       char := kbd.getKey
 
@@ -455,14 +455,14 @@ PUB kbdWriteZ80 | char
 
         kbd#KBD_ASCII_CTRL | kbd#KBD_ASCII_ALT | kbd#KBD_ASCII_DEL:
 
-          acia.txFlush                                               ' remove any pending transmit queue to Z80
-          dira[ acia#RESET_PIN_NUM ]~~                               ' set /RESET pin to output to reset the Z80
-          dira[ acia#RESET_PIN_NUM ]~                                ' set /RESET pin to input
+          acia.txFlush                          ' remove any pending transmit queue to Z80
+          dira[ acia#RESET_PIN_NUM ]~~          ' set /RESET pin to output to reset the Z80
+          dira[ acia#RESET_PIN_NUM ]~           ' set /RESET pin to input
 
-          term.clear                                                 ' clear the serial terminal
+          term.clear                            ' clear the serial terminal
 
-          gTextCursX := gTextCursY := 0                              ' move screen cursor to home position
-          wmf.outScreen ( wmf#CS )                                   ' clear the screen
+          gTextCursX := gTextCursY := 0         ' move screen cursor to home position
+          wmf.outScreen ( wmf#CS )              ' clear the screen
 
         other:      ' all other input
           acia.tx (char)
@@ -473,7 +473,8 @@ PUB termToZ80
   'COG EVENT LOOP - this is where you put all your code in a non-blocking infinite loop...
   repeat
     ' if no input from terminal then wait till there is
-    acia.tx (term.charIn)
+    if acia.txCheck                             ' if there is space in acia tx buffer
+      acia.tx (term.rx)                         ' grab a byte and push it to the tx buffer
 
 
 DAT

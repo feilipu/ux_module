@@ -22,18 +22,24 @@ USAGE:
 
 CON
 
-   BUFFER_LENGTH = 256                                  'Recommended as 64 or higher, but can be 2, 4, 8, 16, 32, 64, 128, 256 or 512.
-   BUFFER_MASK   = BUFFER_LENGTH - 1
+   BUFFER_LENGTH    = 256                               'Recommended as 64 or higher, but can be 2, 4, 8, 16, 32, 64, 128, 256 or 512.
+   BUFFER_MASK      = BUFFER_LENGTH - 1
+   BUFFER_FULLISH   = BUFFER_LENGTH - 16
+   BUFFER_EMPTYISH  = 8
 
-   MAXSTR_LENGTH = 255                                  'Maximum length of received numerical string (not including zero terminator).
+   MAXSTR_LENGTH    = 255                               'Maximum length of received numerical string (not including zero terminator).
 
-   NL = 13                                              ' NL: New Line
-   LF = 10                                              ' LF: Line Feed
+   XOFF = 19                                            ' XOFF
+   XON  = 17                                            ' XON
+   NL   = 13                                            ' NL: New Line
+   LF   = 10                                            ' LF: Line Feed
 
 
 VAR
 
   long  cog                                             'Cog flag/id
+
+  long  status_xoff                                     'Status of XOFF in XON/XOFF transmission
 
   long  rx_head                                         '9 contiguous longs (must keep order)
   long  rx_tail
@@ -53,7 +59,7 @@ VAR
 
 PUB start(baudrate) : okay
 {{Start communication with the Parallax Serial Terminal using the Propeller's programming connection.
-Waits 1 second for connection, then clears screen.
+Waits 1/4 second for connection, then clears screen.
   Parameters:
     baudrate - bits per second.  Make sure it matches the Parallax Serial Terminal's
                Baud Rate field.
@@ -81,6 +87,7 @@ PUB startRxTx(rxpin, txpin, mode, baudrate) : okay
   longmove(@rx_pin, @rxpin, 3)
   bit_ticks := clkfreq / baudrate
   buffer_ptr := @rx_buffer
+  status_xoff := FALSE
   okay := cog := cognew(@entry, @rx_head) + 1
 
 
@@ -92,43 +99,54 @@ PUB stop
   longfill(@rx_head, 0, 9)
 
 
-PUB char(bytechr)
+PUB tx(bytechr)
 {{Send single-byte character.  Waits for room in transmit buffer if necessary.
   Parameter:
     bytechr - character (ASCII byte value) to send.}}
 
   repeat until (tx_tail <> ((tx_head + 1) & BUFFER_MASK))
+
   tx_buffer[tx_head] := bytechr
   tx_head := ++tx_head & BUFFER_MASK
 
   if rxtx_mode & %1000
-    charIn
+    rx
 
 
-PUB chars(bytechr, count)
+PUB txn(bytechr, count)
 {{Send multiple copies of a single-byte character. Waits for room in transmit buffer if necessary.
   Parameters:
     bytechr - character (ASCII byte value) to send.
     count   - number of bytechrs to send.}}
 
   repeat count
-    char(bytechr)
+    tx(bytechr)
 
 
-PUB charIn : bytechr
+PUB rx : rxbyte
 {{Receive single-byte character.  Waits until character received.
   Returns: $00..$FF}}
 
-  repeat while (!rxCheck)
-  bytechr := rx_buffer[rx_tail]
+  repeat until rxCount > 0
+
+  rxbyte := rx_buffer[rx_tail]
   rx_tail := ++rx_tail & BUFFER_MASK
 
+
 PUB rxCount : count
-{{Get count of characters in receive buffer.
+{{Get count of characters in receive buffer. Manages XON/XOFF flow control.
   Returns: number of characters waiting in receive buffer.}}
 
   count := rx_head - rx_tail
   count -= BUFFER_LENGTH * (count < 0)
+ 
+  if count => BUFFER_FULLISH and status_xoff == FALSE 
+    status_xoff := TRUE
+    tx(XOFF)
+
+  if count =< BUFFER_EMPTYISH and status_xoff == TRUE
+    status_xoff := FALSE
+    tx(XON)
 
 
 PUB rxFlush
@@ -176,9 +194,9 @@ PUB position(x, y)
 {{Position cursor at column x, row y (from top-left).}}
     str(string(27,"[")) ' Position Cursor
     dec(y)
-    char(";")
+    tx(";")
     dec(x)
-    char("H")
+    tx("H")
 
 
 PUB saveCurPos
@@ -201,14 +219,14 @@ PUB showCursor
 PUB newLine
 {{Send cursor to new line (carriage return plus line feed).}}
 
-  char(NL)
-  char(LF)
+  tx(NL)
+  tx(LF)
 
 
 PUB lineFeed
 {{Send cursor down to next line.}}
 
-  char(LF)
+  tx(LF)
 
 
 CON
@@ -222,7 +240,7 @@ PUB str(stringptr)
     stringptr - pointer to zero terminated string to send.}}
 
   repeat strsize(stringptr)
-    char(byte[stringptr++])
+    tx(byte[stringptr++])
 
 
 PUB strIn(stringptr)
@@ -244,7 +262,7 @@ starting at stringptr.  Waits until either full string received or maxcount char
     maxcount  - maximum length of string to receive, or -1 for unlimited.}}
 
   repeat while (maxcount--)                                                     'While maxcount not reached
-    if (byte[stringptr++] := charIn) == NL                                      'Get chars until NL
+    if (byte[stringptr++] := rx) == NL                                          'Get chars until NL
       quit
   byte[stringptr+(byte[stringptr-1] == NL)]~                                    'Zero terminate string; overwrite NL or append 0 char
 
@@ -263,17 +281,17 @@ PUB dec(value) | i, x
   x := value == NEGX                                                            'Check for max negative
   if value < 0
     value := ||(value+x)                                                        'If negative, make positive; adjust for max negative
-    char("-")                                                                   'and output sign
+    tx("-")                                                                     'and output sign
 
   i := 1_000_000_000                                                            'Initialize divisor
 
   repeat 10                                                                     'Loop for 10 digits
     if value => i
-      char(value / i + "0" + x*(i == 1))                                        'If non-zero digit, output digit; adjust for max negative
+      tx(value / i + "0" + x*(i == 1))                                          'If non-zero digit, output digit; adjust for max negative
       value //= i                                                               'and digit from value
       result~~                                                                  'flag non-zero found
     elseif result or i == 1
-      char("0")                                                                 'If zero digit (or only digit) output it
+      tx("0")                                                                   'If zero digit (or only digit) output it
     i /= 10                                                                     'Update divisor
 
 
@@ -293,7 +311,7 @@ PUB bin(value, digits)
 
   value <<= 32 - digits
   repeat digits
-    char((value <-= 1) & 1 + "0")
+    tx((value <-= 1) & 1 + "0")
 
 
 PUB binIn : value
@@ -312,7 +330,7 @@ PUB hex(value, digits)
 
   value <<= (8 - digits) << 2
   repeat digits
-    char(lookupz((value <-= 4) & $F : "0".."9", "A".."F"))
+    tx(lookupz((value <-= 4) & $F : "0".."9", "A".."F"))
 
 
 PUB hexIn : value
