@@ -22,10 +22,10 @@ USAGE:
 
 CON
 
-   BUFFER_LENGTH    = 256                               'Recommended as 64 or higher, but can be 2, 4, 8, 16, 32, 64, 128, 256 or 512.
+   BUFFER_LENGTH    = 512                               'Recommended as 64 or higher, but can be 2, 4, 8, 16, 32, 64, 128, 256 or 512.
    BUFFER_MASK      = BUFFER_LENGTH - 1
-   BUFFER_FULLISH   = BUFFER_LENGTH - 16
-   BUFFER_EMPTYISH  = 8
+   BUFFER_FULLISH   = BUFFER_LENGTH / 2
+   BUFFER_EMPTYISH  = BUFFER_LENGTH / 8
 
    MAXSTR_LENGTH    = 255                               'Maximum length of received numerical string (not including zero terminator).
 
@@ -123,6 +123,13 @@ PUB txn(bytechr, count)
     tx(bytechr)
 
 
+PUB txCheck : truefalse
+{{Check and return true if space in transmit buffer; return immediately.
+  Returns: t|f}}
+
+  truefalse := tx_tail <> ((tx_head + 1) & BUFFER_MASK )
+
+
 PUB rx : rxbyte
 {{Receive single-byte character.  Waits until character received.
   Returns: $00..$FF}}
@@ -139,14 +146,14 @@ PUB rxCount : count
 
   count := rx_head - rx_tail
   count -= BUFFER_LENGTH * (count < 0)
- 
-  if count => BUFFER_FULLISH and status_xoff == FALSE 
-    status_xoff := TRUE
-    tx(XOFF)
 
   if count =< BUFFER_EMPTYISH and status_xoff == TRUE
     status_xoff := FALSE
     tx(XON)
+
+  elseif count => BUFFER_FULLISH and status_xoff == FALSE 
+    status_xoff := TRUE
+    tx(XOFF)
 
 
 PUB rxFlush

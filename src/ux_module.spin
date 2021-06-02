@@ -182,8 +182,8 @@ PUB screenInit | retVal
 
 PUB readZ80 | char, n, m
 
-    ' if no input from ACIA then return
-    repeat while acia.rxCount > 0               ' check whether any bytes have arrived (with XON/XOFF)
+    ' if no input from ACIA  or no space in terminal tx buffer then return
+    repeat while acia.rxCount > 0 and term.txCheck  ' check whether any bytes have arrived (with /RTS)
 
       ' get character from buffer
       char := acia.rx
@@ -419,8 +419,8 @@ PUB readZ80 | char, n, m
 
 PUB kbdToZ80 | char
 
-    ' if no input from keyboard then return
-    repeat while acia.txCheck and kbd.gotKey
+    ' if no input from keyboard or no space in acia tx buffer then return
+    repeat while kbd.gotKey and acia.txCheck
 
       char := kbd.getKey
 
@@ -473,7 +473,7 @@ PUB termToZ80
   'COG EVENT LOOP - this is where you put all your code in a non-blocking infinite loop...
   repeat
     ' if no input from terminal then wait till there is
-    if acia.txCheck                             ' if there is space in acia tx buffer
+    if term.rxCount > 0 and acia.txCheck        ' if there is a received byte and space in acia tx buffer 
       acia.tx (term.rx)                         ' grab a byte and push it to the tx buffer
 
 

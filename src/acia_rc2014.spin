@@ -69,8 +69,8 @@ CON
   A6_PIN      =   |< 1
   A7_PIN      =   |< 0
 
-  BUFFER_LENGTH    = 256              'Recommended as 64 or higher, but can be 2, 4, 8, 16, 32, 64, 128, 256 or 512.
-  BUFFER_MASK      = BUFFER_LENGTH - 1
+  BUFFER_LENGTH   = 512               'Recommended as 64 or higher, but can be 2, 4, 8, 16, 32, 64, 128, 256 or 512.
+  BUFFER_MASK     = BUFFER_LENGTH - 1
 
   MAX_STRING  =   255
 
