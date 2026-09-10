@@ -100,19 +100,56 @@ lib_vjet demos use their own top objects, for example:
 openspin -L src/lib_vjet -b -o build/vjet_test.binary src/lib_vjet/vjet_test.spin
 ```
 
-## Load (FTDI)
+## Load (FT232 Prop Plug only)
+
+The ROM bootloader clocks bits with `0xF9`. That needs a low-latency USB-UART (**FTDI FT232 / FT231**, SparkFun FTDI Basic, Parallax Prop Plug). Default reset is **DTR** on header pin 1 (`/RES`).
 
 ```bash
 proploader -P                          # list serial ports
+# FT232 is cu.usbserial-*, not cu.usbmodem-*
 proploader -p /dev/cu.usbserial-XXXX -r build/ux_module.binary
 proploader -p /dev/cu.usbserial-XXXX -e -r build/ux_module.binary   # EEPROM + run
 proploader -p /dev/cu.usbserial-XXXX -R                            # reset only
 proploader -p /dev/cu.usbserial-XXXX -r -t build/ux_module.binary  # run + terminal
 ```
 
-If auto-detect finds the wrong port, pass `-p`. Prefer `/dev/cu.*` over `/dev/tty.*` on macOS.
+If auto-detect finds the wrong port, pass `-p`. Prefer `/dev/cu.*` over `/dev/tty.*` on macOS. Ignore `/dev/cu.debug-console`.
 
 Board clock comes from the **Spin source** (`_xinfreq = 7_372_800`). Loader `-b` / `-D clkfreq=…` only affect loader-side helpers.
+
+Quit GNU `screen` before a load (`C-a k`, or `screen -X -S <name> quit`). The port must be free.
+
+## Do not load over USB CDC
+
+macOS **CDC ACM** sticks show as `/dev/cu.usbmodem*`. PropLoader **lists** them. They are **not** a Prop Plug.
+
+Tried and failed on this board (2026-09-10), 8086 Consultancy USB-C to UART Adaptor (5 V), nodes `cu.usbmodem03291` and `cu.usbmodem01031`:
+
+| Attempt | Result |
+|---------|--------|
+| Default DTR reset | `Propeller not found` |
+| `-D reset=rts` | `Propeller not found` |
+| `-D reset=rts-inv` (local PropLoader) | `Propeller not found` |
+| Manual GRN–BLK (`-D reset=none`) | `Propeller not found` |
+
+Cause: header pin 1 on that stick is **RTS**, not DTR. Software RTS did not reach `/RES` until a jumper exists. Even with a hand pulse, CDC ACM latency breaks the ROM `0xF9` handshake. Console at 115200 can still work.
+
+**Paused:** do not keep trying CDC download. Wait for an FT232. Use CDC only for `ux-screen` after EEPROM is programmed.
+
+This machine’s PropLoader (`~/Projects/PropLoader`) also has `-D reset=rts-inv` and `-D reset=none` (prints `Release /RES now`). Stock PropLoader has `dtr` and `rts` only.
+
+## Console helpers (this machine)
+
+| Command | Role |
+|---------|------|
+| `~/bin/ux-screen` | GNU `screen` 115200 8N1, RX/TX only, no XON/XOFF (XMODEM). One `/dev/cu.usbmodem*` per session. Pass `/dev/cu.usbserial-XXXX` for FT232. |
+| `~/bin/ux-load` | EEPROM load. Default `reset=rts-inv`. `-m` is manual `/RES`. Do not use until an FT232 is on the header. |
+| `~/.screenrc-ux` | `flow off`; `C-a x` / `C-a r` prefills `lsx` / `lrx` (Homebrew `lrzsz`). |
+
+```bash
+ux-screen                         # one CDC stick
+ux-screen /dev/cu.usbserial-XXXX  # FT232 console
+```
 
 ## Optional / out of scope
 
@@ -130,3 +167,4 @@ Board clock comes from the **Spin source** (`_xinfreq = 7_372_800`). Loader `-b`
 4. EEPROM on the board is 32 KB or 64 KB; bootloader loads **32 KB** into Hub RAM.
 5. Do not install vendor FTDI VCP kexts on modern macOS — use Apple’s built-in FTDI driver.
 6. Propeller 1 only. Do not install or default to P2 loaders.
+7. Do not use `/dev/cu.usbmodem*` (CDC) to download. Load only on FT232 `/dev/cu.usbserial-*` with DTR reset. CDC is console-only.

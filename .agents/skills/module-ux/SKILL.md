@@ -115,8 +115,8 @@ Hub writers: [references/remaining-errors.md](references/remaining-errors.md). C
 ## Build / upload
 
 1. PropellerIDE (or compatible) with **`ux_module.spin` in the foreground**. Add `src/lib_vjet` to the library search path (`VJET_vUXM_vga`).
-2. Program via FTDI (“Prop Plug” in the IDE).
-3. Toggle DTR to reboot stand-alone.
+2. Program with an **FT232** Prop Plug (`proploader` on `/dev/cu.usbserial-*`, DTR reset). See `tool-propeller`. USB CDC (`/dev/cu.usbmodem*`, 8086net 5 V stick) is console only. Download on CDC was tried and failed (ROM handshake). Paused until an FT232 is available.
+3. Toggle DTR on the FT232 to reboot stand-alone. CDC pin 1 is RTS, not DTR.
 
 ## Agent rules
 

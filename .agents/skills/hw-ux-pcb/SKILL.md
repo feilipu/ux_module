@@ -82,8 +82,9 @@ Eight pins through resistor DAC (270 Ω / 560 Ω / 130 Ω) as documented in `hir
 1. Change pin numbers in **one** owning module, then import via `object#CONST`.
 2. Any ACIA mask change must update `port_active_mask`, `DATA_BASE`, and schematic comments together.
 3. Do not put extra I2C devices on P28/P29 that answer during Propeller boot.
-4. DTR on the FTDI connector resets the Propeller (same idea as Arduino). Tools: `serial_dtr.py`, `serial_tool.py`.
+4. DTR on the FTDI connector resets the Propeller (same idea as Arduino). Tools: `serial_dtr.py`, `serial_tool.py`. Load the chip with an **FT232** Prop Plug (`tool-propeller`). USB CDC is not a loader.
 5. SparkFun FTDI Basic 6-pin is DTR, RXI, TXO, VCC, CTS, GND. DTR is net `!DTR` to Propeller `/RES` only. CTS is not connected. RTS is not on this header. The Propeller cannot pause the host with RTS/CTS or DTR. Software flow choice (no XON/XOFF): `module-ux` revert notes.
+6. 8086 Consultancy USB-C CDC adaptor (5 V, [Tindie](https://www.tindie.com/products/8086net/uusbusb-c-cdc-serial-adaptor-5v/)) is RTS, RX, TX, 5V, CTS, GND. Pin 1 is RTS, not DTR. macOS node `/dev/cu.usbmodem*`. Fine for 115200 console (`ux-screen`). Do not use it as a Prop Plug. An FT232 enumerates as `/dev/cu.usbserial-*`.
 
 ## Related
 
