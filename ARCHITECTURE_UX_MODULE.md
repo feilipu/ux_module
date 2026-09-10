@@ -82,11 +82,15 @@ Naming trap: from the Z80, “receive data register” is filled by the Propelle
 3. Services status/control at base+0 or data at base+1
 4. Releases `/WAIT` and returns to wait
 
-Address detect uses the OBEX-style `WAITPNE` / `WAITPEQ` pair. The match instruction is `waitpeq outa, port_active_mask wr`. The `wr` effect **adds** the mask into `OUTA`, which asserts `/WAIT` in the same step (not a copy of `INA`). That idiom is easy to break if someone “cleans up” the `wr`. See `.agents/skills/lang-pasm` and OBEX WAITPEQ notes.
+A real MC68B50 places data in 150 ns or less. This cog is slower, so P24 stretches the Z80 I/O cycle. Address detect uses `WAITPNE` then `waitpeq outa, port_active_mask wr`. The `wr` effect adds the mask into `OUTA`. Bit 24 was already 1, so the add drives `/WAIT` low in that instruction.
+
+Carry hits bit 25 (`/INT`). The next instruction clears that bit. Do not drop `wr`. Loop rules live in `.agents/skills/lang-pasm/references/acia-wait.md`.
 
 Status and control bits follow the Motorola 6850 model (`docs/MC6850.pdf`). Default base is `0x80`. RomWBW setups may use `0x40` when an SIO owns `0x80`.
 
-FIFOs are 512 bytes each. Spin methods manage head/tail indexes and pulse `/INT` when the Z80 enables the matching interrupt bits.
+FIFOs are 512 bytes each. Z80 receive is the Propeller `tx_*` FIFO (`RDRF`). Z80 transmit is the Propeller `rx_*` FIFO (`TDRE`). Spin `tx` and `rx` move bytes and set those flags.
+
+The PASM cog owns `/INT` as a level, held low while RIE or TIE match the flags. `/RTS` is the CR5/CR6 field. Master reset `$03` zeros both FIFOs. An empty RDR read does not move `tx_tail`. A full TDR write sets `OVRN` and does not store.
 
 ## FTDI UART cog
 

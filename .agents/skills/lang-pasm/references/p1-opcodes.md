@@ -100,7 +100,7 @@ Predicted **taken**. Not-taken costs the extra 4 clocks.
 
 `WAITCNT` `WAITPEQ` `WAITPNE` `WAITVID`
 
-`WAITPEQ dest, mask WR` → destination becomes **`dest + mask`** (not a copy of `INA`). See skill body and `obex-pasm.md`.
+`WAITPEQ dest, mask WR` → destination becomes **`dest + mask`** (not a copy of `INA`). ACIA `/WAIT` loop: [acia-wait.md](acia-wait.md). Also `obex-pasm.md`.
 
 ## Directives
 

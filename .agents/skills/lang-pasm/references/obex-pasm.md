@@ -10,7 +10,7 @@ Full doc list: [p1-sources.md](p1-sources.md). Prefer tree + datasheet when beha
 |-------|------|------------|
 | Pause / `WAITCNT` reload | [How to pause in PASM](https://obex.parallax.com/docs/chips-tips/propeller-1/how-to-pause-in-pasm/) | UART bit timing; Spin `waitcnt(clkfreq/… + cnt)` |
 | Pin masks `OR`/`ANDN`/`XOR`/`MUX*`/`TEST` | [IO pin manipulation using PASM](https://obex.parallax.com/docs/chips-tips/propeller-1/io-pin-manipulation-using-pasm/) | ACIA `/WAIT` `/INT` data bus; FTDI masks |
-| Per-cog `DIRA`/`OUTA`, shared `INA` | [Control IO pins from any cog](https://obex.parallax.com/docs/chips-tips/propeller-1/control-io-pins-from-any-cog/) | Open-collector pulse on `/INT` |
+| Per-cog `DIRA`/`OUTA`, shared `INA` | [Control IO pins from any cog](https://obex.parallax.com/docs/chips-tips/propeller-1/control-io-pins-from-any-cog/) | Open-collector **level** on `/INT` (ACIA cog only) |
 | Spin pin ranges | [Simultaneous pin group control](https://obex.parallax.com/docs/chips-tips/propeller-1/simultaneous-pin-group-control/) | `dira[8..15]` style (Spin side) |
 | `WAITPEQ` / `WAITPNE` | [WAITPEQ and WAITPNE with PASM](https://obex.parallax.com/docs/chips-tips/propeller-1/waitpeq-and-waitpne-with-pasm/) | ACIA address wait; I2C SCL wait |
 | VAR vs DAT | [How to choose between VAR and DAT](https://obex.parallax.com/docs/chips-tips/propeller-1/how-to-choose-between-var-and-dat/) | Driver params in VAR; PASM image in DAT |
@@ -51,7 +51,7 @@ Rules:
 
 1. Every 1-bit in `state` must also be 1 in `mask`, or `WAITPEQ` never completes.
 2. Common edge wait: `waitpne mask, mask` then `waitpeq mask, mask` (wait for 1).
-3. **`WR` effect is not “write INA”.** For `WAITPEQ dest, mask wr`, the destination becomes `dest + mask` (ALU add). UX ACIA uses this to assert `/WAIT` on address match (`acia_rc2014.spin`). Do not “simplify” that `wr` away.
+3. **`WR` effect is not “write INA”.** For `WAITPEQ dest, mask wr`, the destination becomes `dest + mask` (ALU add). UX ACIA uses this to assert `/WAIT` on address match (`acia_rc2014.spin`). Do not “simplify” that `wr` away. Full loop: [acia-wait.md](acia-wait.md).
 
 ### `JMPRET` coroutine (AN014; `terminal_ftdi.spin`)
 

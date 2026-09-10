@@ -19,6 +19,7 @@ PASM runs from Cog RAM. Entry is usually `DAT` / `org` / label, started with `co
 | Spin ↔ PASM mailbox | [references/spin-pasm-bridge.md](references/spin-pasm-bridge.md) |
 | Doc index (in-tree + OBEX P1) | [references/p1-sources.md](references/p1-sources.md) |
 | OBEX idioms | [references/obex-pasm.md](references/obex-pasm.md) |
+| ACIA `/WAIT` loop | [references/acia-wait.md](references/acia-wait.md) |
 | In-tree cheat sheet | `docs/Propeller Quick Reference v1.7.pdf` |
 
 ## Non-obvious rules (encode these)
@@ -101,7 +102,8 @@ waitpne state, mask     ' until (INA & mask) != state
 ```
 
 1. `state` bits outside `mask` → `WAITPEQ` hangs forever.
-2. **`waitpeq dest, mask wr` writes `dest + mask`**, not `INA`. ACIA uses this to assert `/WAIT`.
+2. **`waitpeq dest, mask wr` writes `dest + mask`**, not `INA`. ACIA uses this to assert `/WAIT` (P24 1+1 → 0, carry into `/INT`).
+3. ACIA loop contract: [references/acia-wait.md](references/acia-wait.md). Do not drop `wr`. Do not Hub-read on the match path.
 
 ## CALL / JMPRET
 
@@ -110,7 +112,7 @@ waitpne state, mask     ' until (INA & mask) != state
 
 ## Event loops in this tree
 
-**ACIA:** `WAITPNE` / `WAITPEQ … wr` address match → service RD/WR → release `/WAIT`.  
+**ACIA:** `WAITPNE` → idle `/INT` refresh → `WAITPEQ … wr` match and `/WAIT` → service RD/WR → `or outa, bus_wait`. See [acia-wait.md](references/acia-wait.md).  
 **VGA:** `WAITVID` scanline loop.  
 **FTDI:** `JMPRET` + bit timing.  
 **I2C (Spin):** `WAITPEQ(|<scl,|<scl,0)`.
@@ -121,7 +123,7 @@ waitpne state, mask     ' until (INA & mask) != state
 2. Keep `FIT` headroom (496 longs before specials).
 3. Document PAR Hub layout at `entry`.
 4. Update pin masks and `waitpeq` masks together.
-5. Never remove ACIA `waitpeq … wr` without another `/WAIT` design.
+5. Never remove ACIA `waitpeq … wr` without another `/WAIT` design. Follow [acia-wait.md](references/acia-wait.md).
 6. Prose: `style-ste-writing`.
 
 ## Related

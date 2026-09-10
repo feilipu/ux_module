@@ -50,12 +50,15 @@ Boot banner `"UX Module Initialised"` goes to FTDI and VGA.
 
 ## ACIA emulation (agent-critical)
 
-- One PASM cog watches the decoded I/O address with `WAITPEQ` / `WAITPNE`.
-- Match uses `waitpeq … wr` so `/WAIT` asserts via **destination += mask** (OBEX/datasheet quirk). Do not drop `wr`.
-- Handler releases `/WAIT` after placing data or capturing a write.
+- One PASM cog watches the decoded I/O address with `WAITPNE` / `WAITPEQ`.
+- Match uses `waitpeq … wr` so `/WAIT` asserts via **destination += mask**. Do not drop `wr`. Loop contract: `lang-pasm/references/acia-wait.md`.
+- Handler releases `/WAIT` with `or outa, bus_wait` after it places data or captures a write.
 - Hub block at `PAR`: `rx_head`, `rx_tail`, `tx_head`, `tx_tail`, `acia_base`, `acia_config`, `acia_status`, `buffer_ptr`, then rx/tx byte FIFOs.
 - Perspective: Z80 “receive” is Propeller `tx_*` (host→Z80); Z80 “transmit” is Propeller `rx_*`.
-- Flow control uses 6850 `/RTS` and RIE/TIE bits; `/INT` pulses wake the Z80 (`or dira, bus_int` then `andn dira, bus_int`).
+- Spin `tx` sets `RDRF` when CR5/CR6 is not `/RTS` high. Spin `rx` sets `TDRE`. `rxCount` / `rxCheck` are counts only.
+- Empty RDR: present 0, do not move `tx_tail`. Full TDR: set `OVRN`, do not store.
+- CR5/CR6 is a two-bit field (TIE vs `/RTS` high vs Break). Master reset `$03` zeros both FIFOs.
+- `/INT` is a **level** from this cog only (`sync_irq`). Spin must not touch `DIRA[25]`.
 
 Edit with `lang-pasm` + `hw-ux-pcb`. Datasheet: `docs/MC6850.pdf`. OBEX idioms: `lang-pasm/references/obex-pasm.md`.
 

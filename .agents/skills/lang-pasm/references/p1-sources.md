@@ -10,6 +10,7 @@ This project is **P8X32A (Propeller 1) only**. Do not load Propeller 2 manuals i
 | Propeller Quick Reference v1.7 | `docs/Propeller Quick Reference v1.7.pdf` | Spin + PASM cheat sheet (opcode / condition / effect / clocks) |
 | P8X32A datasheet | `pcb/P8X32A-Propeller-Datasheet-v1.4.0_0.pdf` | Hub timing, video, counters, electrical |
 | MC6850 | `docs/MC6850.pdf` | ACIA register model (board peripheral) |
+| ACIA `/WAIT` loop | `.agents/skills/lang-pasm/references/acia-wait.md` | P24 dest+mask stretch. Do not drop `wr`. |
 
 ## External (idioms and community tables)
 
