@@ -104,7 +104,7 @@ Cursors are six bytes: text X/Y/mode and mouse X/Y/mode. The UX Module uses the 
 
 ## Relation to VECTORJET
 
-`src/lib_vjet` is a separate graphics stack with its own VGA cog and render cogs. It targets a 256×240 framebuffer style pipeline. It does not plug into `wmf_terminal_vga` today. Running both VGA engines at once contends for pins P16–P23 and for cogs. A combined product mode must stop the text VGA pair before starting VECTORJET (or the reverse). See `ARCHITECTURE_LIB_VJET.md`.
+`src/lib_vjet` is linked from `ux_module.spin` but does not start at boot. `enterGraphics` stops text VGA and starts VECTORJET (empty list, black). `enterText` reverses that. Cog 0 keeps the ACIA pump. Put `draw` on another Spin cog. See `ARCHITECTURE_LIB_VJET.md`.
 
 ## External references
 

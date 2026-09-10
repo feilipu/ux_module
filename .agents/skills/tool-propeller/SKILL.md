@@ -87,9 +87,9 @@ Top object must be the file on the `openspin` command line (same rule as Propell
 ```bash
 cd ~/Projects/ux_module
 mkdir -p build
-openspin -L src -b -o build/ux_module.binary src/ux_module.spin
+openspin -L src -L src/lib_vjet -b -o build/ux_module.binary src/ux_module.spin
 # EEPROM-sized image file (still load with proploader -e):
-openspin -L src -e -o build/ux_module.eeprom src/ux_module.spin
+openspin -L src -L src/lib_vjet -e -o build/ux_module.eeprom src/ux_module.spin
 ```
 
 Useful flags: `-L`/`-I` object search path, `-b` binary, `-e` eeprom file, `-v` verbose, `-u` unused-method elimination.

@@ -5,8 +5,8 @@ CON
 
   DLIST_SIZE = 500
 
-  WIDTH = 256
-  HEIGHT = 240
+  WIDTH = render#WIDTH
+  HEIGHT = render#NUM_LINES
   
 OBJ
 vga: "VJET_vUXM_vga.spin"
@@ -19,30 +19,36 @@ VAR
 
 long framecount,vga_status,dlist_ptr
 long dlist1[DLIST_SIZE],dlist2[DLIST_SIZE] 
-long linebuffers[(256*8)/4]                
+long linebuffers[(WIDTH*render#LINE_BUFFERS)/4]
 
 
 PUB main | i,j,x,j2
 
 vga.start(16/8,@linebuffers,@vga_status)
 
-
-
-dlist_ptr:=$8080
+dlist_ptr:=0
 x:=false
 render.start(0,3,@linebuffers,@dlist_ptr,@vga_status,@x)
 render.start(1,3,@linebuffers,@dlist_ptr,@vga_status,@x)
 render.start(2,3,@linebuffers,@dlist_ptr,@vga_status,@x)
+
+gl.start(@dlist1,constant(DLIST_SIZE*4))
+\draw
+gl.done
+dlist_ptr:=@dlist1
 x:=true
-  
+
 repeat
   Vblank
   if framecount&1
-    dlist_ptr:=@dlist1
-    gl.start(@dlist2,constant(DLIST_SIZE*4))
-  else
     dlist_ptr:=@dlist2
+  else
+    dlist_ptr:=@dlist1
+  WaitListTaken
+  if framecount&1
     gl.start(@dlist1,constant(DLIST_SIZE*4))
+  else
+    gl.start(@dlist2,constant(DLIST_SIZE*4))
 
   \draw
   gl.done
@@ -84,6 +90,12 @@ PUB Vblank
 
 repeat while vga_status&$01_00_00
 repeat until vga_status&$01_00_00
+
+PUB WaitListTaken
+'' Render cogs snapshot dlist_ptr at front porch. Wait for vsync before
+'' the builder reuses the other list.
+
+repeat until vga_status&$02_00_00
 
 DAT
 

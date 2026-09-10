@@ -94,6 +94,13 @@ CON
 
   PUMP_LIMIT      = 16  ' max bytes each of kbd / FTDI / ACIA drain per main-loop pass
 
+  VIDEO_TEXT      = 0   ' hires_text_vga owns P16-P23 (boot / serial console)
+  VIDEO_GRAPHICS  = 1   ' VECTORJET owns P16-P23; enterGraphics, not boot
+  VJET_PIN_GROUP  = VGA_BASE_PIN / 8
+  VJET_RENDER_COGS = 2  ' leave one cog for a later Spin draw loop
+  VJET_LINEBUF_LONGS = 256 * 8 / 4
+  VJET_DLIST_LONGS = 4  ' empty list (next=0); grow when a draw cog exists
+
 
 VAR
 
@@ -120,6 +127,13 @@ VAR
   long  z80Remain                                     ' XMODEM data bytes still to copy to FTDI
   long  z80XmLen                                      ' 128 (SOH) or 1024 (STX)
 
+  long  videoMode                                     ' VIDEO_TEXT or VIDEO_GRAPHICS; Cog 0 writer
+  long  vjetStatus                                    ' VECTORJET VGA phase; VGA cog writer
+  long  vjetDlistPtr                                  ' live display list; Cog 0 at switch, later draw cog
+  long  vjetReady                                     ' render cogs wait for non-zero; Cog 0 writer
+  long  vjetLinebuf[VJET_LINEBUF_LONGS]
+  long  vjetList[VJET_DLIST_LONGS]                    ' empty list until a draw cog publishes one
+
 
 OBJ
 
@@ -128,6 +142,8 @@ OBJ
       wmf             : "wmf_terminal_vga"
       i2c             : "i2c"
       acia            : "acia_rc2014"
+      vjetvga         : "VJET_vUXM_vga"             ' src/lib_vjet (add that folder to the search path)
+      vjetrend        : "VJET_vUXM_rendering"
 
 
 PUB main
@@ -142,7 +158,7 @@ PUB main
   acia.start (PORT_DEFAULT) 'default for RC2014 ROM
 ' acia.start (PORT_ROMWBW)  'optional for RomWBW, when used together with SIO/2 Module on 0x80
 
-  'start the VGA screen
+  'start the VGA text screen (serial console). Graphics is enterGraphics later.
   screenInit
 
   'start the keyboard
@@ -168,8 +184,55 @@ CON
   '' Visual differentiation
 
 
+PUB enterGraphics : okay
+{{Stop text VGA and start VECTORJET. Cog 0 still pumps ACIA. Empty list (black).
+  Call from a later draw cog or PORT_VJET handler. Not used at boot.}}
+
+  if videoMode == VIDEO_GRAPHICS
+    return true
+
+  wmf.stop
+  vjetReady := 0
+  vjetDlistPtr := @vjetList
+  longfill(@vjetList, 0, VJET_DLIST_LONGS)
+
+  if not vjetvga.start(VJET_PIN_GROUP, @vjetLinebuf, @vjetStatus)
+    screenInit
+    return false
+  if not vjetrend.start(0, VJET_RENDER_COGS, @vjetLinebuf, @vjetDlistPtr, @vjetStatus, @vjetReady)
+    vjetvga.stop
+    screenInit
+    return false
+  if not vjetrend.start(1, VJET_RENDER_COGS, @vjetLinebuf, @vjetDlistPtr, @vjetStatus, @vjetReady)
+    vjetrend.stop
+    vjetvga.stop
+    screenInit
+    return false
+
+  videoMode := VIDEO_GRAPHICS
+  vjetReady := 1
+  return true
+
+
+PUB enterText
+{{Stop VECTORJET and restore VGA text. Cog 0 still pumps ACIA.}}
+
+  if videoMode == VIDEO_TEXT
+    return
+  vjetReady := 0
+  vjetrend.stop
+  vjetvga.stop
+  screenInit
+
+
+PUB inGraphics : truefalse
+  truefalse := videoMode == VIDEO_GRAPHICS
+
+
 PUB screenInit | retVal
   ' Start VGA text and place the boot banner. Static init only.
+
+  videoMode := VIDEO_TEXT
 
   ' text cursor starting position and as blinking underscore
   gTextCursX     := 0
@@ -338,15 +401,16 @@ PRI takeZ80Idle(char)
       term.tx (ASCII_BS)
       if ( gTextCursX > 0 )
         --gTextCursX
-      wmf.outScreen (wmf#BS)
-      wmf.outScreen (wmf#ASCII_SPACE)
-      wmf.outScreen (wmf#BS)
+      textOut (wmf#BS)
+      textOut (wmf#ASCII_SPACE)
+      textOut (wmf#BS)
 
     ASCII_TAB:                                      ' horizontal tab; WMF owns glyph cursor
       term.tx (char)
-      wmf.outScreen (wmf#TB)
-      gTextCursX := wmf.getColScreen
-      gTextCursY := wmf.getRowScreen
+      if not videoMode
+        wmf.outScreen (wmf#TB)
+        gTextCursX := wmf.getColScreen
+        gTextCursY := wmf.getRowScreen
 
     ASCII_LF:                                       ' eat linefeed from Z80
 
@@ -355,7 +419,7 @@ PRI takeZ80Idle(char)
       gTextCursX := 0
       if ( gTextCursY < gScreenRows-1 )
         ++gTextCursY
-      wmf.outScreen (wmf#NL)
+      textOut (wmf#NL)
 
     ASCII_ESC:                                      ' escape; next byte decides CSI vs literal
       term.tx (char)
@@ -376,7 +440,7 @@ PRI echoPrintable(char)
       if ( gTextCursY < gScreenRows - 1 )
         ++gTextCursY
       gTextCursX := 0
-    wmf.outScreen (char)
+    textOut (char)
 
 
 PRI clampCurs(v, maxv) : r
@@ -395,10 +459,17 @@ PRI setCursXY(x, y)
 
   gTextCursX := clampCurs (x, gScreenCols)
   gTextCursY := clampCurs (y, gScreenRows)
-  wmf.outScreen (wmf#PY)
-  wmf.outScreen (gTextCursY)
-  wmf.outScreen (wmf#PX)
-  wmf.outScreen (gTextCursX)
+  textOut (wmf#PY)
+  textOut (gTextCursY)
+  textOut (wmf#PX)
+  textOut (gTextCursX)
+
+
+PRI textOut(c)
+{{VGA text cell write. No-op in VECTORJET mode so Cog 0 still pumps ACIA.}}
+
+  if not videoMode
+    wmf.outScreen (c)
 
 
 PRI applyCsiH
@@ -447,30 +518,33 @@ PRI applyCsi(char)
       setCursXY (0, z80N - 1)
 
     "J":                                            ' clear screen
-      if ( z80N == 0 )
-        bytefill ( gScreenBufferPtr + gTextCursY*gScreenCols + gTextCursX, ASCII_SPACE, gScreenRows*gScreenCols - gTextCursY*gScreenCols - gTextCursX )
-      elseif ( z80N == 1 )
-        bytefill ( gScreenBufferPtr, ASCII_SPACE, gTextCursY*gScreenCols + gTextCursX + 1 )
-      elseif ( z80N == 2 )
-        gTextCursX := gTextCursY := 0
-        wmf.outScreen ( wmf#CS )
+      if not videoMode
+        if ( z80N == 0 )
+          bytefill ( gScreenBufferPtr + gTextCursY*gScreenCols + gTextCursX, ASCII_SPACE, gScreenRows*gScreenCols - gTextCursY*gScreenCols - gTextCursX )
+        elseif ( z80N == 1 )
+          bytefill ( gScreenBufferPtr, ASCII_SPACE, gTextCursY*gScreenCols + gTextCursX + 1 )
+        elseif ( z80N == 2 )
+          gTextCursX := gTextCursY := 0
+          textOut ( wmf#CS )
 
     "K":                                            ' clear line
-      if ( z80N == 0 )
-        bytefill ( gScreenBufferPtr + gTextCursY*gScreenCols + gTextCursX, ASCII_SPACE, gScreenCols - gTextCursX)
-      elseif ( z80N == 1 )
-        bytefill ( gScreenBufferPtr + gTextCursY*gScreenCols, ASCII_SPACE, gTextCursX + 1 )
-      elseif ( z80N == 2 )
-        bytefill ( gScreenBufferPtr + gTextCursY*gScreenCols, ASCII_SPACE, gScreenCols )
-        gTextCursX := 0
-        wmf.outScreen (wmf#PX)
-        wmf.outScreen (gTextCursX)
+      if not videoMode
+        if ( z80N == 0 )
+          bytefill ( gScreenBufferPtr + gTextCursY*gScreenCols + gTextCursX, ASCII_SPACE, gScreenCols - gTextCursX)
+        elseif ( z80N == 1 )
+          bytefill ( gScreenBufferPtr + gTextCursY*gScreenCols, ASCII_SPACE, gTextCursX + 1 )
+        elseif ( z80N == 2 )
+          bytefill ( gScreenBufferPtr + gTextCursY*gScreenCols, ASCII_SPACE, gScreenCols )
+          gTextCursX := 0
+          textOut (wmf#PX)
+          textOut (gTextCursX)
 
     "m":                                            ' set graphics rendition parameters
-      if ( z80N == 0 )
-        wmf.setLineColor ( gTextCursY, wmf#CTHEME_DEFAULT_FG, wmf#CTHEME_DEFAULT_BG )
-      elseif ( z80N == 7 )
-        wmf.setLineColor ( gTextCursY, wmf#CTHEME_DEFAULT_BG, wmf#CTHEME_DEFAULT_FG )
+      if not videoMode
+        if ( z80N == 0 )
+          wmf.setLineColor ( gTextCursY, wmf#CTHEME_DEFAULT_FG, wmf#CTHEME_DEFAULT_BG )
+        elseif ( z80N == 7 )
+          wmf.setLineColor ( gTextCursY, wmf#CTHEME_DEFAULT_BG, wmf#CTHEME_DEFAULT_FG )
 
 
 PUB kbdToZ80 | char, n
@@ -554,7 +628,7 @@ PRI panicReset
   z80Parse := PARSE_IDLE
   hostXmodem := 0
   gTextCursX := gTextCursY := 0
-  wmf.outScreen (wmf#CS)
+  textOut (wmf#CS)
   if term.txSpace => 4                              ' ESC [ 2 J
     term.clear
   dira[ acia#RESET_PIN_NUM ]~                       ' release Z80 after local state is quiet

@@ -307,6 +307,16 @@ RETURNS:  Returns the screen geometry in high WORD of 32-bit return value
 
   return ( retVal )
 
+PUB stop
+{{
+DESCRIPTION: Stop the text VGA cogs. Call this before a VECTORJET VGA cog
+             starts, so two drivers do not drive pins P16-P23 together.
+
+RETURNS: Nothing.
+}}
+
+  vga.stop
+
 ' end PUB ----------------------------------------------------------------------
 
 

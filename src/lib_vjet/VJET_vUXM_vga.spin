@@ -103,7 +103,10 @@ PUB start(pinGroup,lineBuffers,statusLong) | pixelClock '' 7 Stack Longs
     directionState := ($FF << (8 * pinGroup))
     videoState := (%0_01_1_0_0_000_00000000000_000_0_11111111 | (pinGroup << 9))
 
-    pixelClock := constant(20_000_000 / 2)
+    ' NCO 5 MHz × PLL×16 = VCO 80 MHz (spec is 64-128). VCO/2 → 40 MHz video.
+    ' VSCL uses 4 clocks per pixel → 10 MHz pixels (256-wide VGA).
+    ' The old 10 MHz NCO with VCO/4 made VCO 160 MHz and the PLL unlocked.
+    pixelClock := 5_000_000
     frequencyState := 1
 
     repeat 32
@@ -140,7 +143,7 @@ DAT
 
 initialization          mov     vcfg,           videoState                 ' Setup video hardware.
                         mov     frqa,           frequencyState
-                        movi    ctra,           #%0_00001_101              ' PLL internal (video mode) VCO/4
+                        movi    ctra,           #%0_00001_110              ' PLL internal (video mode) VCO/2
 
                         or      dira,           directionState             ' Setup video output pins
 
@@ -151,7 +154,7 @@ initialization          mov     vcfg,           videoState                 ' Set
 loop                    mov     tilesCounter,   #0
 
 tilesDisplay
-                        test    tilesCounter,   #7      wz
+                        test    tilesCounter,   #7      wz                  ' 8 Hub line slots (LINE_BUFFERS)
               if_z      mov     displayCounter, par                        ' Set/Reset tiles fill counter. 
                         mov     tileCounter,    #2                         ' Set/Reset tile fill counter.
   
@@ -249,8 +252,8 @@ VSyncColors             long    $00_02_00_02                               ' Ver
 HVSyncColors            long    $03_03_03_03                               ' Horizontal and vertical sync colors.
 
 FPorchStatus            long    %001 << 16 + 240
-VSyncStatus             long    %011 << 16
-BPorchStatus            long    %101 << 16
+VSyncStatus             long    %011 << 16 + 240
+BPorchStatus            long    %101 << 16 + 240
 
 ' //////////////////////Configuration Settings/////////////////////////////////////////////////////////////////////////////////
 

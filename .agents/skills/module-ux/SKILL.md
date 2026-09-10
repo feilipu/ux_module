@@ -19,9 +19,13 @@ ux_module.spin                 ' top object — compile/upload this
 ├── keyboard_ps2.spin          ' PS/2 on P27/P26
 ├── acia_rc2014.spin           ' MC6850 bus emulator (PASM cog)
 ├── i2c.spin                   ' EEPROM bus helpers (Spin bit-bang)
-└── wmf_terminal_vga.spin      ' terminal services + screen buffer
-    └── hires_text_vga.spin    ' dual-cog VGA text (Chip Gracey)
+├── wmf_terminal_vga.spin      ' terminal services + screen buffer
+│   └── hires_text_vga.spin    ' dual-cog VGA text (Chip Gracey)
+├── VJET_vUXM_vga.spin         ' src/lib_vjet (search path)
+└── VJET_vUXM_rendering.spin
 ```
+
+Boot starts text VGA only. `enterGraphics` / `enterText` switch exclusive owners of P16–P23. Do not call `enterGraphics` from `main` until a draw cog exists. Serial and ACIA keep running in both modes.
 
 Archive demos under `archive/` are not part of the production tree.
 
@@ -35,7 +39,7 @@ Archive demos under `archive/` are not part of the production tree.
 | PS/2 | `keyboard_ps2` PASM |
 | VGA text ×2 | `hires_text_vga` (two cogs) |
 
-That is six cogs when all start successfully. Two cogs remain. Only the main Spin cog calls `acia.tx`. VECTORJET needs a VGA cog plus multiple render cogs — it does **not** fit beside the full text stack without stopping text VGA / other drivers. See `library-vjet`.
+That is six cogs when all start successfully. Two cogs remain. Only the main Spin cog calls `acia.tx`. `enterGraphics` stops the text pair and starts 1 VECTORJET VGA cog plus 2 render cogs (seven total). One cog remains for a later Spin draw loop. See `library-vjet`.
 
 ## Main loop data paths
 
@@ -106,16 +110,17 @@ Hub writers: [references/remaining-errors.md](references/remaining-errors.md). C
 - `wmf.init(VGA_BASE_PIN, @gTextCursX)` allocates screen/colour/cursor buffers and starts `hires_text_vga`.
 - Default timing block in `hires_text_vga.spin` is selected by which CON section is uncommented; pixel rate `pr` is tuned for ~118 MHz.
 - Screen bytes: bit7 = inverse; bits6..0 = glyph. Row colours are words `%%RRGGBB` style.
+- `textOut` / CSI J K m skip WMF when `videoMode` is graphics. FTDI and ACIA still run.
 
 ## Build / upload
 
-1. PropellerIDE (or compatible) with **`ux_module.spin` in the foreground**.
+1. PropellerIDE (or compatible) with **`ux_module.spin` in the foreground**. Add `src/lib_vjet` to the library search path (`VJET_vUXM_vga`).
 2. Program via FTDI (“Prop Plug” in the IDE).
 3. Toggle DTR to reboot stand-alone.
 
 ## Agent rules
 
-1. Do not start lib_vjet VGA while `hires_text_vga` still owns P16–P23 and two cogs without an explicit mode switch that stops the text driver.
+1. Do not start lib_vjet VGA while `hires_text_vga` still owns P16–P23 and two cogs without an explicit mode switch that stops the text driver (`wmf.stop`). Stop VECTORJET render and VGA cogs before `wmf.init`. Do not build display lists on Cog 0 while the ACIA pump must run.
 2. Keep ACIA base selection in one place (`PORT_DEFAULT` / `PORT_ROMWBW` in `ux_module.spin`).
 3. Preserve non-blocking main loop behaviour; long work belongs in other cogs.
 4. New shared Hub structures need a stated single writer. Only Cog 0 calls `acia.tx`. `req_master` is Spin→PASM. `req_parse_idle` is PASM→Spin.

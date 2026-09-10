@@ -39,7 +39,29 @@ Application (Spin top object)
                                             pins P16–P23 (group 2)
 ```
 
-`vjet_test.spin` starts three render cogs and one VGA cog. It waits for vertical blank through `vga_status`, then swaps which Hub list is live and rebuilds the other list.
+`vjet_test.spin` starts three render cogs and one VGA cog. It waits for vertical blank through `vga_status`, publishes the completed list, waits for vsync so the render cogs copy the pointer, then rebuilds the other list.
+
+## Scanline handshake (tear / flicker)
+
+The Hub scan buffer holds **eight** logical lines (`LINE_BUFFERS`). The VGA cog displays line `N` from slot `N & 7` and writes `N` into `vga_status`. During blanking it writes line **240** plus phase bits.
+
+Render cogs:
+
+1. Wait until the status line is `>= 240` (blanking).
+2. Fill slots 0..7 while they treat the raster as line 0.
+3. Then wait until they are fewer than eight lines ahead of the live VGA line.
+
+Do not publish line 0 during vsync or back porch. The old status longs used a low word of 0. Render cogs treated that as scanline 0, ran 16 lines, and overwrote the first eight slots before active video. A faster system clock (118 MHz vs 80 MHz) made that overrun worse.
+
+Spin must publish `dlist_ptr` at front porch, then wait for vsync bit 17 (`$02_00_00`) before it rebuilds the other list. If Spin rebuilds a list that a render cog still reads, the frame tears.
+
+## Video PLL
+
+`VJET_vUXM_vga` sets CTRA PLL internal, VCO/2. The NCO target is 5 MHz. VCO is 80 MHz (spec 64–128 MHz). PLLA is 40 MHz. VSCL uses 4 clocks per pixel, so the pixel rate is 10 MHz (256-wide VGA).
+
+The old 10 MHz NCO with VCO/4 made VCO 160 MHz. That is out of spec and the PLL can unlock (jitter, tear, roll).
+
+`hires_text_vga` uses a different PLL setup (`pr` in MHz, VCO/2) for 640×480 text. Do not copy VECTORJET FRQA into the text driver or the reverse.
 
 ## Resolution and buffers
 
@@ -48,7 +70,7 @@ Rendering constants in `VJET_vUXM_rendering.spin`:
 - Width: 256 pixels
 - Height: 240 scanlines
 
-The VGA cog repeats each logical line (tile counter) so the analogue timing fills a taller raster. The Hub scan buffer is allocated in the top object as `linebuffers[(WIDTH*8)/4]` longs in the current demos (eight line slots for the active strip).
+The VGA cog repeats each logical line (tile counter) so the analogue timing fills a taller raster. The Hub scan buffer is `linebuffers[(WIDTH*LINE_BUFFERS)/4]` longs (eight line slots).
 
 Display lists are ordinary Hub longs (for example `dlist1[900]`, `dlist2[900]`). Size is a demo choice, not a hardware limit.
 
@@ -78,11 +100,14 @@ On `start(cognum, totalcogs, scanbuffer, dlistPtrAdr, videoSync, readyptr)` the 
 
 Each cog:
 
-1. Waits until the frame request scanline is 0
+1. Waits until `vga_status` low word is `>= 240` (blanking)
 2. Reads the current display-list pointer
 3. Optionally fixes trapezoids that start above Y0 (top clip)
 4. Renders every Nth scanline (`cognum`, `cognum+totalcogs`, …)
 5. Writes pixels into the shared scanline buffer for the VGA cog
+6. Waits if the next line would wrap onto a slot the VGA cog still displays
+
+Call `render.stop` before you start text VGA on the same pins.
 
 Init instructions are overlaid by live variables after boot. Do not treat early DAT labels as free code space without reading the reuse comments.
 
@@ -94,27 +119,48 @@ Init instructions are overlaid by live variables after boot. Do not treat early 
 - Starts CTRA in PLL video mode
 - Loops active lines with `WAITVID`, then front porch, vertical sync, and back porch
 - Publishes phase flags in `statusLong` so Spin can wait for blanking
+- Writes line 240 during front porch, vsync, and back porch (never line 0)
 
 For the UX Module, demos pass `pinGroup = 16/8` (group 2 → P16–P23), which matches the board VGA connector.
 
-## Integration constraints with UX firmware
+## Integration with UX firmware (exclusive video mode)
 
-| Resource | UX text firmware | VECTORJET demos |
-|----------|------------------|-----------------|
-| P16–P23 | `hires_text_vga` | `VJET_vUXM_vga` |
-| Cogs | ~7 used | 1 VGA + N render + Spin |
-| Screen model | Character cells | Scanline framebuffer + display list |
+Pins P16–P23 have one owner. `hires_text_vga` (two cogs, 640×480 cells) and `VJET_vUXM_vga` (one cog, 256×240 scanlines) must not run at the same time.
 
-A future combined firmware must define an exclusive video mode. Both engines must not drive the VGA pins at the same time. Cog math must leave room for ACIA, keyboard, and UART if those stay live.
+| Mode | VGA cogs | Other cogs that stay | Free for VECTORJET |
+|------|----------|----------------------|--------------------|
+| Text (today) | 2 (`hires_text_vga`) | Spin, FTDI, ACIA, PS/2 (4) | none (2 spare) |
+| Graphics | 1 (`VJET_vUXM_vga`) | Spin, FTDI, ACIA, PS/2 (4) | 3 (render, or 2 render + 1 Spin draw) |
 
-`ux_module.spin` already reserves `PORT_VJET = acia#PORT_C0` as a named alternate ACIA base for experiments. There is no VJET I/O protocol in-tree yet.
+`wmf.stop` stops the text pair. `vga.stop` (VECTORJET) and `render.stop` stop graphics. After `cogstop`, those cogs leave the pins. Then start the other driver.
+
+Do **not** build the display list on Cog 0 if the ACIA pump must stay live. Cog 0 is the only `acia.tx` writer. `vjet_test` blocks Cog 0 in `Vblank` + `draw`. That starves keyboard, FTDI, and Z80 I/O.
+
+Recommended product split:
+
+1. **Text mode** — current `ux_module` path. Z80 console on VGA text.
+2. **Graphics mode** — stop text VGA. Start VECTORJET VGA + two render cogs. Start a **second Spin cog** that waits for blanking and builds lists. Cog 0 only pumps ACIA / keyboard / FTDI and writes a small mailbox (camera, mode, flip). That uses all eight cogs: 4 I/O + 1 draw + 1 VGA + 2 render.
+3. **Standalone demo** — `vjet_test` / `graphtest` as now (no ACIA). Three render cogs on Cog 0 as the draw loop.
+
+Hooks in `ux_module.spin` (boot stays in text mode):
+
+1. `enterGraphics` sets `videoMode`, calls `wmf.stop`, starts VECTORJET VGA plus two render cogs, publishes an empty list.
+2. `enterText` stops VECTORJET and calls `screenInit`.
+3. `inGraphics` is the mode flag for `readZ80` (`textOut` is a no-op in graphics).
+4. Mailbox: `vjetStatus`, `vjetDlistPtr`, `vjetReady`. Cog 0 writes the pointer and ready flag at the switch. A later draw cog may own the lists.
+
+Do not call `enterGraphics` from `main` until that draw cog exists. Serial tests use the text boot path.
+
+Hub cost: eight line slots are 2 KB. Two lists of 900 longs are about 7 KB. The text screen is 80×40 bytes plus colours. 32 KB Hub cannot keep a large text buffer and two fat lists at once. Reuse the text screen region for lists when you leave text mode.
+
+`PORT_VJET = acia#PORT_C0` is reserved for a later Z80 command port. There is no I/O protocol in-tree yet. A first protocol can be: command byte, then words that Spin copies into the back list, then a flip at vblank.
 
 ## Extension points
 
 Useful work while keeping the architecture intact:
 
-1. Stop text VGA and start VECTORJET from a mode switch in `ux_module`
-2. Drive the display list from Z80 I/O at `PORT_VJET` (needs a command protocol)
+1. Start a Spin draw cog from `enterGraphics` (not Cog 0)
+2. Drive the back list from Z80 I/O at `PORT_VJET` (needs a command protocol)
 3. Tune render cog count against available cogs and fill rate
 4. Keep display-list field layouts documented in one place (builder comments ↔ renderer reads)
 

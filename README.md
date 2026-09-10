@@ -179,14 +179,14 @@ Both tools target **Propeller 1 (P8X32A)** only. Do not use Propeller 2 loaders 
 Example compile and load (macOS / Linux). Adjust the serial device from `proploader -P`.
 
 ```sh
-openspin -L src -b -o build/ux_module.binary src/ux_module.spin
+openspin -L src -L src/lib_vjet -b -o build/ux_module.binary src/ux_module.spin
 proploader -p /dev/cu.usbserial-XXXX -e -r build/ux_module.binary
 ```
 
 Notes for agents:
 
 1. Pass the **top object** on the `openspin` command line (`src/ux_module.spin`). Do not compile a child module alone.
-2. Use `-L src` (or `-I src`) so nested objects resolve.
+2. Use `-L src -L src/lib_vjet` (or `-I`) so nested objects and VECTORJET resolve.
 3. Prefer `/dev/cu.*` over `/dev/tty.*` on macOS.
 4. `-e -r` writes EEPROM and then runs. Use `-r` alone for a RAM-only load.
 5. Agent edit rules and tool paths live in `AGENTS.md` and `.agents/skills/tool-propeller/`.

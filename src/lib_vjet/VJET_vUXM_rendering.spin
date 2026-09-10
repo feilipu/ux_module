@@ -7,6 +7,7 @@ CON
 
   WIDTH = 256   
   NUM_LINES = 240
+  LINE_BUFFERS = 8             '' Hub slots; must match VGA tile wrap (line & 7)
 
   Last_Scanline = NUM_LINES-1 ''final scanline for a frame
 
@@ -54,15 +55,27 @@ SHP_BOX               ' Shape type 2 header - box (8 bytes)
 SHP_TEXT              ' Shape type 3 header - text (12 bytes)
 
 
-PUB start(cognum,totalcogs,scanbuffer,dlistPtrAdr,videoSync,readyptr)
-'' Start Rendering Engine
-  'long[@cognumber] := cognum
-  'long[@total_cogs] := totalcogs
-  'long[@scanlines]:=scanbuffer
-  longmove(@cognumber,@cognum,5)
-  cognew(@Entry, readyptr)
-  repeat 10000 'wait for cog to boot...
+VAR
+  long rendcog[8]
+  long rendcount
 
+PUB start(cognum,totalcogs,scanbuffer,dlistPtrAdr,videoSync,readyptr)
+'' Start one rendering cog. Call once per cog with cognum 0..totalcogs-1.
+'' Copies the five DAT parameters then cognew. Wait so the hub image is taken
+'' before the next start() overwrites those longs.
+  longmove(@cognumber,@cognum,5)
+  result := cognew(@Entry, readyptr)
+  if result => 0
+    if rendcount < 8
+      rendcog[rendcount++] := result
+  repeat 10000
+  return result => 0
+
+PUB stop | i
+'' Stop every rendering cog this object started.
+  repeat i from 0 to rendcount-1
+    cogstop(rendcog[i])
+  rendcount := 0
 
 PUB Return_Address ''used to get address where assembly code is so we can re-purpose space
     return(@Entry)
@@ -88,10 +101,13 @@ d1 if_z jmp #d0 'if not, repeat
 ''Main loop for renderer
 new_frame
         neg prevline,#1
-''wait until we hit scanline 0 so we can start with a fresh frame
+'' Wait for vertical blank (VGA publishes line >= NUM_LINES). Vsync and
+'' back porch used to write line 0, so this cog restarted and overwrote
+'' slots 0-7 before the raster started.
 :waitloop
-        rdword currentrequest, request_scanline wz
-if_nz   jmp #:waitloop
+        rdword currentrequest, request_scanline
+        cmp currentrequest, #NUM_LINES wc
+if_c    jmp #:waitloop
 
         mov currentscanline, cognumber ''reset current scanline for COG
 
@@ -304,25 +320,30 @@ if_e    neg d0,#1
 
 ''scanline rendering is finished, wait until next linebuffer is available
 :scanline_finished
-'       cmp currentscanline, #Last_Scanline-4 wc, wz 'last scanline? (4= number of cogs)
-'if_a   jmp #new_frame
-        
-                 
-'' wait until TV requests the scanline we rendered
+'' Do not write more than LINE_BUFFERS lines ahead of the VGA cog.
+'' During blanking, treat the raster as line 0 so this cog can fill slots
+'' 0..7 and then wait. The old request==0 and scanline>=16 test let a fast
+'' cog wrap the 8-slot buffer twice before active video.
 :linewait
-        rdword currentrequest, request_scanline wz
-        cmp currentscanline,#16 wc
-if_z_and_nc jmp #new_frame
-        cmps currentrequest, prevline wz, wc
-:waitjmp
+        rdword currentrequest, request_scanline
+        cmp currentrequest, #NUM_LINES wc
+if_nc   jmp #:inblank
+:pace
+        mov d0, currentscanline
+        add d0, total_cogs
+        sub d0, #LINE_BUFFERS
+        cmps currentrequest, d0 wc
 if_be   jmp #:linewait
-
+        jmp #:scanlinedone
+:inblank
+        cmp currentscanline, #LINE_BUFFERS wc
+if_c    mov currentrequest, #0
+if_c    jmp #:pace
+        jmp #new_frame
 
 :scanlinedone
         mov prevline,currentscanline
-        ' Line is done, increment to the next one this cog will handle                        
-        add currentscanline, total_cogs 'add number of cogs = 4
-        ' The screen is completed, jump back to main loop a wait for next frame
+        add currentscanline, total_cogs
         cmp currentscanline,#Last_Scanline wc,wz
 if_be   jmp #setup_line
         jmp #new_frame
