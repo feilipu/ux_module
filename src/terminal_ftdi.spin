@@ -141,8 +141,16 @@ PUB rx : rxbyte
 
 
 PUB rxCount : count
-{{Get count of characters in receive buffer. Manages XON/XOFF flow control.
+{{Get count of characters in receive buffer. No XON/XOFF side effects.
   Returns: number of characters waiting in receive buffer.}}
+
+  count := rx_head - rx_tail
+  count -= BUFFER_LENGTH * (count < 0)
+
+
+PUB rxFlow | count
+{{Send XOFF when the RX FIFO is at least half full, XON when it has drained.
+  Call from the pump. Do not call on an XMODEM path.}}
 
   count := rx_head - rx_tail
   count -= BUFFER_LENGTH * (count < 0)
@@ -151,7 +159,7 @@ PUB rxCount : count
     status_xoff := FALSE
     tx(XON)
 
-  elseif count => BUFFER_FULLISH and status_xoff == FALSE 
+  elseif count => BUFFER_FULLISH and status_xoff == FALSE
     status_xoff := TRUE
     tx(XOFF)
 

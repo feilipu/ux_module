@@ -29,22 +29,24 @@ Archive demos under `archive/` are not part of the production tree.
 
 | Cog role | Source |
 |----------|--------|
-| Spin main (Cog 0) | `ux_module` event loop: `kbdToZ80` / `readZ80` |
+| Spin main (Cog 0) | `ux_module` event loop: `kbdToZ80` / `termToZ80` / `readZ80` |
 | FTDI UART | `terminal_ftdi` PASM |
 | ACIA bus | `acia_rc2014` PASM |
 | PS/2 | `keyboard_ps2` PASM |
 | VGA text ×2 | `hires_text_vga` (two cogs) |
-| FTDI→Z80 pump | `cognew(termToZ80, @termStack)` Spin |
 
-That is seven cogs when all start successfully. One cog remains. VECTORJET needs a VGA cog plus multiple render cogs — it does **not** fit beside the full text stack without stopping text VGA / other drivers. See `library-vjet`.
+That is six cogs when all start successfully. Two cogs remain. Only the main Spin cog calls `acia.tx`. VECTORJET needs a VGA cog plus multiple render cogs — it does **not** fit beside the full text stack without stopping text VGA / other drivers. See `library-vjet`.
 
 ## Main loop data paths
 
 ```
-PS/2 keyboard ──kbdToZ80──► ACIA tx FIFO ──► Z80 reads data reg
-Z80 writes data reg ──► ACIA rx FIFO ──readZ80──► VGA + FTDI (+ XMODEM special case)
-FTDI rx ──termToZ80 cog──► ACIA tx FIFO ──► Z80
+PS/2 keyboard ──kbdToZ80──┐
+                          ├── acia.tx ──► ACIA tx FIFO ──► Z80
+FTDI rx ──termToZ80───────┘
+Z80 writes data ──► ACIA rx FIFO ──readZ80──► VGA + FTDI
 ```
+
+`readZ80` is a non-blocking parser (idle / ESC / CSI / XMODEM). Do not type on the keyboard during XMODEM. Main skips `kbdToZ80` in that case. If FTDI TX is full, `readZ80` holds ACIA `TDRE`. `term.rxFlow` sends XON/XOFF except during XMODEM.
 
 Boot banner `"UX Module Initialised"` goes to FTDI and VGA.
 

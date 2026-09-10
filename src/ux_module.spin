@@ -78,6 +78,14 @@ CON
   XMODEM_ETB    = $17 ' End of Transmission Block
   XMODEM_CAN    = $18 ' Cancel
 
+  PARSE_IDLE      = 0
+  PARSE_ESC       = 1
+  PARSE_CSI       = 2
+  PARSE_CSI_M     = 3
+  PARSE_XMODEM_N  = 4
+  PARSE_XMODEM_M  = 5
+  PARSE_XMODEM    = 6
+
 
 VAR
 
@@ -98,7 +106,9 @@ VAR
 
   long  gScreenBufferPtr                              ' holds the address of the video buffer passed back from the VGA driver
 
-  long  termStack [64]                                ' small stack for the serial terminal input cog
+  byte  z80Parse                                      ' non-blocking Z80 byte parser state
+  long  z80N, z80M                                    ' CSI parameters
+  long  z80Remain                                     ' XMODEM payload bytes still expected
 
 
 OBJ
@@ -131,14 +141,11 @@ PUB main
   'start i2c
   i2c.init (SCL_PIN, SDA_PIN)
 
-  'start serial processing in a separate cog
-  cognew (termToZ80, @termStack)
-
-  'MAIN COG EVENT LOOP - this is where you put all your code in a non-blocking infinite loop...
+  ' One Spin cog writes acia.tx. Keyboard during XMODEM/file load is not recommended.
   repeat
-    ' if no input from keyboard then continue	
-    kbdToZ80
-    ' if no input from ACIA then continue
+    if not inXmodem
+      kbdToZ80
+    termToZ80
     readZ80
 
 
@@ -180,247 +187,270 @@ PUB screenInit | retVal
   return
 
 
-PUB readZ80 | char, n, m
+PUB readZ80 | char
 
-    ' if no input from ACIA  or no space in terminal tx buffer then return
-    repeat while acia.rxCount > 0 and term.txCheck  ' check whether any bytes have arrived (with /RTS)
+    if not term.txCheck
+      acia.tdreHold
+      return
 
-      ' get character from buffer
+    acia.tdreAllow
+
+    repeat while acia.rxCount > 0 and term.txCheck
       char := acia.rx
+      takeZ80Byte (char)
 
-      case char
+    if not term.txCheck
+      acia.tdreHold
 
-        XMODEM_SOH:                             ' XMODEM Start of Header
 
-          term.tx (char)                        ' SOH to terminal
+PRI inXmodem : truefalse
 
-          n := acia.rx
-          term.tx (n)                           ' Packet Number to terminal
+  truefalse := z80Parse == PARSE_XMODEM_N or z80Parse == PARSE_XMODEM_M or z80Parse == PARSE_XMODEM
 
-          m := acia.rx
-          term.tx (m)                           ' Complimented Packet Number to terminal
 
-          if ( n == $FF-m )
-            n := 129                            ' get another 129 (of 132/133 total) XMODEM packet characters
-            repeat
-              term.tx (acia.rx)                 ' get next characters after Packet Header
-            while ( --n )
+PRI takeZ80Byte(char)
 
-        ASCII_BS, ASCII_DEL:                    ' backspace (edit), delete
+  case z80Parse
 
-          ' move cursor back once to overwrite last character on terminal
-          term.tx (ASCII_BS)
-          term.tx (ASCII_SPACE)
-          term.tx (ASCII_BS)
+    PARSE_ESC:
+      term.tx (char)
+      if ( char == ASCII_LB )
+        z80N := 0
+        z80Parse := PARSE_CSI
+      else
+        echoPrintable (char)
+        z80Parse := PARSE_IDLE
 
-          if ( gTextCursX > 0 )
-            --gTextCursX
+    PARSE_CSI:
+      term.tx (char)
+      if ( char => "0" AND char =< "9" )
+        z80N := z80N*10 + char - ASCII_0
+      elseif ( char == ASCII_SEMI )
+        z80M := 0
+        z80Parse := PARSE_CSI_M
+      else
+        applyCsi (char)
+        z80Parse := PARSE_IDLE
 
-          ' move cursor back once to overwrite last character on screen
-          wmf.outScreen (wmf#BS)
-          wmf.outScreen (wmf#ASCII_SPACE)
-          wmf.outScreen (wmf#BS)
+    PARSE_CSI_M:
+      term.tx (char)
+      if ( char => "0" AND char =< "9" )
+        z80M := z80M*10 + char - ASCII_0
+      else
+        if ( char == "H" )
+          applyCsiH
+        z80Parse := PARSE_IDLE
 
-        ASCII_TAB:                              ' horizontal Tab
+    PARSE_XMODEM_N:
+      term.tx (char)
+      z80N := char
+      z80Parse := PARSE_XMODEM_M
 
-          term.tx (char)
+    PARSE_XMODEM_M:
+      term.tx (char)
+      z80M := char
+      if ( z80N == $FF - z80M )
+        z80Remain := 129
+        z80Parse := PARSE_XMODEM
+      else
+        z80Parse := PARSE_IDLE
 
-          if ( gTextCursY < gScreenCols-5 )
-            repeat
-              ++gTextCursY
-            while gTextCursY & 3
+    PARSE_XMODEM:
+      term.tx (char)
+      z80Remain := z80Remain - 1
+      if ( z80Remain == 0 )
+        z80Parse := PARSE_IDLE
 
-          wmf.outScreen (wmf#TB)
+    other:
+      takeZ80Idle (char)
 
-        ASCII_LF:                               ' line feed
 
-        ' eat linefeed from Z80.
-          next
+PRI takeZ80Idle(char)
 
-        ASCII_CR:                               ' carriage return
+  case char
 
-          term.lineFeed
+    XMODEM_SOH:
+      term.tx (char)
+      z80Parse := PARSE_XMODEM_N
 
-          gTextCursX := 0
-          if ( gTextCursY < gScreenRows-1 )
-            ++gTextCursY
+    ASCII_BS, ASCII_DEL:
+      term.tx (ASCII_BS)
+      term.tx (ASCII_SPACE)
+      term.tx (ASCII_BS)
+      if ( gTextCursX > 0 )
+        --gTextCursX
+      wmf.outScreen (wmf#BS)
+      wmf.outScreen (wmf#ASCII_SPACE)
+      wmf.outScreen (wmf#BS)
 
-          wmf.outScreen (wmf#NL)
+    ASCII_TAB:
+      term.tx (char)
+      if ( gTextCursY < gScreenCols-5 )
+        repeat
+          ++gTextCursY
+        while gTextCursY & 3
+      wmf.outScreen (wmf#TB)
 
-        ASCII_ESC:                              ' escape
+    ASCII_LF:
 
-          term.tx (char)                        ' ESC to terminal
+    ASCII_CR:
+      term.lineFeed
+      gTextCursX := 0
+      if ( gTextCursY < gScreenRows-1 )
+        ++gTextCursY
+      wmf.outScreen (wmf#NL)
 
-          char := acia.rx                       ' get next character after ESC
-          term.tx (char)                        ' possible CSI to terminal
+    ASCII_ESC:
+      term.tx (char)
+      z80Parse := PARSE_ESC
 
-          case char
+    other:
+      term.tx (char)
+      echoPrintable (char)
 
-            ASCII_LB:                           ' CSI Control Sequence Introducer
 
-              n := 0
+PRI echoPrintable(char)
 
-              repeat
-                char := acia.rx                 ' get next characters after CSI
-                term.tx (char)                  ' possible modifier char to terminal
+  if ( char => $20 )
+    if ( gTextCursX < gScreenCols - 1 )
+      ++gTextCursX
+    else
+      if ( gTextCursY < gScreenRows - 1 )
+        ++gTextCursY
+      gTextCursX := 0
+    wmf.outScreen (char)
 
-                if ( char => "0" AND char =< "9" )
-                  n := n*10 + char - ASCII_0
 
-              while ( char => "0" AND char =< "9" )
+PRI applyCsiH
 
-              case char
+  if ( z80N == 0 )
+    ++z80N
+  if ( z80M == 0 )
+    ++z80M
+  gTextCursY := z80N // gScreenRows - 1
+  gTextCursX := z80M // gScreenCols - 1
+  wmf.outScreen (wmf#PY)
+  wmf.outScreen (gTextCursY)
+  wmf.outScreen (wmf#PX)
+  wmf.outScreen (gTextCursX)
 
-                "A":                            ' cursor up
-                  if ( n == 0 )
-                    ++n
-                  if ( gTextCursY > n // gScreenRows - 1 )
-                    gTextCursY := gTextCursY - n // gScreenRows
-                    wmf.outScreen (wmf#PY)
-                    wmf.outScreen (gTextCursY)
 
-                "B":                            ' cursor down
-                  if ( n == 0 )
-                    ++n
-                  if ( gTextCursY < gScreenRows - n // gScreenRows )
-                    gTextCursY := gTextCursY + n // gScreenRows
-                    wmf.outScreen (wmf#PY)
-                    wmf.outScreen (gTextCursY)
+PRI applyCsi(char)
 
-                "C":                            ' cursor right
-                  if ( n == 0 )
-                    ++n
-                  if ( gTextCursX < gScreenCols - n // gScreenCols )
-                    gTextCursX := gTextCursX + n  // gScreenCols
-                    wmf.outScreen (wmf#PX)
-                    wmf.outScreen (gTextCursX)
+  case char
 
-                "D":                            ' cursor left
-                  if ( n == 0 )
-                    ++n
-                  if ( gTextCursX > n // gScreenCols - 1 )
-                    gTextCursX := gTextCursX - n // gScreenCols
-                    wmf.outScreen (wmf#PX)
-                    wmf.outScreen (gTextCursX)
+    "A":
+      if ( z80N == 0 )
+        ++z80N
+      if ( gTextCursY > z80N // gScreenRows - 1 )
+        gTextCursY := gTextCursY - z80N // gScreenRows
+        wmf.outScreen (wmf#PY)
+        wmf.outScreen (gTextCursY)
 
-                "E":                            ' cursor next line n start
-                  if ( n == 0 )
-                    ++n
-                  if ( gTextCursY < gScreenRows - n // gScreenRows )
-                    gTextCursY := gTextCursY + n // gScreenRows
-                    gTextCursX := 0
-                    wmf.outScreen (wmf#PY)
-                    wmf.outScreen (gTextCursY)
-                    wmf.outScreen (wmf#PX)
-                    wmf.outScreen (gTextCursX)
+    "B":
+      if ( z80N == 0 )
+        ++z80N
+      if ( gTextCursY < gScreenRows - z80N // gScreenRows )
+        gTextCursY := gTextCursY + z80N // gScreenRows
+        wmf.outScreen (wmf#PY)
+        wmf.outScreen (gTextCursY)
 
-                "F":                            ' cursor previous line n start
-                  if ( n == 0 )
-                    ++n
-                  if ( gTextCursY > n // gScreenRows - 1 )
-                    gTextCursY := gTextCursY - n // gScreenRows
-                    gTextCursX := 0
-                    wmf.outScreen (wmf#PY)
-                    wmf.outScreen (gTextCursY)
-                    wmf.outScreen (wmf#PX)
-                    wmf.outScreen (gTextCursX)
+    "C":
+      if ( z80N == 0 )
+        ++z80N
+      if ( gTextCursX < gScreenCols - z80N // gScreenCols )
+        gTextCursX := gTextCursX + z80N // gScreenCols
+        wmf.outScreen (wmf#PX)
+        wmf.outScreen (gTextCursX)
 
-                "G":                            ' cursor to column n
-                  if ( n == 0 )
-                    ++n
-                  gTextCursX := n // gScreenCols - 1
-                  wmf.outScreen (wmf#PX)
-                  wmf.outScreen (gTextCursX)
+    "D":
+      if ( z80N == 0 )
+        ++z80N
+      if ( gTextCursX > z80N // gScreenCols - 1 )
+        gTextCursX := gTextCursX - z80N // gScreenCols
+        wmf.outScreen (wmf#PX)
+        wmf.outScreen (gTextCursX)
 
-                "H":                            ' cursor to row n, column 1
-                  if ( n == 0 )
-                    ++n
-                  gTextCursY := n // gScreenRows - 1
-                  gTextCursX := 0
-                  wmf.outScreen (wmf#PY)
-                  wmf.outScreen (gTextCursY)
-                  wmf.outScreen (wmf#PX)
-                  wmf.outScreen (gTextCursX)
+    "E":
+      if ( z80N == 0 )
+        ++z80N
+      if ( gTextCursY < gScreenRows - z80N // gScreenRows )
+        gTextCursY := gTextCursY + z80N // gScreenRows
+        gTextCursX := 0
+        wmf.outScreen (wmf#PY)
+        wmf.outScreen (gTextCursY)
+        wmf.outScreen (wmf#PX)
+        wmf.outScreen (gTextCursX)
 
-                "J":                            ' clear screen
-                  if ( n == 0 )
-                    bytefill ( gScreenBufferPtr + gTextCursY*gScreenCols + gTextCursX, ASCII_SPACE, gScreenRows*gScreenCols - gTextCursY*gScreenCols - gTextCursX )
-                  elseif ( n == 1 )
-                    bytefill ( gScreenBufferPtr, ASCII_SPACE, gTextCursY*gScreenCols + gTextCursX + 1 )
-                  elseif ( n == 2 )
-                    gTextCursX := gTextCursY := 0
-                    wmf.outScreen ( wmf#CS )
+    "F":
+      if ( z80N == 0 )
+        ++z80N
+      if ( gTextCursY > z80N // gScreenRows - 1 )
+        gTextCursY := gTextCursY - z80N // gScreenRows
+        gTextCursX := 0
+        wmf.outScreen (wmf#PY)
+        wmf.outScreen (gTextCursY)
+        wmf.outScreen (wmf#PX)
+        wmf.outScreen (gTextCursX)
 
-                "K":                            ' clear line
-                  if ( n == 0 )
-                    bytefill ( gScreenBufferPtr + gTextCursY*gScreenCols + gTextCursX, ASCII_SPACE, gScreenCols - gTextCursX)
-                  elseif ( n == 1 )
-                    bytefill ( gScreenBufferPtr + gTextCursY*gScreenCols, ASCII_SPACE, gTextCursX + 1 )
-                  elseif ( n == 2 )
-                    bytefill ( gScreenBufferPtr + gTextCursY*gScreenCols, ASCII_SPACE, gScreenCols )
-                    gTextCursX := 0
-                    wmf.outScreen (wmf#PX)
-                    wmf.outScreen (gTextCursX)
+    "G":
+      if ( z80N == 0 )
+        ++z80N
+      gTextCursX := z80N // gScreenCols - 1
+      wmf.outScreen (wmf#PX)
+      wmf.outScreen (gTextCursX)
 
-                "m":                            ' set graphics rendition parameters
-                  if ( n == 0 )
-                    wmf.setLineColor ( gTextCursY, wmf#CTHEME_DEFAULT_FG, wmf#CTHEME_DEFAULT_BG )
-                  elseif ( n == 7 )
-                    wmf.setLineColor ( gTextCursY, wmf#CTHEME_DEFAULT_BG, wmf#CTHEME_DEFAULT_FG )
+    "H":
+      if ( z80N == 0 )
+        ++z80N
+      gTextCursY := z80N // gScreenRows - 1
+      gTextCursX := 0
+      wmf.outScreen (wmf#PY)
+      wmf.outScreen (gTextCursY)
+      wmf.outScreen (wmf#PX)
+      wmf.outScreen (gTextCursX)
 
-                ASCII_SEMI:
+    "J":
+      if ( z80N == 0 )
+        bytefill ( gScreenBufferPtr + gTextCursY*gScreenCols + gTextCursX, ASCII_SPACE, gScreenRows*gScreenCols - gTextCursY*gScreenCols - gTextCursX )
+      elseif ( z80N == 1 )
+        bytefill ( gScreenBufferPtr, ASCII_SPACE, gTextCursY*gScreenCols + gTextCursX + 1 )
+      elseif ( z80N == 2 )
+        gTextCursX := gTextCursY := 0
+        wmf.outScreen ( wmf#CS )
 
-                  m :=0
+    "K":
+      if ( z80N == 0 )
+        bytefill ( gScreenBufferPtr + gTextCursY*gScreenCols + gTextCursX, ASCII_SPACE, gScreenCols - gTextCursX)
+      elseif ( z80N == 1 )
+        bytefill ( gScreenBufferPtr + gTextCursY*gScreenCols, ASCII_SPACE, gTextCursX + 1 )
+      elseif ( z80N == 2 )
+        bytefill ( gScreenBufferPtr + gTextCursY*gScreenCols, ASCII_SPACE, gScreenCols )
+        gTextCursX := 0
+        wmf.outScreen (wmf#PX)
+        wmf.outScreen (gTextCursX)
 
-                  repeat
-                    char := acia.rx             ' get next characters after semicolon
-                    term.tx (char)              ' possible modifier char to terminal
-
-                    if ( char => "0" AND char =< "9" )
-                      m := m*10 + char - ASCII_0
-
-                  while ( char => "0" AND char =< "9" )
-
-                  if ( char == "H" )            ' cursor to row n, column m
-                    if ( n == 0 )
-                      ++n
-                    if ( m == 0 )
-                      ++m
-                    gTextCursY := n // gScreenRows - 1
-                    gTextCursX := m // gScreenCols - 1
-                    wmf.outScreen (wmf#PY)
-                    wmf.outScreen (gTextCursY)
-                    wmf.outScreen (wmf#PX)
-                    wmf.outScreen (gTextCursX)
-
-            other:                                  ' all other cases after ESC
-              if ( char => $20 )                    ' only printable characters to the screen
-                if ( gTextCursX < gScreenCols - 1 ) ' update cursor position
-                  ++gTextCursX
-                else
-                  if ( gTextCursY < gScreenRows - 1 )
-                    ++gTextCursY
-                  gTextCursX := 0
-                wmf.outScreen (char)            ' echo printable non CSI character
-
-        other:                                  ' all other cases
-
-          term.tx (char)                        ' send other characters out the serial terminal
-
-          if ( char => $20 )                    ' only printable characters to the screen
-            if ( gTextCursX < gScreenCols - 1 ) ' update cursor position
-              ++gTextCursX
-            else
-              if ( gTextCursY < gScreenRows - 1 )
-                ++gTextCursY
-              gTextCursX := 0
-            wmf.outScreen (char)                ' echo all printable characters
+    "m":
+      if ( z80N == 0 )
+        wmf.setLineColor ( gTextCursY, wmf#CTHEME_DEFAULT_FG, wmf#CTHEME_DEFAULT_BG )
+      elseif ( z80N == 7 )
+        wmf.setLineColor ( gTextCursY, wmf#CTHEME_DEFAULT_BG, wmf#CTHEME_DEFAULT_FG )
 
 
 PUB kbdToZ80 | char
 
-    ' if no input from keyboard or no space in acia tx buffer then return
-    repeat while kbd.gotKey and acia.txCheck
+    ' Do not type during XMODEM/file load. Main skips this pump then.
+    repeat while kbd.gotKey
+
+      char := kbd.peekKey
+
+      case char
+        kbd#KBD_ASCII_UP, kbd#KBD_ASCII_DOWN, kbd#KBD_ASCII_RIGHT, kbd#KBD_ASCII_LEFT, kbd#KBD_ASCII_HOME:
+          if acia.txSpace < 3
+            quit
+        other:
+          if not acia.txCheck
+            quit
 
       char := kbd.getKey
 
@@ -455,26 +485,27 @@ PUB kbdToZ80 | char
 
         kbd#KBD_ASCII_CTRL | kbd#KBD_ASCII_ALT | kbd#KBD_ASCII_DEL:
 
-          acia.txFlush                          ' remove any pending transmit queue to Z80
-          dira[ acia#RESET_PIN_NUM ]~~          ' set /RESET pin to output to reset the Z80
-          dira[ acia#RESET_PIN_NUM ]~           ' set /RESET pin to input
+          acia.txFlush
+          z80Parse := PARSE_IDLE
+          dira[ acia#RESET_PIN_NUM ]~~
+          dira[ acia#RESET_PIN_NUM ]~
 
-          term.clear                            ' clear the serial terminal
+          term.clear
 
-          gTextCursX := gTextCursY := 0         ' move screen cursor to home position
-          wmf.outScreen ( wmf#CS )              ' clear the screen
+          gTextCursX := gTextCursY := 0
+          wmf.outScreen ( wmf#CS )
 
-        other:      ' all other input
+        other:
           acia.tx (char)
 
 
 PUB termToZ80
 
-  'COG EVENT LOOP - this is where you put all your code in a non-blocking infinite loop...
-  repeat
-    ' if no input from terminal then wait till there is
-    if term.rxCount > 0 and acia.txCheck        ' if there is a received byte and space in acia tx buffer 
-      acia.tx (term.rx)                         ' grab a byte and push it to the tx buffer
+  repeat while term.rxCount > 0 and acia.txCheck
+    acia.tx (term.rx)
+
+  if not inXmodem
+    term.rxFlow
 
 
 DAT

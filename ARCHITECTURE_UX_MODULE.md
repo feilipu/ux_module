@@ -56,20 +56,20 @@ Typical production start order in `ux_module.main`:
 2. ACIA cog (`acia.start`)
 3. Two VGA text cogs (`wmf.init` → `hires_text_vga.start`)
 4. PS/2 cog (`kbd.start`)
-5. Spin cog for `termToZ80` (`cognew`)
-6. Cog 0 remains in the main Spin loop (`kbdToZ80`, `readZ80`)
+5. Cog 0 remains in the main Spin loop (`kbdToZ80`, `termToZ80`, `readZ80`)
 
-That uses seven of eight cogs. I2C runs in Spin on an existing cog; it does not start its own cog. One cog stays free unless a feature adds another driver.
+That uses six of eight cogs. I2C runs in Spin on an existing cog. Only the main cog calls `acia.tx`. Do not type on the keyboard while a file is loading. Main skips `kbdToZ80` during XMODEM.
 
 ## Data paths
 
 ```
-Keyboard  →  kbdToZ80  →  ACIA transmit FIFO  →  Z80 IN data
-FTDI RX   →  termToZ80 →  ACIA transmit FIFO  →  Z80 IN data
+Keyboard  →  kbdToZ80  ─┐
+                        ├─ acia.tx → ACIA transmit FIFO → Z80 IN data
+FTDI RX   →  termToZ80 ─┘
 Z80 OUT data  →  ACIA receive FIFO  →  readZ80  →  VGA + FTDI TX
 ```
 
-`readZ80` also handles XMODEM framing when SOH appears, so binary load paths can pass through to the FTDI side.
+`readZ80` is a non-blocking parser. XMODEM, ESC, and CSI consume at most the bytes already in the FIFO, and only if FTDI TX has room. If FTDI TX is full, `readZ80` holds ACIA `TDRE`.
 
 Naming trap: from the Z80, “receive data register” is filled by the Propeller **transmit** FIFO (`tx_*`). “Transmit data register” writes enter the Propeller **receive** FIFO (`rx_*`).
 

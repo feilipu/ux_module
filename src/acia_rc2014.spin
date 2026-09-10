@@ -201,6 +201,12 @@ PUB txCheck : truefalse
   truefalse := tx_tail <> ((tx_head + 1) & BUFFER_MASK )
 
 
+PUB txSpace : count
+{{Free slots in the TX FIFO (Z80 RDR). Full is 0. Empty is BUFFER_LENGTH-1.}}
+
+  count := (tx_tail - tx_head - 1) & BUFFER_MASK
+
+
 PUB rx : rxbyte
 {{Receive single-byte character.  Waits until character received.
   Returns: $00..$FF
@@ -234,6 +240,19 @@ PUB rxCheck : truefalse
   Returns: t|f}}
 
   truefalse := rx_tail <> rx_head
+
+
+PUB tdreHold
+{{Clear TDRE so the Z80 stops writing TDR. Used when the output path cannot drain.}}
+
+  acia_status &= !constant(SR_TDRE << DATA_BASE)
+
+
+PUB tdreAllow
+{{Set TDRE if the RX FIFO has room. Used when the output path can drain again.}}
+
+  if rxCount < BUFFER_LENGTH - 1
+    acia_status |= constant(SR_TDRE << DATA_BASE)
 
 
 DAT
