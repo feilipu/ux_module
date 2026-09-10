@@ -73,18 +73,19 @@ CON
 
   ' XMODEM control codes
 
-  XMODEM_SOH    = $01 ' Start of Header
-  XMODEM_EOT    = $04 ' End of Transmission
+  XMODEM_SOH    = $01 ' Start of Header (parser uses this)
+  XMODEM_EOT    = $04 ' End of Transmission (passed through as data)
   XMODEM_ETB    = $17 ' End of Transmission Block
   XMODEM_CAN    = $18 ' Cancel
 
-  PARSE_IDLE      = 0
-  PARSE_ESC       = 1
-  PARSE_CSI       = 2
-  PARSE_CSI_M     = 3
-  PARSE_XMODEM_N  = 4
-  PARSE_XMODEM_M  = 5
-  PARSE_XMODEM    = 6
+  ' Non-blocking Z80 output parser (readZ80). One byte per call.
+  PARSE_IDLE      = 0   ' normal stream
+  PARSE_ESC       = 1   ' saw ESC, waiting for next byte
+  PARSE_CSI       = 2   ' ESC [ ... collecting n
+  PARSE_CSI_M     = 3   ' ESC [ n ; ... collecting m
+  PARSE_XMODEM_N  = 4   ' SOH, waiting packet number
+  PARSE_XMODEM_M  = 5   ' waiting complemented packet number
+  PARSE_XMODEM    = 6   ' 129 payload bytes (128 data + checksum)
 
 
 VAR
@@ -106,9 +107,9 @@ VAR
 
   long  gScreenBufferPtr                              ' holds the address of the video buffer passed back from the VGA driver
 
-  byte  z80Parse                                      ' non-blocking Z80 byte parser state
-  long  z80N, z80M                                    ' CSI parameters
-  long  z80Remain                                     ' XMODEM payload bytes still expected
+  byte  z80Parse                                      ' PARSE_* state for readZ80
+  long  z80N, z80M                                    ' CSI n and m (ESC [ n ; m H)
+  long  z80Remain                                     ' XMODEM bytes still to copy to FTDI
 
 
 OBJ
@@ -132,7 +133,7 @@ PUB main
   acia.start (PORT_DEFAULT) 'default for RC2014 ROM
 ' acia.start (PORT_ROMWBW)  'optional for RomWBW, when used together with SIO/2 Module on 0x80
 
-  'start the VGA scren
+  'start the VGA screen
   screenInit
 
   'start the keyboard
@@ -141,7 +142,8 @@ PUB main
   'start i2c
   i2c.init (SCL_PIN, SDA_PIN)
 
-  ' One Spin cog writes acia.tx. Keyboard during XMODEM/file load is not recommended.
+  ' MAIN COG EVENT LOOP — one writer for acia.tx (no extra pump cog).
+  ' Skip the keyboard while XMODEM is in progress. Do not type during file load.
   repeat
     if not inXmodem
       kbdToZ80
@@ -155,8 +157,7 @@ CON
 
 
 PUB screenInit | retVal
-  ' This functions creates the entire user experience and does any other
-  ' static initialization you might want.
+  ' Start VGA text and place the boot banner. Static init only.
 
   ' text cursor starting position and as blinking underscore
   gTextCursX     := 0
@@ -188,12 +189,14 @@ PUB screenInit | retVal
 
 
 PUB readZ80 | char
+{{Drain Z80 TDR bytes to VGA and FTDI. Never blocks on acia.rx.
+  If FTDI TX is full, hold ACIA TDRE so the Z80 stops sending.}}
 
-    if not term.txCheck
+    if not term.txCheck                               ' no room toward the host
       acia.tdreHold
       return
 
-    acia.tdreAllow
+    acia.tdreAllow                                    ' FTDI can take bytes; Z80 may write TDR
 
     repeat while acia.rxCount > 0 and term.txCheck
       char := acia.rx
@@ -204,24 +207,26 @@ PUB readZ80 | char
 
 
 PRI inXmodem : truefalse
+{{True while readZ80 is inside an XMODEM packet (SOH through payload).}}
 
   truefalse := z80Parse == PARSE_XMODEM_N or z80Parse == PARSE_XMODEM_M or z80Parse == PARSE_XMODEM
 
 
 PRI takeZ80Byte(char)
+{{One byte from the ACIA RX FIFO. Advances PARSE_* without waiting for more input.}}
 
   case z80Parse
 
-    PARSE_ESC:
+    PARSE_ESC:                                      ' byte after ESC
       term.tx (char)
-      if ( char == ASCII_LB )
+      if ( char == ASCII_LB )                       ' CSI Control Sequence Introducer
         z80N := 0
         z80Parse := PARSE_CSI
       else
-        echoPrintable (char)
+        echoPrintable (char)                        ' printable non-CSI after ESC
         z80Parse := PARSE_IDLE
 
-    PARSE_CSI:
+    PARSE_CSI:                                      ' ESC [ n ...
       term.tx (char)
       if ( char => "0" AND char =< "9" )
         z80N := z80N*10 + char - ASCII_0
@@ -232,48 +237,49 @@ PRI takeZ80Byte(char)
         applyCsi (char)
         z80Parse := PARSE_IDLE
 
-    PARSE_CSI_M:
+    PARSE_CSI_M:                                    ' ESC [ n ; m ...
       term.tx (char)
       if ( char => "0" AND char =< "9" )
         z80M := z80M*10 + char - ASCII_0
       else
-        if ( char == "H" )
+        if ( char == "H" )                          ' cursor to row n, column m
           applyCsiH
         z80Parse := PARSE_IDLE
 
-    PARSE_XMODEM_N:
+    PARSE_XMODEM_N:                                 ' packet number
       term.tx (char)
       z80N := char
       z80Parse := PARSE_XMODEM_M
 
-    PARSE_XMODEM_M:
+    PARSE_XMODEM_M:                                 ' complemented packet number
       term.tx (char)
       z80M := char
       if ( z80N == $FF - z80M )
-        z80Remain := 129
+        z80Remain := 129                            ' 128 data + checksum (132/133 total with header)
         z80Parse := PARSE_XMODEM
       else
-        z80Parse := PARSE_IDLE
+        z80Parse := PARSE_IDLE                      ' bad header; back to normal stream
 
-    PARSE_XMODEM:
+    PARSE_XMODEM:                                   ' payload to FTDI only (not VGA)
       term.tx (char)
       z80Remain := z80Remain - 1
       if ( z80Remain == 0 )
         z80Parse := PARSE_IDLE
 
-    other:
+    other:                                          ' PARSE_IDLE
       takeZ80Idle (char)
 
 
 PRI takeZ80Idle(char)
+{{Idle-state byte: XMODEM SOH, edits, CR, ESC, or printable.}}
 
   case char
 
-    XMODEM_SOH:
+    XMODEM_SOH:                                     ' XMODEM Start of Header
       term.tx (char)
       z80Parse := PARSE_XMODEM_N
 
-    ASCII_BS, ASCII_DEL:
+    ASCII_BS, ASCII_DEL:                            ' backspace (edit), delete
       term.tx (ASCII_BS)
       term.tx (ASCII_SPACE)
       term.tx (ASCII_BS)
@@ -283,7 +289,7 @@ PRI takeZ80Idle(char)
       wmf.outScreen (wmf#ASCII_SPACE)
       wmf.outScreen (wmf#BS)
 
-    ASCII_TAB:
+    ASCII_TAB:                                      ' horizontal tab
       term.tx (char)
       if ( gTextCursY < gScreenCols-5 )
         repeat
@@ -291,27 +297,28 @@ PRI takeZ80Idle(char)
         while gTextCursY & 3
       wmf.outScreen (wmf#TB)
 
-    ASCII_LF:
+    ASCII_LF:                                       ' eat linefeed from Z80
 
-    ASCII_CR:
+    ASCII_CR:                                       ' carriage return
       term.lineFeed
       gTextCursX := 0
       if ( gTextCursY < gScreenRows-1 )
         ++gTextCursY
       wmf.outScreen (wmf#NL)
 
-    ASCII_ESC:
+    ASCII_ESC:                                      ' escape; next byte decides CSI vs literal
       term.tx (char)
       z80Parse := PARSE_ESC
 
-    other:
+    other:                                          ' all other cases
       term.tx (char)
       echoPrintable (char)
 
 
 PRI echoPrintable(char)
+{{Write a printable byte to the VGA cursor. Control bytes are ignored here.}}
 
-  if ( char => $20 )
+  if ( char => $20 )                                ' only printable characters to the screen
     if ( gTextCursX < gScreenCols - 1 )
       ++gTextCursX
     else
@@ -322,6 +329,7 @@ PRI echoPrintable(char)
 
 
 PRI applyCsiH
+{{CSI CUP with two parameters: ESC [ n ; m H}}
 
   if ( z80N == 0 )
     ++z80N
@@ -336,10 +344,11 @@ PRI applyCsiH
 
 
 PRI applyCsi(char)
+{{Apply a CSI final byte that uses n only (not the semicolon form).}}
 
   case char
 
-    "A":
+    "A":                                            ' cursor up
       if ( z80N == 0 )
         ++z80N
       if ( gTextCursY > z80N // gScreenRows - 1 )
@@ -347,7 +356,7 @@ PRI applyCsi(char)
         wmf.outScreen (wmf#PY)
         wmf.outScreen (gTextCursY)
 
-    "B":
+    "B":                                            ' cursor down
       if ( z80N == 0 )
         ++z80N
       if ( gTextCursY < gScreenRows - z80N // gScreenRows )
@@ -355,7 +364,7 @@ PRI applyCsi(char)
         wmf.outScreen (wmf#PY)
         wmf.outScreen (gTextCursY)
 
-    "C":
+    "C":                                            ' cursor right
       if ( z80N == 0 )
         ++z80N
       if ( gTextCursX < gScreenCols - z80N // gScreenCols )
@@ -363,7 +372,7 @@ PRI applyCsi(char)
         wmf.outScreen (wmf#PX)
         wmf.outScreen (gTextCursX)
 
-    "D":
+    "D":                                            ' cursor left
       if ( z80N == 0 )
         ++z80N
       if ( gTextCursX > z80N // gScreenCols - 1 )
@@ -371,7 +380,7 @@ PRI applyCsi(char)
         wmf.outScreen (wmf#PX)
         wmf.outScreen (gTextCursX)
 
-    "E":
+    "E":                                            ' cursor next line n start
       if ( z80N == 0 )
         ++z80N
       if ( gTextCursY < gScreenRows - z80N // gScreenRows )
@@ -382,7 +391,7 @@ PRI applyCsi(char)
         wmf.outScreen (wmf#PX)
         wmf.outScreen (gTextCursX)
 
-    "F":
+    "F":                                            ' cursor previous line n start
       if ( z80N == 0 )
         ++z80N
       if ( gTextCursY > z80N // gScreenRows - 1 )
@@ -393,14 +402,14 @@ PRI applyCsi(char)
         wmf.outScreen (wmf#PX)
         wmf.outScreen (gTextCursX)
 
-    "G":
+    "G":                                            ' cursor to column n
       if ( z80N == 0 )
         ++z80N
       gTextCursX := z80N // gScreenCols - 1
       wmf.outScreen (wmf#PX)
       wmf.outScreen (gTextCursX)
 
-    "H":
+    "H":                                            ' cursor to row n, column 1
       if ( z80N == 0 )
         ++z80N
       gTextCursY := z80N // gScreenRows - 1
@@ -410,7 +419,7 @@ PRI applyCsi(char)
       wmf.outScreen (wmf#PX)
       wmf.outScreen (gTextCursX)
 
-    "J":
+    "J":                                            ' clear screen
       if ( z80N == 0 )
         bytefill ( gScreenBufferPtr + gTextCursY*gScreenCols + gTextCursX, ASCII_SPACE, gScreenRows*gScreenCols - gTextCursY*gScreenCols - gTextCursX )
       elseif ( z80N == 1 )
@@ -419,7 +428,7 @@ PRI applyCsi(char)
         gTextCursX := gTextCursY := 0
         wmf.outScreen ( wmf#CS )
 
-    "K":
+    "K":                                            ' clear line
       if ( z80N == 0 )
         bytefill ( gScreenBufferPtr + gTextCursY*gScreenCols + gTextCursX, ASCII_SPACE, gScreenCols - gTextCursX)
       elseif ( z80N == 1 )
@@ -430,7 +439,7 @@ PRI applyCsi(char)
         wmf.outScreen (wmf#PX)
         wmf.outScreen (gTextCursX)
 
-    "m":
+    "m":                                            ' set graphics rendition parameters
       if ( z80N == 0 )
         wmf.setLineColor ( gTextCursY, wmf#CTHEME_DEFAULT_FG, wmf#CTHEME_DEFAULT_BG )
       elseif ( z80N == 7 )
@@ -438,18 +447,18 @@ PRI applyCsi(char)
 
 
 PUB kbdToZ80 | char
+{{PS/2 keys into the ACIA TX FIFO. Called from main except during XMODEM.}}
 
-    ' Do not type during XMODEM/file load. Main skips this pump then.
     repeat while kbd.gotKey
 
       char := kbd.peekKey
 
       case char
         kbd#KBD_ASCII_UP, kbd#KBD_ASCII_DOWN, kbd#KBD_ASCII_RIGHT, kbd#KBD_ASCII_LEFT, kbd#KBD_ASCII_HOME:
-          if acia.txSpace < 3
+          if acia.txSpace < 3                       ' CSI is ESC [ x — need three FIFO slots
             quit
         other:
-          if not acia.txCheck
+          if not acia.txCheck                       ' one slot for a normal key
             quit
 
       char := kbd.getKey
@@ -485,27 +494,28 @@ PUB kbdToZ80 | char
 
         kbd#KBD_ASCII_CTRL | kbd#KBD_ASCII_ALT | kbd#KBD_ASCII_DEL:
 
-          acia.txFlush
-          z80Parse := PARSE_IDLE
-          dira[ acia#RESET_PIN_NUM ]~~
+          acia.txFlush                              ' drop any pending keys to the Z80
+          z80Parse := PARSE_IDLE                    ' abandon ESC/CSI/XMODEM in progress
+          dira[ acia#RESET_PIN_NUM ]~~              ' pulse RC2014 /RESET
           dira[ acia#RESET_PIN_NUM ]~
 
-          term.clear
+          term.clear                                ' clear the serial terminal
 
-          gTextCursX := gTextCursY := 0
-          wmf.outScreen ( wmf#CS )
+          gTextCursX := gTextCursY := 0             ' home the VGA cursor
+          wmf.outScreen ( wmf#CS )                  ' clear the screen
 
-        other:
+        other:                                      ' all other input
           acia.tx (char)
 
 
 PUB termToZ80
+{{FTDI RX into the ACIA TX FIFO. Same cog as kbdToZ80. XON/XOFF except during XMODEM.}}
 
   repeat while term.rxCount > 0 and acia.txCheck
     acia.tx (term.rx)
 
   if not inXmodem
-    term.rxFlow
+    term.rxFlow                                     ' host software flow control; skip on XMODEM download
 
 
 DAT

@@ -24,8 +24,8 @@ CON
 
    BUFFER_LENGTH    = 512                               'Recommended as 64 or higher, but can be 2, 4, 8, 16, 32, 64, 128, 256 or 512.
    BUFFER_MASK      = BUFFER_LENGTH - 1
-   BUFFER_FULLISH   = BUFFER_LENGTH / 2
-   BUFFER_EMPTYISH  = BUFFER_LENGTH / 8
+   BUFFER_FULLISH   = BUFFER_LENGTH / 2                 ' rxFlow sends XOFF at this fill
+   BUFFER_EMPTYISH  = BUFFER_LENGTH / 8                 ' rxFlow sends XON at this fill
 
    MAXSTR_LENGTH    = 255                               'Maximum length of received numerical string (not including zero terminator).
 

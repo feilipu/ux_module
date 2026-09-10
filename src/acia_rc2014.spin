@@ -73,8 +73,6 @@ CON
   BUFFER_MASK     = BUFFER_LENGTH - 1
   IRQ_POLL        = 32                ' idle INA polls between /INT Hub refresh (9-bit immediate)
 
-  MAX_STRING  =   255
-
 CON
 
   PORT_00     =   A5_A1_PINS
@@ -132,16 +130,17 @@ VAR
 
   long  cog                         'cog flag/id
 
-                                    '8 contiguous longs
-  long  rx_head                     '#0   index into rx_buffer
+                                    '8 contiguous longs (PAR mailbox for the PASM cog)
+                                    ' Z80 TDR writes fill rx_*; Z80 RDR reads drain tx_*
+  long  rx_head                     '#0   index into rx_buffer (Z80 transmit)
   long  rx_tail                     '#4
-  long  tx_head                     '#8
+  long  tx_head                     '#8   index into tx_buffer (Z80 receive)
   long  tx_tail                     '#12
   long  acia_base                   '#16  ACIA base address (allowing for multiple instances)
   long  acia_config                 '#20  ACIA configuration byte stored shifted by DATA_BASE
   long  acia_status                 '#24  ACIA status byte stored shifted by DATA_BASE
   long  buffer_ptr                  '#28
-  byte  rx_buffer[BUFFER_LENGTH]    '#32  transmit and receive buffers for ACIA emulation
+  byte  rx_buffer[BUFFER_LENGTH]    '#32
   byte  tx_buffer[BUFFER_LENGTH]    '#32 + BUFFER_LENGTH
 
 
@@ -184,6 +183,7 @@ PUB tx(txbyte)
   tx_head := ++tx_head & BUFFER_MASK
 
   if (acia_config & constant(CR_TIX_MASK << DATA_BASE)) <> constant(CR_TID_RTS1 << DATA_BASE)
+                                                          ' CR5/CR6 is not /RTS high
     acia_status |= constant(SR_RDRF << DATA_BASE)         ' byte ready for Z80 (RDR)
 
 
@@ -306,7 +306,7 @@ wait
                         and     t1,port_active_mask
                         tjz     t1,#matched             ' address match: assert /WAIT via waitpeq wr
                         djnz    pollcnt,#:idle
-                        call    #sync_irq
+                        call    #sync_irq               ' Hub RDRF/TDRE may have changed while we waited
                         rdlong  outa,acia_base_addr
                         mov     pollcnt,#IRQ_POLL
                         jmp     #:idle
@@ -355,10 +355,10 @@ receive_command
                         wrlong  t2,t1                   ' tx_head
                         add     t1,#4
                         wrlong  t2,t1                   ' tx_tail
-                        wrlong  acia_status_initial,acia_status_addr
+                        wrlong  acia_status_initial,acia_status_addr  ' TDRE, RDRF clear
                         jmp     #wait
 
-command_apply
+command_apply                                           ' non-reset control write
                         rdlong  t1,acia_config_addr     ' CR5/CR6 field
                         and     t1,acia_config_tx_mask
                         xor     t1,acia_config_rts1  wz
@@ -401,7 +401,7 @@ transmit_status
                         andn    outa,data_active_mask   ' ensure data bus pins are cleared to zero
                         jmp     #wait
 
-receive_data
+receive_data                                            ' Z80 write TDR → Propeller rx FIFO
                         mov     t1,par                  ' rx_head
                         rdlong  t2,t1
                         add     t1,#4                   ' rx_tail
@@ -436,7 +436,7 @@ receive_data
                         wrlong  t1,acia_status_addr
                         jmp     #wait
 
-rx_overrun
+rx_overrun                                              ' Z80 wrote TDR with FIFO full
                         rdlong  t1,acia_status_addr
                         or      t1,acia_status_ovrn
                         andn    t1,acia_status_tdre
@@ -444,7 +444,7 @@ rx_overrun
                         wrlong  t1,acia_status_addr
                         jmp     #wait
 
-transmit_data
+transmit_data                                           ' Z80 read RDR ← Propeller tx FIFO
                         mov     t1,par
                         add     t1,#8                   ' tx_head
                         rdlong  t2,t1
@@ -558,8 +558,7 @@ bus_a0                  long    A0_PIN
 port_active_mask        long    WAIT_PIN | M1_PIN | PORT_MASK
 data_active_mask        long    DATA_PINS << DATA_BASE
 
-acia_config_initial     long    ( CR_TID_RTS0 | CR_8N1 | CR_DIV_64 ) << DATA_BASE
-acia_status_initial     long    ( SR_TDRE ) << DATA_BASE
+acia_status_initial     long    ( SR_TDRE ) << DATA_BASE  ' master reset and start() status
 
 acia_config_reset       long    ( CR_RESET ) << DATA_BASE
 acia_config_rie         long    ( CR_RIE ) << DATA_BASE
