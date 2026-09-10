@@ -56,7 +56,7 @@ Walk a contiguous Hub block (ACIA and UART drivers do this). Document field offs
 | `keyboard_ps2.spin` | `cognew(@entry, @par_tail)` |
 | `hires_text_vga.spin` | two `cognew(@d0, SyncPtr)` |
 | `VJET_vUXM_*.spin` | `cognew` + DAT params filled with `longmove` before start |
-| `ux_module.spin` | `cognew(termToZ80, @termStack)` — Spin helper cog |
+| `ux_module.spin` | Cog 0 Spin loop: `kbdToZ80` / `termToZ80` / `readZ80`. No extra pump cog. |
 
 ## Pitfalls
 

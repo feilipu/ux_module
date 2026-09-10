@@ -70,6 +70,7 @@ Status/control bit names mirror `docs/MC6850.pdf` (`SR_RDRF`, `SR_TDRE`, `CR_RIE
 
 - Propeller asserts `/WAIT` on address match so the Z80 stretches the I/O cycle until PASM finishes. Match uses `waitpeq … wr` (dest+mask). Rules: `lang-pasm/references/acia-wait.md`.
 - `/INT` is a held open-collector level from the ACIA cog (`DIRA` P25, `OUTA` bit 25 stays 0). It is not a pulse. Spin must not drive P25.
+- Spin may pulse P5 (`RESET_PIN_NUM`) low for CTRL+ALT+DEL. Return that pin to input after the pulse.
 - Data bus bytes in Hub are often stored **pre-shifted** by `DATA_BASE` (8) so they OR straight onto `OUTA`.
 
 ## VGA analogue network

@@ -96,6 +96,7 @@ Rules of thumb (OBEX + this tree):
 - `CASE` with ranges (`10..15`) and `OTHER`
 - `ABORT` unwinds to the nearest catcher; display-list builders in lib_vjet use this on overflow
 - Booleans: non-zero is true; logical ops promote non-zero to −1
+- `not` is boolean unary (result 0 or −1) and binds tighter than `&`. `if not x & mask` means `(not x) & mask`. For a bit field write `(x & mask) <> field`. `!` is bitwise invert (`acia_status &= !flag`).
 
 ## House style in this repo
 
@@ -103,7 +104,8 @@ Rules of thumb (OBEX + this tree):
 2. Match neighbouring comment density; do not narrate obvious assignments.
 3. Import pin and port constants from the owning object (`acia#PORT_80`, `i2c#SDA_PIN`) instead of duplicating magic numbers.
 4. Prefer existing buffer/mask patterns (`BUFFER_LENGTH` power of two, `BUFFER_MASK`) when adding FIFOs.
-5. Prose in new comments and docs follows `style-ste-writing` (STE-flavored).
+5. Count and check methods (`rxCount`, `txCheck`, `txSpace`) must not change status bits or send XON/XOFF. Put those side effects in `tx`, `rx`, `rxFlow`, or `tdreHold`.
+6. Prose in new comments and docs follows `style-ste-writing` (STE-flavored).
 
 ## Propeller 2 / Spin2 — reject
 
