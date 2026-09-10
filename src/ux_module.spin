@@ -87,6 +87,8 @@ CON
   PARSE_XMODEM_M  = 5   ' waiting complemented packet number
   PARSE_XMODEM    = 6   ' 129 payload bytes (128 data + checksum)
 
+  PUMP_LIMIT      = 16  ' max bytes each of kbd / FTDI / ACIA drain per main-loop pass
+
 
 VAR
 
@@ -145,6 +147,8 @@ PUB main
   ' MAIN COG EVENT LOOP — one writer for acia.tx (no extra pump cog).
   ' Skip the keyboard while XMODEM is in progress. Do not type during file load.
   repeat
+    if acia.takeParseIdle                             ' Z80 CR_RESET: abandon ESC/CSI/XMODEM
+      z80Parse := PARSE_IDLE
     if not inXmodem
       kbdToZ80
     termToZ80
@@ -188,8 +192,8 @@ PUB screenInit | retVal
   return
 
 
-PUB readZ80 | char
-{{Drain Z80 TDR bytes to VGA and FTDI. Never blocks on acia.rx.
+PUB readZ80 | char, n, need
+{{Drain Z80 TDR bytes to VGA and FTDI. Never blocks on acia.rx or term.tx.
   If FTDI TX is full, hold ACIA TDRE so the Z80 stops sending.}}
 
     if not term.txCheck                               ' no room toward the host
@@ -198,12 +202,33 @@ PUB readZ80 | char
 
     acia.tdreAllow                                    ' FTDI can take bytes; Z80 may write TDR
 
-    repeat while acia.rxCount > 0 and term.txCheck
+    n := 0
+    repeat while acia.rxCount > 0 and n < PUMP_LIMIT
+      char := acia.rxPeek
+      need := ftdiNeed (char)
+      if term.txSpace < need
+        acia.tdreHold
+        quit
       char := acia.rx
       takeZ80Byte (char)
+      n++
 
     if not term.txCheck
       acia.tdreHold
+
+
+PRI ftdiNeed(char) : n
+{{FTDI TX slots takeZ80Byte will use for this ACIA byte in the current PARSE_* state.}}
+
+  n := 1
+  if z80Parse == PARSE_IDLE
+    case char
+      ASCII_BS, ASCII_DEL:
+        n := 3
+      ASCII_LF:
+        n := 0
+      ASCII_CR:
+        n := 1                                        ' term.lineFeed sends one LF
 
 
 PRI inXmodem : truefalse
@@ -291,10 +316,10 @@ PRI takeZ80Idle(char)
 
     ASCII_TAB:                                      ' horizontal tab
       term.tx (char)
-      if ( gTextCursY < gScreenCols-5 )
+      if ( gTextCursX < gScreenCols-5 )
         repeat
-          ++gTextCursY
-        while gTextCursY & 3
+          ++gTextCursX
+        while gTextCursX & 3
       wmf.outScreen (wmf#TB)
 
     ASCII_LF:                                       ' eat linefeed from Z80
@@ -446,10 +471,11 @@ PRI applyCsi(char)
         wmf.setLineColor ( gTextCursY, wmf#CTHEME_DEFAULT_BG, wmf#CTHEME_DEFAULT_FG )
 
 
-PUB kbdToZ80 | char
+PUB kbdToZ80 | char, n
 {{PS/2 keys into the ACIA TX FIFO. Called from main except during XMODEM.}}
 
-    repeat while kbd.gotKey
+    n := 0
+    repeat while kbd.gotKey and n < PUMP_LIMIT
 
       char := kbd.peekKey
 
@@ -462,6 +488,7 @@ PUB kbdToZ80 | char
             quit
 
       char := kbd.getKey
+      n++
 
       case char
 
@@ -494,10 +521,10 @@ PUB kbdToZ80 | char
 
         kbd#KBD_ASCII_CTRL | kbd#KBD_ASCII_ALT | kbd#KBD_ASCII_DEL:
 
-          acia.txFlush                              ' drop any pending keys to the Z80
-          z80Parse := PARSE_IDLE                    ' abandon ESC/CSI/XMODEM in progress
-          dira[ acia#RESET_PIN_NUM ]~~              ' pulse RC2014 /RESET
+          dira[ acia#RESET_PIN_NUM ]~~              ' pulse RC2014 /RESET (Z80 drops the bus)
           dira[ acia#RESET_PIN_NUM ]~
+          acia.masterReset                          ' both FIFOs, last_rdr, tdre_hold, status
+          z80Parse := PARSE_IDLE                    ' abandon ESC/CSI/XMODEM in progress
 
           term.clear                                ' clear the serial terminal
 
@@ -508,14 +535,13 @@ PUB kbdToZ80 | char
           acia.tx (char)
 
 
-PUB termToZ80
-{{FTDI RX into the ACIA TX FIFO. Same cog as kbdToZ80. XON/XOFF except during XMODEM.}}
+PUB termToZ80 | n
+{{FTDI RX into the ACIA TX FIFO. Same cog as kbdToZ80. No XON/XOFF.}}
 
-  repeat while term.rxCount > 0 and acia.txCheck
+  n := 0
+  repeat while term.rxCount > 0 and acia.txCheck and n < PUMP_LIMIT
     acia.tx (term.rx)
-
-  if not inXmodem
-    term.rxFlow                                     ' host software flow control; skip on XMODEM download
+    n++
 
 
 DAT

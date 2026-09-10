@@ -51,7 +51,7 @@ Walk a contiguous Hub block (ACIA and UART drivers do this). Document field offs
 
 | Module | Bridge |
 |--------|--------|
-| `acia_rc2014.spin` | `cognew(@entry, @rx_head)` — FIFO indexes + config/status |
+| `acia_rc2014.spin` | `cognew(@entry, @rx_head)` — 11 longs: FIFOs, config/status, `tdre_hold`, `req_master`, `req_parse_idle` |
 | `terminal_ftdi.spin` | `cognew(@entry, @rx_head)` — same shape; `JMPRET` inside cog |
 | `keyboard_ps2.spin` | `cognew(@entry, @par_tail)` |
 | `hires_text_vga.spin` | two `cognew(@d0, SyncPtr)` |

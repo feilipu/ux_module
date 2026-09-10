@@ -24,13 +24,9 @@ CON
 
    BUFFER_LENGTH    = 512                               'Recommended as 64 or higher, but can be 2, 4, 8, 16, 32, 64, 128, 256 or 512.
    BUFFER_MASK      = BUFFER_LENGTH - 1
-   BUFFER_FULLISH   = BUFFER_LENGTH / 2                 ' rxFlow sends XOFF at this fill
-   BUFFER_EMPTYISH  = BUFFER_LENGTH / 8                 ' rxFlow sends XON at this fill
 
    MAXSTR_LENGTH    = 255                               'Maximum length of received numerical string (not including zero terminator).
 
-   XOFF = 19                                            ' XOFF
-   XON  = 17                                            ' XON
    NL   = 13                                            ' NL: New Line
    LF   = 10                                            ' LF: Line Feed
 
@@ -38,8 +34,6 @@ CON
 VAR
 
   long  cog                                             'Cog flag/id
-
-  long  status_xoff                                     'Status of XOFF in XON/XOFF transmission
 
   long  rx_head                                         '9 contiguous longs (must keep order)
   long  rx_tail
@@ -87,7 +81,6 @@ PUB startRxTx(rxpin, txpin, mode, baudrate) : okay
   longmove(@rx_pin, @rxpin, 3)
   bit_ticks := clkfreq / baudrate
   buffer_ptr := @rx_buffer
-  status_xoff := FALSE
   okay := cog := cognew(@entry, @rx_head) + 1
 
 
@@ -130,6 +123,12 @@ PUB txCheck : truefalse
   truefalse := tx_tail <> ((tx_head + 1) & BUFFER_MASK )
 
 
+PUB txSpace : count
+{{Free slots in the TX FIFO. Full is 0. Empty is BUFFER_LENGTH-1.}}
+
+  count := (tx_tail - tx_head - 1) & BUFFER_MASK
+
+
 PUB rx : rxbyte
 {{Receive single-byte character.  Waits until character received.
   Returns: $00..$FF}}
@@ -141,27 +140,11 @@ PUB rx : rxbyte
 
 
 PUB rxCount : count
-{{Get count of characters in receive buffer. No XON/XOFF side effects.
+{{Get count of characters in receive buffer.
   Returns: number of characters waiting in receive buffer.}}
 
   count := rx_head - rx_tail
   count -= BUFFER_LENGTH * (count < 0)
-
-
-PUB rxFlow | count
-{{Send XOFF when the RX FIFO is at least half full, XON when it has drained.
-  Call from the pump. Do not call on an XMODEM path.}}
-
-  count := rx_head - rx_tail
-  count -= BUFFER_LENGTH * (count < 0)
-
-  if count =< BUFFER_EMPTYISH and status_xoff == TRUE
-    status_xoff := FALSE
-    tx(XON)
-
-  elseif count => BUFFER_FULLISH and status_xoff == FALSE
-    status_xoff := TRUE
-    tx(XOFF)
 
 
 PUB rxFlush

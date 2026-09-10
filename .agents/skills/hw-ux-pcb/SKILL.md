@@ -40,8 +40,8 @@ Board: RC2014 User Experience Module (Propeller P8X32A). Schematics and gerbers:
 | P27 | PS/2 data |
 | P28 | I2C **SDA** (swapped vs Propeller default labels in `i2c.spin`) |
 | P29 | I2C **SCL** |
-| P30 | FTDI / Prop Plug TX (Propeller → host) |
-| P31 | FTDI / Prop Plug RX (host → Propeller) |
+| P30 | FTDI / Prop Plug TX (Propeller → host). SparkFun FTDI Basic pin 2 RXI |
+| P31 | FTDI / Prop Plug RX (host → Propeller). SparkFun FTDI Basic pin 3 TXO |
 
 Constants: `src/ux_module.spin`, `src/acia_rc2014.spin`, `src/i2c.spin`.
 
@@ -83,6 +83,7 @@ Eight pins through resistor DAC (270 Ω / 560 Ω / 130 Ω) as documented in `hir
 2. Any ACIA mask change must update `port_active_mask`, `DATA_BASE`, and schematic comments together.
 3. Do not put extra I2C devices on P28/P29 that answer during Propeller boot.
 4. DTR on the FTDI connector resets the Propeller (same idea as Arduino). Tools: `serial_dtr.py`, `serial_tool.py`.
+5. SparkFun FTDI Basic 6-pin is DTR, RXI, TXO, VCC, CTS, GND. DTR is net `!DTR` to Propeller `/RES` only. CTS is not connected. RTS is not on this header. The Propeller cannot pause the host with RTS/CTS or DTR. Software flow choice (no XON/XOFF): `module-ux` revert notes.
 
 ## Related
 

@@ -130,8 +130,11 @@ VAR
 
   long  cog                         'cog flag/id
 
-                                    '8 contiguous longs (PAR mailbox for the PASM cog)
+                                    '11 contiguous longs (PAR mailbox for the PASM cog)
                                     ' Z80 TDR writes fill rx_*; Z80 RDR reads drain tx_*
+                                    ' PASM is the only writer of acia_status
+                                    ' req_master: Spin writes 1, PASM writes 0
+                                    ' req_parse_idle: PASM writes 1, Spin writes 0
   long  rx_head                     '#0   index into rx_buffer (Z80 transmit)
   long  rx_tail                     '#4
   long  tx_head                     '#8   index into tx_buffer (Z80 receive)
@@ -140,8 +143,11 @@ VAR
   long  acia_config                 '#20  ACIA configuration byte stored shifted by DATA_BASE
   long  acia_status                 '#24  ACIA status byte stored shifted by DATA_BASE
   long  buffer_ptr                  '#28
-  byte  rx_buffer[BUFFER_LENGTH]    '#32
-  byte  tx_buffer[BUFFER_LENGTH]    '#32 + BUFFER_LENGTH
+  long  tdre_hold                   '#32  Spin 0/1; PASM keeps TDRE clear while nonzero
+  long  req_master                  '#36  CTRL+ALT+DEL: full 6850 reset including tdre_hold
+  long  req_parse_idle              '#40  CR_RESET: Cog 0 must set PARSE_IDLE
+  byte  rx_buffer[BUFFER_LENGTH]    '#44
+  byte  tx_buffer[BUFFER_LENGTH]    '#44 + BUFFER_LENGTH
 
 
 PUB start(base) : okay
@@ -154,6 +160,9 @@ PUB start(base) : okay
   acia_config := constant (( CR_TID_RTS0 | CR_8N1 | CR_DIV_64 ) << DATA_BASE )
   acia_status := constant ( SR_TDRE << DATA_BASE )        ' Initially ready to receive bytes from the Z80
   buffer_ptr := @rx_buffer                                ' Record the origin address of the Rx and Tx buffers
+  tdre_hold := 0
+  req_master := 0
+  req_parse_idle := 0
   okay := cog := cognew(@entry,@rx_head) + 1
 
 
@@ -162,11 +171,11 @@ PUB stop
 
   if cog
       cogstop(cog~ - 1)
-      longfill(@rx_head, 0, 8)
+      longfill(@rx_head, 0, 11)
 
 
 PUB txString( pStringPtr )
-{{Print a zero-terminated string to terminal.
+{{Send a zero-terminated string to the ACIA TX FIFO (Z80 RDR).
  pStrPtr - Pointer to null terminated string to print.}}
 
   repeat strsize( pStringPtr)
@@ -175,23 +184,18 @@ PUB txString( pStringPtr )
 
 PUB tx(txbyte)
 {{Sends byte. Will wait for room in buffer.
-  Sets RDRF when /RTS is low so the Z80 can take the byte. /INT is owned by the PASM cog.}}
+  PASM sets RDRF from FIFO occupancy and /RTS. Spin does not write acia_status.}}
 
   repeat until (tx_tail - tx_head) & BUFFER_MASK <> 1     ' wait until buffer is not full
 
   tx_buffer[tx_head] := txbyte
   tx_head := ++tx_head & BUFFER_MASK
 
-  if (acia_config & constant(CR_TIX_MASK << DATA_BASE)) <> constant(CR_TID_RTS1 << DATA_BASE)
-                                                          ' CR5/CR6 is not /RTS high
-    acia_status |= constant(SR_RDRF << DATA_BASE)         ' byte ready for Z80 (RDR)
-
 
 PUB txFlush
-{{Flush transmit buffer and hide RDRF.}}
+{{Flush transmit buffer. PASM hides RDRF on the next status refresh.}}
 
   tx_tail := tx_head := 0
-  acia_status &= !constant(SR_RDRF << DATA_BASE)
 
 
 PUB txCheck : truefalse
@@ -210,13 +214,18 @@ PUB txSpace : count
 PUB rx : rxbyte
 {{Receive single-byte character.  Waits until character received.
   Returns: $00..$FF
-  Frees a FIFO slot, so TDRE is set (Z80 may write TDR again).}}
+  Does not write TDRE. PASM sets TDRE from FIFO room and tdre_hold.}}
 
   repeat until rxCount > 0
 
   rxbyte := rx_buffer[rx_tail]
   rx_tail := ++rx_tail & BUFFER_MASK
-  acia_status |= constant(SR_TDRE << DATA_BASE)
+
+
+PUB rxPeek : rxbyte
+{{Next RX FIFO byte without removing it. Caller must see rxCount > 0.}}
+
+  rxbyte := rx_buffer[rx_tail]
 
 
 PUB rxCount : count
@@ -228,11 +237,9 @@ PUB rxCount : count
 
 
 PUB rxFlush
-{{Flush receive buffer and mark TDR empty.}}
+{{Flush receive buffer. PASM sets TDRE on the next status refresh unless held.}}
 
   rx_tail := rx_head := 0
-  acia_status |= constant(SR_TDRE << DATA_BASE)
-  acia_status &= !constant(SR_OVRN << DATA_BASE)
 
 
 PUB rxCheck : truefalse
@@ -243,16 +250,35 @@ PUB rxCheck : truefalse
 
 
 PUB tdreHold
-{{Clear TDRE so the Z80 stops writing TDR. Used when the output path cannot drain.}}
+{{Ask PASM to keep TDRE clear so the Z80 stops writing TDR.}}
 
-  acia_status &= !constant(SR_TDRE << DATA_BASE)
+  tdre_hold := 1
 
 
 PUB tdreAllow
-{{Set TDRE if the RX FIFO has room. Used when the output path can drain again.}}
+{{Allow PASM to set TDRE when the RX FIFO has room.}}
 
-  if rxCount < BUFFER_LENGTH - 1
-    acia_status |= constant(SR_TDRE << DATA_BASE)
+  tdre_hold := 0
+
+
+PUB masterReset
+{{CTRL+ALT+DEL: 6850 master reset including tdre_hold. PASM owns FIFOs, last_rdr, and status.}}
+
+  ifnot cog
+    tx_tail := tx_head := 0
+    rx_tail := rx_head := 0
+    tdre_hold := 0
+    return
+  req_master := 1
+  repeat while req_master
+
+
+PUB takeParseIdle : truefalse
+{{True once after a Z80 CR_RESET. Caller sets PARSE_IDLE. Does not clear tdre_hold.}}
+
+  truefalse := req_parse_idle
+  if truefalse
+    req_parse_idle := 0
 
 
 DAT
@@ -283,6 +309,14 @@ entry
                         mov     txbuff,rxbuff           ' tx_buffer base address is rx_buffer + BUFFER_LENGTH
                         add     txbuff,#BUFFER_MASK     ' BUFFER_LENGTH := BUFFER_MASK + 1
                         add     txbuff,#1
+
+                        add     t1,#4                   ' tdre_hold #32
+                        mov     tdre_hold_addr,t1
+                        add     t1,#4                   ' req_master #36
+                        mov     req_master_addr,t1
+                        add     t1,#4                   ' req_parse_idle #40
+                        mov     req_parse_idle_addr,t1
+                        mov     last_rdr,#0             ' empty RDR presents last byte, start at 0
 
                         rdlong  t1,acia_base_addr
                         or      t1,#M1_PIN              ' add in the /M1 pin to tighten our addressing to I/O only
@@ -344,7 +378,7 @@ receive_command
                         and     bus,data_active_mask    ' mask received command byte
                         wrlong  bus,acia_config_addr
                         xor     bus,acia_config_reset wz' master reset if we've received the RESET command
-            if_nz       jmp     #command_apply
+            if_nz       jmp     #wait                   ' flags from FIFOs and /RTS on next sync_irq
 
                         mov     t1,par                  ' zero both FIFOs
                         mov     t2,#0
@@ -355,27 +389,10 @@ receive_command
                         wrlong  t2,t1                   ' tx_head
                         add     t1,#4
                         wrlong  t2,t1                   ' tx_tail
+                        mov     last_rdr,#0
                         wrlong  acia_status_initial,acia_status_addr  ' TDRE, RDRF clear
-                        jmp     #wait
-
-command_apply                                           ' non-reset control write
-                        rdlong  t1,acia_config_addr     ' CR5/CR6 field
-                        and     t1,acia_config_tx_mask
-                        xor     t1,acia_config_rts1  wz
-            if_z        jmp     #clear_rdrf             ' /RTS high: do not present RDR
-
-                        mov     t1,par                  ' /RTS low: RDRF if TX FIFO holds data
-                        add     t1,#8
-                        rdlong  t2,t1                   ' tx_head
-                        add     t1,#4
-                        rdlong  t3,t1                   ' tx_tail
-                        cmp     t2,t3                wz
-            if_e        jmp     #clear_rdrf
-
-                        rdlong  t1,acia_status_addr
-                        or      t1,acia_status_rdrf
-                        and     t1,data_active_mask
-                        wrlong  t1,acia_status_addr
+                        mov     t2,#1                   ' ask Cog 0 for PARSE_IDLE; keep tdre_hold
+                        wrlong  t2,req_parse_idle_addr
                         jmp     #wait
 
 transmit_status
@@ -416,7 +433,7 @@ receive_data                                            ' Z80 write TDR → Prop
                         add     t1,#1
                         and     t1,#BUFFER_MASK
                         cmp     t1,t3                wz
-            if_e        jmp     #rx_overrun             ' full: do not store, set OVRN, keep TDRE clear
+            if_e        jmp     #wait                   ' full: do not store, do not set OVRN (TDR overwrite is not 6850 OVRN)
 
                         add     t2,rxbuff
                         wrbyte  bus,t2
@@ -424,25 +441,7 @@ receive_data                                            ' Z80 write TDR → Prop
                         add     t2,#1
                         and     t2,#BUFFER_MASK
                         wrlong  t2,par                  ' rx_head
-
-                        add     t2,#1                   ' full after this store?
-                        and     t2,#BUFFER_MASK
-                        cmp     t2,t3                wz
-            if_e        jmp     #clear_tdre
-
-                        rdlong  t1,acia_status_addr
-                        or      t1,acia_status_tdre     ' room remains, TDR empty
-                        and     t1,data_active_mask
-                        wrlong  t1,acia_status_addr
-                        jmp     #wait
-
-rx_overrun                                              ' Z80 wrote TDR with FIFO full
-                        rdlong  t1,acia_status_addr
-                        or      t1,acia_status_ovrn
-                        andn    t1,acia_status_tdre
-                        and     t1,data_active_mask
-                        wrlong  t1,acia_status_addr
-                        jmp     #wait
+                        jmp     #wait                   ' TDRE from sync_irq (room and tdre_hold)
 
 transmit_data                                           ' Z80 read RDR ← Propeller tx FIFO
                         mov     t1,par
@@ -450,20 +449,28 @@ transmit_data                                           ' Z80 read RDR ← Prope
                         rdlong  t2,t1
                         add     t1,#4                   ' tx_tail
                         rdlong  t3,t1
+
+                        rdlong  bus,acia_config_addr
+                        and     bus,acia_config_tx_mask
+                        xor     bus,acia_config_rts1 wz
+            if_z        jmp     #:hold                  ' /RTS high: do not consume
+
                         cmp     t2,t3                wz ' empty?
+            if_z        jmp     #:hold
 
-            if_nz       add     t3,txbuff
-            if_nz       rdbyte  bus,t3
-            if_nz       sub     t3,txbuff
-            if_z        mov     bus,#0                  ' empty RDR: present 0, do not move tail
+                        add     t3,txbuff
+                        rdbyte  bus,t3
+                        sub     t3,txbuff
+                        mov     last_rdr,bus
+                        add     t3,#1
+                        and     t3,#BUFFER_MASK
+                        wrlong  t3,t1                   ' tx_tail
+                        jmp     #:put
 
-                        shl     bus,#DATA_BASE
+:hold                   mov     bus,last_rdr            ' last presented byte; do not move tail
+:put                    shl     bus,#DATA_BASE
                         or      outa,bus
                         or      dira,data_active_mask
-
-            if_nz       add     t3,#1
-            if_nz       and     t3,#BUFFER_MASK
-            if_nz       wrlong  t3,t1                   ' tx_tail
 
                         or      outa,bus_wait           ' clear /WAIT line high to continue
                         waitpeq bus_rd,bus_rd           ' wait for /RD to raise
@@ -472,48 +479,50 @@ transmit_data                                           ' Z80 read RDR ← Prope
 
                         rdlong  t1,acia_status_addr
                         andn    t1,acia_status_ovrn     ' reading RDR clears OVRN
-
-                        rdlong  bus,acia_config_addr
-                        and     bus,acia_config_tx_mask
-                        xor     bus,acia_config_rts1 wz
-            if_z        jmp     #:drop_rdrf             ' /RTS high: hide RDRF, keep bytes
-
-                        cmp     t2,t3                wz
-            if_ne       jmp     #:keep_rdrf             ' bytes remain
-
-:drop_rdrf
-                        andn    t1,acia_status_rdrf
-                        jmp     #:wrstat
-:keep_rdrf
-                        or      t1,acia_status_rdrf
-:wrstat
-                        and     t1,data_active_mask
-                        wrlong  t1,acia_status_addr
-                        jmp     #wait
-
-clear_tdre
-                        rdlong  t1,acia_status_addr
-                        andn    t1,acia_status_tdre
-                        and     t1,data_active_mask
-                        wrlong  t1,acia_status_addr
-                        jmp     #wait
-
-clear_rdrf
-                        rdlong  t1,acia_status_addr
-                        andn    t1,acia_status_rdrf
-                        and     t1,data_active_mask
                         wrlong  t1,acia_status_addr
                         jmp     #wait
 
 ' Drive /INT as a level from this cog only (DIRA bit 25).
-' Assert while (RIE and (RDRF or OVRN)) or (TIE mode and TDRE).
+' RDRF from TX FIFO and /RTS. TDRE from RX room and tdre_hold.
+' Assert while (RIE and (RDRF or OVRN)) or (exact TIE and TDRE).
 ' OUTA bit 25 stays 0 so the pin is low when driven. waitpeq wr may
 ' carry into that bit; the wait loop clears it.
 sync_irq
+                        rdlong  bus,req_master_addr
+                        cmp     bus,#0               wz
+            if_nz       jmp     #do_master_reset
+
                         rdlong  t1,acia_config_addr
                         rdlong  t2,acia_status_addr
-                        mov     t3,#0                   ' 0 = release, 1 = assert
+                        andn    t2,acia_status_rdrf
+                        andn    t2,acia_status_tdre
+                        andn    t2,acia_status_irq      ' recompute; keep OVRN
 
+                        mov     t3,par
+                        add     t3,#8
+                        rdlong  bus,t3                  ' tx_head
+                        add     t3,#4
+                        rdlong  t3,t3                   ' tx_tail
+                        cmp     bus,t3               wz
+            if_e        jmp     #:tdre                  ' empty: RDRF stays clear
+                        mov     bus,t1
+                        and     bus,acia_config_tx_mask
+                        xor     bus,acia_config_rts1 wz
+            if_nz       or      t2,acia_status_rdrf     ' not /RTS high
+
+:tdre                   rdlong  bus,tdre_hold_addr
+                        cmp     bus,#0               wz
+            if_nz       jmp     #:irq                   ' hold: TDRE stays clear
+                        mov     t3,par
+                        rdlong  bus,t3                  ' rx_head
+                        add     t3,#4
+                        rdlong  t3,t3                   ' rx_tail
+                        add     bus,#1
+                        and     bus,#BUFFER_MASK
+                        cmp     bus,t3               wz
+            if_ne       or      t2,acia_status_tdre     ' not full
+
+:irq                    mov     t3,#0                   ' 0 = release, 1 = assert
                         mov     bus,t1
                         and     bus,acia_config_tx_mask
                         xor     bus,acia_config_tie  wz
@@ -543,6 +552,22 @@ sync_irq
                         and     t2,data_active_mask
                         wrlong  t2,acia_status_addr
 sync_irq_ret            ret
+
+do_master_reset                                         ' CTRL+ALT+DEL: full reset including tdre_hold
+                        mov     t1,par
+                        mov     t2,#0
+                        wrlong  t2,t1                   ' rx_head
+                        add     t1,#4
+                        wrlong  t2,t1                   ' rx_tail
+                        add     t1,#4
+                        wrlong  t2,t1                   ' tx_head
+                        add     t1,#4
+                        wrlong  t2,t1                   ' tx_tail
+                        mov     last_rdr,#0
+                        wrlong  t2,tdre_hold_addr
+                        wrlong  acia_status_initial,acia_status_addr
+                        wrlong  t2,req_master_addr
+                        jmp     #sync_irq               ' publish flags; req_master is 0 so no loop
 
 '
 ' Constants
@@ -578,6 +603,9 @@ acia_status_ovrn        long    ( SR_OVRN ) << DATA_BASE
 acia_base_addr          res     1
 acia_config_addr        res     1
 acia_status_addr        res     1
+tdre_hold_addr          res     1
+req_master_addr         res     1
+req_parse_idle_addr     res     1
 
 rxbuff                  res     1
 txbuff                  res     1
@@ -588,6 +616,7 @@ t3                      res     1
 
 bus                     res     1
 pollcnt                 res     1
+last_rdr                res     1
 
                         fit
 

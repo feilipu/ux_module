@@ -43,7 +43,7 @@ Then decode A0 / `/RD` / `/WR`. Handlers release `/WAIT` with `or outa, bus_wait
 
 Hold the pin low while `(RIE and (RDRF or OVRN)) or (exact CR5/CR6 TIE and TDRE)`. Float it when that is false. `OUTA` bit 25 stays 0 so a driven pin is low. `SR_IRQ` follows the pin (`docs/MC6850.pdf` pages 6 and 9).
 
-`sync_irq` runs from this cog only. Spin `tx` / `rx` update FIFO indexes and `RDRF` / `TDRE` in Hub. They do not touch `DIRA[25]`.
+`sync_irq` runs from this cog only. It is the only writer of `acia_status`. It also services `req_master` (CTRL+ALT+DEL full reset). Spin `tx` / `rx` update FIFO indexes. Spin `tdreHold` / `tdreAllow` write Hub `tdre_hold`. Spin does not touch `DIRA[25]`. Product flow choices: `module-ux`.
 
 ## Related
 
