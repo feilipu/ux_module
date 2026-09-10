@@ -183,19 +183,21 @@ PUB txString( pStringPtr )
 
 
 PUB tx(txbyte)
-{{Sends byte. Will wait for room in buffer.
-  PASM sets RDRF from FIFO occupancy and /RTS. Spin does not write acia_status.}}
+{{Sends byte. Waits for room unless a FIFO reset is in progress.
+  Aborts (drops the byte) on req_parse_idle or req_master so CR_RESET cannot tear indexes.}}
 
-  repeat until (tx_tail - tx_head) & BUFFER_MASK <> 1     ' wait until buffer is not full
+  repeat
+    if req_parse_idle or req_master
+      return
+    if (tx_tail - tx_head) & BUFFER_MASK <> 1
+      quit
 
+  if req_parse_idle or req_master
+    return
   tx_buffer[tx_head] := txbyte
+  if req_parse_idle or req_master
+    return
   tx_head := ++tx_head & BUFFER_MASK
-
-
-PUB txFlush
-{{Flush transmit buffer. PASM hides RDRF on the next status refresh.}}
-
-  tx_tail := tx_head := 0
 
 
 PUB txCheck : truefalse
@@ -212,13 +214,22 @@ PUB txSpace : count
 
 
 PUB rx : rxbyte
-{{Receive single-byte character.  Waits until character received.
-  Returns: $00..$FF
-  Does not write TDRE. PASM sets TDRE from FIFO room and tdre_hold.}}
+{{Receive single-byte character. Waits until a character is present.
+  Aborts with 0 on req_parse_idle or req_master. Does not write TDRE.}}
 
-  repeat until rxCount > 0
+  repeat
+    if req_parse_idle or req_master
+      rxbyte := 0
+      return
+    if rxCount > 0
+      quit
 
+  if req_parse_idle or req_master
+    rxbyte := 0
+    return
   rxbyte := rx_buffer[rx_tail]
+  if req_parse_idle or req_master
+    return
   rx_tail := ++rx_tail & BUFFER_MASK
 
 
@@ -234,12 +245,6 @@ PUB rxCount : count
 
   count := rx_head - rx_tail
   count -= BUFFER_LENGTH * (count < 0)
-
-
-PUB rxFlush
-{{Flush receive buffer. PASM sets TDRE on the next status refresh unless held.}}
-
-  rx_tail := rx_head := 0
 
 
 PUB rxCheck : truefalse
@@ -262,12 +267,15 @@ PUB tdreAllow
 
 
 PUB masterReset
-{{CTRL+ALT+DEL: 6850 master reset including tdre_hold. PASM owns FIFOs, last_rdr, and status.}}
+{{CTRL+ALT+DEL / P5: 6850 master reset including tdre_hold and config $03.
+  PASM samples req_master in sync_irq and in the /RD /WR rise waits.}}
 
   ifnot cog
     tx_tail := tx_head := 0
     rx_tail := rx_head := 0
     tdre_hold := 0
+    acia_config := constant ( CR_RESET << DATA_BASE )
+    acia_status := constant ( SR_TDRE << DATA_BASE )
     return
   req_master := 1
   repeat while req_master
@@ -335,6 +343,9 @@ wait
                         waitpne outa,port_active_mask   ' wait until this cycle has ended
                         mov     pollcnt,#IRQ_POLL
 :idle
+                        rdlong  t1,req_master_addr      ' abort idle if CTRL+ALT+DEL is waiting
+                        cmp     t1,#0                wz
+            if_nz       jmp     #do_master_reset
                         mov     t1,ina                  ' poll so /INT can track Spin RDRF/TDRE while idle
                         xor     t1,outa
                         and     t1,port_active_mask
@@ -374,12 +385,15 @@ handler_data
 receive_command
                         or      outa,bus_wait           ' set /WAIT line high to continue
                         mov     bus,ina                 ' capture the command byte (stored shifted by DATA_BASE)
-                        waitpeq bus_wr,bus_wr           ' wait for /WR high
+                        mov     t2,bus_wr
+                        call    #wait_pin_high          ' /WR high, or do_master_reset
                         and     bus,data_active_mask    ' mask received command byte
                         wrlong  bus,acia_config_addr
                         xor     bus,acia_config_reset wz' master reset if we've received the RESET command
             if_nz       jmp     #wait                   ' flags from FIFOs and /RTS on next sync_irq
 
+                        mov     t2,#1                   ' flag first so Spin tx/rx abort before indexes move
+                        wrlong  t2,req_parse_idle_addr
                         mov     t1,par                  ' zero both FIFOs
                         mov     t2,#0
                         wrlong  t2,t1                   ' rx_head
@@ -391,9 +405,7 @@ receive_command
                         wrlong  t2,t1                   ' tx_tail
                         mov     last_rdr,#0
                         wrlong  acia_status_initial,acia_status_addr  ' TDRE, RDRF clear
-                        mov     t2,#1                   ' ask Cog 0 for PARSE_IDLE; keep tdre_hold
-                        wrlong  t2,req_parse_idle_addr
-                        jmp     #wait
+                        jmp     #wait                   ' keep tdre_hold
 
 transmit_status
                         rdlong  t1,acia_config_addr
@@ -413,7 +425,8 @@ transmit_status
                         nop
                         nop
                         or      outa,bus_wait           ' set /WAIT line high to continue
-                        waitpeq bus_rd,bus_rd           ' wait for /RD to raise
+                        mov     t2,bus_rd
+                        call    #wait_pin_high          ' /RD high, or do_master_reset
                         andn    dira,data_active_mask   ' clear data bus lines to inactive (input)
                         andn    outa,data_active_mask   ' ensure data bus pins are cleared to zero
                         jmp     #wait
@@ -426,7 +439,8 @@ receive_data                                            ' Z80 write TDR → Prop
 
                         or      outa,bus_wait           ' set /WAIT line high to continue
                         mov     bus,ina                 ' capture the data byte
-                        waitpeq bus_wr,bus_wr           ' wait for /WR high
+                        mov     t2,bus_wr
+                        call    #wait_pin_high          ' /WR high, or do_master_reset
                         shr     bus,#DATA_BASE          ' shift data so that the LSB corresponds with D0
 
                         mov     t1,t2                   ' next head
@@ -473,20 +487,27 @@ transmit_data                                           ' Z80 read RDR ← Prope
                         or      dira,data_active_mask
 
                         or      outa,bus_wait           ' clear /WAIT line high to continue
-                        waitpeq bus_rd,bus_rd           ' wait for /RD to raise
+                        mov     t2,bus_rd
+                        call    #wait_pin_high          ' /RD high, or do_master_reset
                         andn    dira,data_active_mask
                         andn    outa,data_active_mask
+                        jmp     #wait                   ' OVRN unused; sync_irq is the only status writer
 
-                        rdlong  t1,acia_status_addr
-                        andn    t1,acia_status_ovrn     ' reading RDR clears OVRN
-                        wrlong  t1,acia_status_addr
-                        jmp     #wait
+' Wait until (ina & t2) is nonzero (pin high), or abort to do_master_reset.
+wait_pin_high
+:loop                   rdlong  t1,req_master_addr
+                        cmp     t1,#0                wz
+            if_nz       jmp     #do_master_reset
+                        test    t2,ina               wz
+            if_z        jmp     #:loop
+wait_pin_high_ret       ret
 
 ' Drive /INT as a level from this cog only (DIRA bit 25).
 ' RDRF from TX FIFO and /RTS. TDRE from RX room and tdre_hold.
 ' Assert while (RIE and (RDRF or OVRN)) or (exact TIE and TDRE).
 ' OUTA bit 25 stays 0 so the pin is low when driven. waitpeq wr may
 ' carry into that bit; the wait loop clears it.
+' This routine is the only writer of acia_status.
 sync_irq
                         rdlong  bus,req_master_addr
                         cmp     bus,#0               wz
@@ -554,6 +575,9 @@ sync_irq
 sync_irq_ret            ret
 
 do_master_reset                                         ' CTRL+ALT+DEL: full reset including tdre_hold
+                        mov     t2,#1                   ' parser idle; Spin tx/rx abort
+                        wrlong  t2,req_parse_idle_addr
+                        wrlong  acia_config_reset,acia_config_addr  ' $03 so /INT stays off
                         mov     t1,par
                         mov     t2,#0
                         wrlong  t2,t1                   ' rx_head

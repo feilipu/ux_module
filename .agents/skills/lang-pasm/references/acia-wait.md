@@ -21,7 +21,7 @@ waitpeq outa, port_active_mask wr   ' match + assert /WAIT
 andn    outa, bus_int               ' undo carry into P25
 ```
 
-Then decode A0 / `/RD` / `/WR`. Handlers release `/WAIT` with `or outa, bus_wait` before they return to `wait`.
+Then decode A0 / `/RD` / `/WR`. Handlers release `/WAIT` with `or outa, bus_wait` before they return to `wait`. After release, wait for `/RD` or `/WR` high with `wait_pin_high` (poll `req_master`). Do not use `waitpeq bus_rd` / `bus_wr` for that wait.
 
 ## `wr` effect (do not remove)
 
@@ -43,7 +43,7 @@ Then decode A0 / `/RD` / `/WR`. Handlers release `/WAIT` with `or outa, bus_wait
 
 Hold the pin low while `(RIE and (RDRF or OVRN)) or (exact CR5/CR6 TIE and TDRE)`. Float it when that is false. `OUTA` bit 25 stays 0 so a driven pin is low. `SR_IRQ` follows the pin (`docs/MC6850.pdf` pages 6 and 9).
 
-`sync_irq` runs from this cog only. It is the only writer of `acia_status`. It also services `req_master` (CTRL+ALT+DEL full reset). Spin `tx` / `rx` update FIFO indexes. Spin `tdreHold` / `tdreAllow` write Hub `tdre_hold`. Spin does not touch `DIRA[25]`. Product flow choices: `module-ux`.
+`sync_irq` runs from this cog only. It is the only writer of `acia_status`. Idle poll and `wait_pin_high` also sample `req_master` and may `jmp #do_master_reset`. Spin `tx` / `rx` update FIFO indexes and abort on reset flags. Spin `tdreHold` / `tdreAllow` write Hub `tdre_hold`. Spin does not touch `DIRA[25]`. Product flow: `module-ux`. Closed IDs: `module-ux/references/remaining-errors.md`.
 
 ## Related
 

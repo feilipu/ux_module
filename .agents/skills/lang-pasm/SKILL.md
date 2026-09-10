@@ -112,7 +112,7 @@ waitpne state, mask     ' until (INA & mask) != state
 
 ## Event loops in this tree
 
-**ACIA:** `WAITPNE` → idle `/INT` refresh → `WAITPEQ … wr` match and `/WAIT` → service RD/WR → `or outa, bus_wait`. See [acia-wait.md](references/acia-wait.md).  
+**ACIA:** `WAITPNE` → idle `/INT` refresh (`req_master` poll) → `WAITPEQ … wr` match and `/WAIT` → service RD/WR → `or outa, bus_wait` → `wait_pin_high`. See [acia-wait.md](references/acia-wait.md).  
 **VGA:** `WAITVID` scanline loop.  
 **FTDI:** `JMPRET` + bit timing.  
 **I2C (Spin):** `WAITPEQ(|<scl,|<scl,0)`.

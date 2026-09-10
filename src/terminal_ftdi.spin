@@ -426,13 +426,19 @@ receive                 jmpret  rxcode,txcode         'run a chunk of transmit c
                         test    rxtxmode,#%001  wz    'if rx inverted, invert byte
         if_nz           xor     rxdata,#$FF
 
-                        rdlong  t2,par                'save received byte and inc head
+                        rdlong  t2,par                'rx_head
+                        mov     t3,t2
+                        add     t3,#1
+                        and     t3,#BUFFER_MASK
+                        mov     t1,par
+                        add     t1,#4
+                        rdlong  t1,t1                 'rx_tail
+                        cmp     t3,t1           wz
+        if_e            jmp     #receive              'full: drop; do not wrap over unread bytes
+
                         add     t2,rxbuff
                         wrbyte  rxdata,t2
-                        sub     t2,rxbuff
-                        add     t2,#1
-                        and     t2,#BUFFER_MASK
-                        wrlong  t2,par
+                        wrlong  t3,par                'store next head
 
                         jmp     #receive              'byte done, receive next byte
 '

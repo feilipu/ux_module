@@ -58,7 +58,7 @@ Typical production start order in `ux_module.main`:
 4. PS/2 cog (`kbd.start`)
 5. Cog 0 remains in the main Spin loop (`kbdToZ80`, `termToZ80`, `readZ80`)
 
-That uses six of eight cogs. I2C runs in Spin on an existing cog. Only the main cog calls `acia.tx`. Do not type on the keyboard while a file is loading. Main skips `kbdToZ80` only when the Z80 is sending XMODEM (`SOH` on TDR).
+That uses six of eight cogs. I2C runs in Spin on an existing cog. Only the main cog calls `acia.tx`. Main skips `kbdToZ80` during Z80→host XMODEM (`inXmodem`) and host→Z80 XMODEM (`hostXmodem` from FTDI `SOH`/`STX`).
 
 ## Data paths
 
@@ -69,7 +69,7 @@ FTDI RX   →  termToZ80 ─┘
 Z80 OUT data  →  ACIA receive FIFO  →  readZ80  →  VGA + FTDI TX
 ```
 
-`readZ80` is a non-blocking parser. XMODEM, ESC, and CSI consume at most the bytes already in the FIFO, and only if FTDI TX has room. If FTDI TX is full, `readZ80` holds ACIA `TDRE`. There is no XON/XOFF on FTDI. The 6-pin header does not wire CTS or RTS to the Propeller, so the host cannot be paused in hardware.
+`readZ80` is a non-blocking parser. It pumps bytes already in the FIFO. LF still drains when FTDI TX is full. Other bytes wait for FTDI room. If the next byte will not fit, `readZ80` holds ACIA `TDRE`. There is no XON/XOFF on FTDI. The FTDI RX cog drops inbound bytes when its FIFO is full. The 6-pin header does not wire CTS or RTS to the Propeller, so the host cannot be paused in hardware.
 
 Naming trap: from the Z80, “receive data register” is filled by the Propeller **transmit** FIFO (`tx_*`). “Transmit data register” writes enter the Propeller **receive** FIFO (`rx_*`).
 
@@ -90,7 +90,7 @@ Status and control bits follow the Motorola 6850 model (`docs/MC6850.pdf`). Defa
 
 FIFOs are 512 bytes each. Z80 receive is the Propeller `tx_*` FIFO (`RDRF`). Z80 transmit is the Propeller `rx_*` FIFO (`TDRE`). Spin `tx` and `rx` move bytes. The PASM cog writes `acia_status`.
 
-The PASM cog owns `/INT` as a level, held low while RIE or TIE match the flags. `/RTS` is the CR5/CR6 field. Master reset `$03` zeros both FIFOs and asks Cog 0 to set `PARSE_IDLE`. It does not clear `tdre_hold`. CTRL+ALT+DEL pulses P5 then runs a full ACIA master reset including `tdre_hold`. An empty or `/RTS`-high RDR read presents the last byte and does not move `tx_tail`. A full TDR write is dropped and does not set `OVRN`. Spin `tdreHold` writes Hub `tdre_hold` so PASM keeps `TDRE` clear.
+The PASM cog owns `/INT` as a level, held low while RIE or TIE match the flags. `/RTS` is the CR5/CR6 field. Master reset `$03` sets `req_parse_idle` then zeros both FIFOs. It does not clear `tdre_hold`. CTRL+ALT+DEL holds P5 for 1 ms, runs `do_master_reset` (including `tdre_hold` and config `$03`), then `tdreHold` until FTDI has room. An empty or `/RTS`-high RDR read presents the last byte and does not move `tx_tail`. A full TDR write is dropped and does not set `OVRN`. Spin `tdreHold` writes Hub `tdre_hold` so PASM keeps `TDRE` clear. `sync_irq` is the only writer of `acia_status`. Detail and revert notes: `.agents/skills/module-ux`.
 
 ## FTDI UART cog
 

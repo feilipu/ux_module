@@ -29,7 +29,7 @@ Board: RC2014 User Experience Module (Propeller P8X32A). Schematics and gerbers:
 | P2 (pin 2 — not “Propeller 2”) | `!(/IORQ \| A5 \| A4 \| A3 \| A2 \| A1)` from 74HC4078 NOR (active high when I/O hit in the decoded page) |
 | P3 | A0 |
 | P4 | /M1 |
-| P5 | /RESET (sense) |
+| P5 | `PRESET`: drive RC2014 `!RESET` via D1. C12 200 pF to `!RESET`. Not Propeller `/RES`. |
 | P6 | /WR |
 | P7 | /RD |
 | P8–P15 | D0–D7 data bus |
@@ -70,7 +70,7 @@ Status/control bit names mirror `docs/MC6850.pdf` (`SR_RDRF`, `SR_TDRE`, `CR_RIE
 
 - Propeller asserts `/WAIT` on address match so the Z80 stretches the I/O cycle until PASM finishes. Match uses `waitpeq … wr` (dest+mask). Rules: `lang-pasm/references/acia-wait.md`.
 - `/INT` is a held open-collector level from the ACIA cog (`DIRA` P25, `OUTA` bit 25 stays 0). It is not a pulse. Spin must not drive P25.
-- Spin may pulse P5 (`RESET_PIN_NUM`) low for CTRL+ALT+DEL. Return that pin to input after the pulse.
+- CTRL+ALT+DEL: `outa[5]~`, `dira[5]~~`, hold 1 ms, `masterReset`, local clear, then `dira[5]~`. Net `PRESET` is P5, D1 cathode, and C12 (200 pF). `!RESET` is the RC2014 bus (D1 anode, C12 other end). C12 does not stretch the pulse. P5 is not pulled. Do not poll it as a reset input. The board button uses ROM `$03`.
 - Data bus bytes in Hub are often stored **pre-shifted** by `DATA_BASE` (8) so they OR straight onto `OUTA`.
 
 ## VGA analogue network

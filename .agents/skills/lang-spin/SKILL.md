@@ -104,7 +104,7 @@ Rules of thumb (OBEX + this tree):
 2. Match neighbouring comment density; do not narrate obvious assignments.
 3. Import pin and port constants from the owning object (`acia#PORT_80`, `i2c#SDA_PIN`) instead of duplicating magic numbers.
 4. Prefer existing buffer/mask patterns (`BUFFER_LENGTH` power of two, `BUFFER_MASK`) when adding FIFOs.
-5. Count and check methods (`rxCount`, `rxPeek`, `txCheck`, `txSpace`) must not change status bits. ACIA status bits are PASM-only. `tdreHold` writes `tdre_hold`, not `acia_status`. Do not add XON/XOFF (`module-ux`).
+5. Count and check methods (`rxCount`, `rxPeek`, `txCheck`, `txSpace`) must not change status bits. ACIA status bits are PASM-only. `tdreHold` writes `tdre_hold`, not `acia_status`. `tx` / `rx` abort on `req_parse_idle` / `req_master`. Do not add `txFlush`/`rxFlush` that write both FIFO ends. Do not add XON/XOFF (`module-ux`).
 6. Prose in new comments and docs follows `style-ste-writing` (STE-flavored).
 
 ## Propeller 2 / Spin2 — reject

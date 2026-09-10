@@ -73,19 +73,24 @@ CON
 
   ' XMODEM control codes
 
-  XMODEM_SOH    = $01 ' Start of Header (parser uses this)
+  XMODEM_SOH    = $01 ' Start of Header (128-byte packet)
+  XMODEM_STX    = $02 ' Start of Header (1024-byte packet)
   XMODEM_EOT    = $04 ' End of Transmission (passed through as data)
+  XMODEM_ACK    = $06 ' Acknowledge
+  XMODEM_NAK    = $15 ' Negative acknowledge
   XMODEM_ETB    = $17 ' End of Transmission Block
   XMODEM_CAN    = $18 ' Cancel
 
-  ' Non-blocking Z80 output parser (readZ80). One byte per call.
+  ' Non-blocking Z80 output parser (readZ80). Up to PUMP_LIMIT bytes per call.
   PARSE_IDLE      = 0   ' normal stream
   PARSE_ESC       = 1   ' saw ESC, waiting for next byte
   PARSE_CSI       = 2   ' ESC [ ... collecting n
   PARSE_CSI_M     = 3   ' ESC [ n ; ... collecting m
-  PARSE_XMODEM_N  = 4   ' SOH, waiting packet number
+  PARSE_XMODEM_N  = 4   ' SOH/STX, waiting packet number
   PARSE_XMODEM_M  = 5   ' waiting complemented packet number
-  PARSE_XMODEM    = 6   ' 129 payload bytes (128 data + checksum)
+  PARSE_XMODEM    = 6   ' data bytes (z80Remain)
+  PARSE_XMODEM_CS = 7   ' first trailer (checksum or CRC hi)
+  PARSE_XMODEM_CRC= 8   ' second trailer unless next-frame start
 
   PUMP_LIMIT      = 16  ' max bytes each of kbd / FTDI / ACIA drain per main-loop pass
 
@@ -110,8 +115,10 @@ VAR
   long  gScreenBufferPtr                              ' holds the address of the video buffer passed back from the VGA driver
 
   byte  z80Parse                                      ' PARSE_* state for readZ80
+  byte  hostXmodem                                    ' FTDI SOH/STX seen; skip keyboard until EOT/CAN
   long  z80N, z80M                                    ' CSI n and m (ESC [ n ; m H)
-  long  z80Remain                                     ' XMODEM bytes still to copy to FTDI
+  long  z80Remain                                     ' XMODEM data bytes still to copy to FTDI
+  long  z80XmLen                                      ' 128 (SOH) or 1024 (STX)
 
 
 OBJ
@@ -145,11 +152,12 @@ PUB main
   i2c.init (SCL_PIN, SDA_PIN)
 
   ' MAIN COG EVENT LOOP — one writer for acia.tx (no extra pump cog).
-  ' Skip the keyboard while XMODEM is in progress. Do not type during file load.
+  ' Skip the keyboard while Z80→host or host→Z80 XMODEM is in progress.
   repeat
     if acia.takeParseIdle                             ' Z80 CR_RESET: abandon ESC/CSI/XMODEM
       z80Parse := PARSE_IDLE
-    if not inXmodem
+      hostXmodem := 0
+    if not inXmodem and not hostXmodem
       kbdToZ80
     termToZ80
     readZ80
@@ -194,26 +202,28 @@ PUB screenInit | retVal
 
 PUB readZ80 | char, n, need
 {{Drain Z80 TDR bytes to VGA and FTDI. Never blocks on acia.rx or term.tx.
-  If FTDI TX is full, hold ACIA TDRE so the Z80 stops sending.}}
-
-    if not term.txCheck                               ' no room toward the host
-      acia.tdreHold
-      return
-
-    acia.tdreAllow                                    ' FTDI can take bytes; Z80 may write TDR
+  Bytes with ftdiNeed 0 (LF) still drain when FTDI TX is full.
+  TDRE is allowed only when the next byte fits in FTDI TX.}}
 
     n := 0
     repeat while acia.rxCount > 0 and n < PUMP_LIMIT
       char := acia.rxPeek
       need := ftdiNeed (char)
-      if term.txSpace < need
-        acia.tdreHold
+      if need > 0 and term.txSpace < need
         quit
       char := acia.rx
       takeZ80Byte (char)
       n++
 
-    if not term.txCheck
+    if acia.rxCount > 0
+      need := ftdiNeed (acia.rxPeek)
+      if need > 0 and term.txSpace < need
+        acia.tdreHold
+      else
+        acia.tdreAllow
+    elseif term.txCheck
+      acia.tdreAllow
+    else
       acia.tdreHold
 
 
@@ -228,13 +238,13 @@ PRI ftdiNeed(char) : n
       ASCII_LF:
         n := 0
       ASCII_CR:
-        n := 1                                        ' term.lineFeed sends one LF
+        n := 2                                        ' term.newLine sends CR then LF
 
 
 PRI inXmodem : truefalse
-{{True while readZ80 is inside an XMODEM packet (SOH through payload).}}
+{{True while readZ80 is inside a Z80→host XMODEM packet (SOH/STX through trailer).}}
 
-  truefalse := z80Parse == PARSE_XMODEM_N or z80Parse == PARSE_XMODEM_M or z80Parse == PARSE_XMODEM
+  truefalse := z80Parse == PARSE_XMODEM_N or z80Parse == PARSE_XMODEM_M or z80Parse == PARSE_XMODEM or z80Parse == PARSE_XMODEM_CS or z80Parse == PARSE_XMODEM_CRC
 
 
 PRI takeZ80Byte(char)
@@ -280,15 +290,27 @@ PRI takeZ80Byte(char)
       term.tx (char)
       z80M := char
       if ( z80N == $FF - z80M )
-        z80Remain := 129                            ' 128 data + checksum (132/133 total with header)
+        z80Remain := z80XmLen                       ' 128 or 1024 data; trailers follow
         z80Parse := PARSE_XMODEM
       else
-        z80Parse := PARSE_IDLE                      ' bad header; back to normal stream
+        z80Parse := PARSE_IDLE                      ' bad header; n/~n already on FTDI, no payload yet
 
     PARSE_XMODEM:                                   ' payload to FTDI only (not VGA)
       term.tx (char)
       z80Remain := z80Remain - 1
       if ( z80Remain == 0 )
+        z80Parse := PARSE_XMODEM_CS
+
+    PARSE_XMODEM_CS:                                ' checksum or CRC hi
+      term.tx (char)
+      z80Parse := PARSE_XMODEM_CRC
+
+    PARSE_XMODEM_CRC:                               ' CRC lo, or next-frame start (checksum mode)
+      if char == XMODEM_SOH or char == XMODEM_STX or char == XMODEM_EOT or char == XMODEM_ETB or char == XMODEM_CAN
+        z80Parse := PARSE_IDLE
+        takeZ80Idle (char)
+      else
+        term.tx (char)
         z80Parse := PARSE_IDLE
 
     other:                                          ' PARSE_IDLE
@@ -300,8 +322,14 @@ PRI takeZ80Idle(char)
 
   case char
 
-    XMODEM_SOH:                                     ' XMODEM Start of Header
+    XMODEM_SOH:                                     ' XMODEM-128 Start of Header
       term.tx (char)
+      z80XmLen := 128
+      z80Parse := PARSE_XMODEM_N
+
+    XMODEM_STX:                                     ' XMODEM-1K Start of Header
+      term.tx (char)
+      z80XmLen := 1024
       z80Parse := PARSE_XMODEM_N
 
     ASCII_BS, ASCII_DEL:                            ' backspace (edit), delete
@@ -314,18 +342,16 @@ PRI takeZ80Idle(char)
       wmf.outScreen (wmf#ASCII_SPACE)
       wmf.outScreen (wmf#BS)
 
-    ASCII_TAB:                                      ' horizontal tab
+    ASCII_TAB:                                      ' horizontal tab; WMF owns glyph cursor
       term.tx (char)
-      if ( gTextCursX < gScreenCols-5 )
-        repeat
-          ++gTextCursX
-        while gTextCursX & 3
       wmf.outScreen (wmf#TB)
+      gTextCursX := wmf.getColScreen
+      gTextCursY := wmf.getRowScreen
 
     ASCII_LF:                                       ' eat linefeed from Z80
 
     ASCII_CR:                                       ' carriage return
-      term.lineFeed
+      term.newLine                                  ' CR+LF for PST / typical hosts
       gTextCursX := 0
       if ( gTextCursY < gScreenRows-1 )
         ++gTextCursY
@@ -353,6 +379,28 @@ PRI echoPrintable(char)
     wmf.outScreen (char)
 
 
+PRI clampCurs(v, maxv) : r
+{{Clamp v to 0 .. maxv-1.}}
+
+  if v < 0
+    r := 0
+  elseif v => maxv
+    r := maxv - 1
+  else
+    r := v
+
+
+PRI setCursXY(x, y)
+{{Clamp and publish the overlay and WMF cursors.}}
+
+  gTextCursX := clampCurs (x, gScreenCols)
+  gTextCursY := clampCurs (y, gScreenRows)
+  wmf.outScreen (wmf#PY)
+  wmf.outScreen (gTextCursY)
+  wmf.outScreen (wmf#PX)
+  wmf.outScreen (gTextCursX)
+
+
 PRI applyCsiH
 {{CSI CUP with two parameters: ESC [ n ; m H}}
 
@@ -360,12 +408,7 @@ PRI applyCsiH
     ++z80N
   if ( z80M == 0 )
     ++z80M
-  gTextCursY := z80N // gScreenRows - 1
-  gTextCursX := z80M // gScreenCols - 1
-  wmf.outScreen (wmf#PY)
-  wmf.outScreen (gTextCursY)
-  wmf.outScreen (wmf#PX)
-  wmf.outScreen (gTextCursX)
+  setCursXY (z80M - 1, z80N - 1)
 
 
 PRI applyCsi(char)
@@ -373,76 +416,35 @@ PRI applyCsi(char)
 
   case char
 
-    "A":                                            ' cursor up
+    "A", "B", "C", "D", "E", "F", "G", "H":
       if ( z80N == 0 )
         ++z80N
-      if ( gTextCursY > z80N // gScreenRows - 1 )
-        gTextCursY := gTextCursY - z80N // gScreenRows
-        wmf.outScreen (wmf#PY)
-        wmf.outScreen (gTextCursY)
+
+  case char
+
+    "A":                                            ' cursor up
+      setCursXY (gTextCursX, gTextCursY - z80N)
 
     "B":                                            ' cursor down
-      if ( z80N == 0 )
-        ++z80N
-      if ( gTextCursY < gScreenRows - z80N // gScreenRows )
-        gTextCursY := gTextCursY + z80N // gScreenRows
-        wmf.outScreen (wmf#PY)
-        wmf.outScreen (gTextCursY)
+      setCursXY (gTextCursX, gTextCursY + z80N)
 
     "C":                                            ' cursor right
-      if ( z80N == 0 )
-        ++z80N
-      if ( gTextCursX < gScreenCols - z80N // gScreenCols )
-        gTextCursX := gTextCursX + z80N // gScreenCols
-        wmf.outScreen (wmf#PX)
-        wmf.outScreen (gTextCursX)
+      setCursXY (gTextCursX + z80N, gTextCursY)
 
     "D":                                            ' cursor left
-      if ( z80N == 0 )
-        ++z80N
-      if ( gTextCursX > z80N // gScreenCols - 1 )
-        gTextCursX := gTextCursX - z80N // gScreenCols
-        wmf.outScreen (wmf#PX)
-        wmf.outScreen (gTextCursX)
+      setCursXY (gTextCursX - z80N, gTextCursY)
 
     "E":                                            ' cursor next line n start
-      if ( z80N == 0 )
-        ++z80N
-      if ( gTextCursY < gScreenRows - z80N // gScreenRows )
-        gTextCursY := gTextCursY + z80N // gScreenRows
-        gTextCursX := 0
-        wmf.outScreen (wmf#PY)
-        wmf.outScreen (gTextCursY)
-        wmf.outScreen (wmf#PX)
-        wmf.outScreen (gTextCursX)
+      setCursXY (0, gTextCursY + z80N)
 
     "F":                                            ' cursor previous line n start
-      if ( z80N == 0 )
-        ++z80N
-      if ( gTextCursY > z80N // gScreenRows - 1 )
-        gTextCursY := gTextCursY - z80N // gScreenRows
-        gTextCursX := 0
-        wmf.outScreen (wmf#PY)
-        wmf.outScreen (gTextCursY)
-        wmf.outScreen (wmf#PX)
-        wmf.outScreen (gTextCursX)
+      setCursXY (0, gTextCursY - z80N)
 
     "G":                                            ' cursor to column n
-      if ( z80N == 0 )
-        ++z80N
-      gTextCursX := z80N // gScreenCols - 1
-      wmf.outScreen (wmf#PX)
-      wmf.outScreen (gTextCursX)
+      setCursXY (z80N - 1, gTextCursY)
 
     "H":                                            ' cursor to row n, column 1
-      if ( z80N == 0 )
-        ++z80N
-      gTextCursY := z80N // gScreenRows - 1
-      gTextCursX := 0
-      wmf.outScreen (wmf#PY)
-      wmf.outScreen (gTextCursY)
-      wmf.outScreen (wmf#PX)
-      wmf.outScreen (gTextCursX)
+      setCursXY (0, z80N - 1)
 
     "J":                                            ' clear screen
       if ( z80N == 0 )
@@ -520,28 +522,42 @@ PUB kbdToZ80 | char, n
           acia.txString ( string (ASCII_ESC, "[H") )
 
         kbd#KBD_ASCII_CTRL | kbd#KBD_ASCII_ALT | kbd#KBD_ASCII_DEL:
-
-          dira[ acia#RESET_PIN_NUM ]~~              ' pulse RC2014 /RESET (Z80 drops the bus)
-          dira[ acia#RESET_PIN_NUM ]~
-          acia.masterReset                          ' both FIFOs, last_rdr, tdre_hold, status
-          z80Parse := PARSE_IDLE                    ' abandon ESC/CSI/XMODEM in progress
-
-          term.clear                                ' clear the serial terminal
-
-          gTextCursX := gTextCursY := 0             ' home the VGA cursor
-          wmf.outScreen ( wmf#CS )                  ' clear the screen
+          panicReset
 
         other:                                      ' all other input
           acia.tx (char)
 
 
-PUB termToZ80 | n
-{{FTDI RX into the ACIA TX FIFO. Same cog as kbdToZ80. No XON/XOFF.}}
+PUB termToZ80 | n, b
+{{FTDI RX into the ACIA TX FIFO. Same cog as kbdToZ80. No XON/XOFF.
+  SOH/STX from the host gates the keyboard until EOT/CAN.}}
 
   n := 0
   repeat while term.rxCount > 0 and acia.txCheck and n < PUMP_LIMIT
-    acia.tx (term.rx)
+    b := term.rx
+    if b == XMODEM_SOH or b == XMODEM_STX
+      hostXmodem := 1
+    elseif b == XMODEM_EOT or b == XMODEM_CAN
+      hostXmodem := 0
+    acia.tx (b)
     n++
+
+
+PRI panicReset
+{{Hold RC2014 !RESET while the ACIA is reset, then clear local consoles without blocking.}}
+
+  outa[ acia#RESET_PIN_NUM ]~
+  dira[ acia#RESET_PIN_NUM ]~~
+  waitcnt (clkfreq / 1000 + cnt)                    ' 1 ms; C12 is 200 pF and does not stretch
+  acia.masterReset                                  ' FIFOs, last_rdr, tdre_hold, config $03, status
+  acia.tdreHold                                     ' keep TDR closed until readZ80 sees FTDI room
+  z80Parse := PARSE_IDLE
+  hostXmodem := 0
+  gTextCursX := gTextCursY := 0
+  wmf.outScreen (wmf#CS)
+  if term.txSpace => 4                              ' ESC [ 2 J
+    term.clear
+  dira[ acia#RESET_PIN_NUM ]~                       ' release Z80 after local state is quiet
 
 
 DAT
