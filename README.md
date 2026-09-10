@@ -157,7 +157,7 @@ It is possible to use a slower oscillator at 5MHz, or 6.25MHz, or other if desir
 
 The UX Module firmware is developed in Propeller SPIN, and in Propeller Assembly (PASM). The individual functions are mainly built in PASM, with connecting higher level logic running in SPIN.
 
-### Development Environment
+### Development Environment (humans)
 
 There are a number of alternative programming environments for the Parallax Propeller. The PropellerIDE was defined as the default option, and was developed to be cross-platform capable. However, other solutions supporting SPIN, PASM, and C or C++ are also available.
 
@@ -165,11 +165,37 @@ The UX Module is developed using the PropellerIDE, and therefore support will on
 
 The [PropellerIDE](https://developer.parallax.com/propelleride/) is available for Windows, OS X, Linux, and packaged for debian.
 
+### Command-line build (agents and scripts)
+
+AI agents and automation should use the CLI toolchain, not PropellerIDE.
+
+| Tool | Role | Source |
+|------|------|--------|
+| [OpenSpin](https://github.com/parallaxinc/OpenSpin) (`openspin`) | Compile Spin and PASM to a `.binary` or `.eeprom` image | Build from source (for example `~/Projects/OpenSpin`) |
+| [PropLoader](https://github.com/parallaxinc/PropLoader) (`proploader`) | Load the image over FTDI FT232 (DTR reset), optional EEPROM write and terminal | Build from source (for example `~/Projects/PropLoader`) |
+
+Both tools target **Propeller 1 (P8X32A)** only. Do not use Propeller 2 loaders (`loadp2`) or PASM2 toolchains on this board.
+
+Example compile and load (macOS / Linux). Adjust the serial device from `proploader -P`.
+
+```sh
+openspin -L src -b -o build/ux_module.binary src/ux_module.spin
+proploader -p /dev/cu.usbserial-XXXX -e -r build/ux_module.binary
+```
+
+Notes for agents:
+
+1. Pass the **top object** on the `openspin` command line (`src/ux_module.spin`). Do not compile a child module alone.
+2. Use `-L src` (or `-I src`) so nested objects resolve.
+3. Prefer `/dev/cu.*` over `/dev/tty.*` on macOS.
+4. `-e -r` writes EEPROM and then runs. Use `-r` alone for a RAM-only load.
+5. Agent edit rules and tool paths live in `AGENTS.md` and `.agents/skills/tool-propeller/`.
+
 ### Programming Interface
 
-The UX Module provides a standard FTDI Serial interface for programming. This can optimally be at 3V3, but also works at 5V. References to "Prop Plug" in the PropellerIDE should be taken to mean the FTDI Serial device that you're using.
+The UX Module provides a standard FTDI Serial interface for programming. This can optimally be at 3V3, but also works at 5V. References to "Prop Plug" in the PropellerIDE should be taken to mean the FTDI Serial device that you're using. The same FTDI FT232 path is what `proploader` uses from the command line.
 
-When programming the UX Module firmware, it is important that the [upper level code](https://github.com/feilipu/ux_module/blob/main/src/ux_module.spin) be the active window when clicking "compile and upload". The PropellerIDE will compile and upload a sub-module file if it thinks this is what you wanted (because you left it in the foreground). Of course this will lead to things not working as expected. You'll just need to do it again with the upper most code in the foreground.
+When programming the UX Module firmware with PropellerIDE, it is important that the [upper level code](https://github.com/feilipu/ux_module/blob/main/src/ux_module.spin) be the active window when clicking "compile and upload". The PropellerIDE will compile and upload a sub-module file if it thinks this is what you wanted (because you left it in the foreground). Of course this will lead to things not working as expected. You'll just need to do it again with the upper most code in the foreground.
 
 ### Source Code Hierarchy
 
