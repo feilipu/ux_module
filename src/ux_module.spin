@@ -11,13 +11,17 @@ CON
   _clkmode      = XTAL1 + PLL16X
   _xinfreq      = 7_372_800
 
+  ' Bring-up. One of these is 1, or both 0 for the full path.
+  DIAG_TERM_ECHO   = 0  ' FTDI local echo only
+  DIAG_ACIA_BRIDGE = 1  ' shipped path: FTDI + ACIA + text VGA + PS/2 + DDC. No VECTORJET.
+
 
 CON
 
   ' import some constants from the ACIA Emulation
   PORT_ROMWBW   = acia#PORT_40  ' Alternate ACIA base port, when used together with SIO/2 Module on 0x80
   PORT_DEFAULT  = acia#PORT_80  ' Default ACIA base port
-  PORT_VJET     = acia#PORT_C0
+  PORT_VJET     = acia#PORT_C0  ' reserved Z80 graphics port; not decoded yet
 
 
 CON
@@ -29,9 +33,7 @@ CON
   KBD_DATA_PIN  = 27  ' KEYBOARD data pin
   KBD_CLK_PIN   = 26  ' KEYBOARD clock pin
 
-  ' import some constants from the I2C hardware
-  SDA_PIN       = i2c#SDA_PIN   ' I2C data pin
-  SCL_PIN       = i2c#SCL_PIN   ' I2C clock pin
+  ' I2C DDC pins live in i2c.spin (P29 SCL, P28 SDA). Boot EEPROM is the swapped pair.
 
   ' import some constants from the Propeller Window Manager
   VGACOLS       = wmf#VGACOLS
@@ -97,8 +99,8 @@ CON
   VIDEO_TEXT      = 0   ' hires_text_vga owns P16-P23 (boot / serial console)
   VIDEO_GRAPHICS  = 1   ' VECTORJET owns P16-P23; enterGraphics, not boot
   VJET_PIN_GROUP  = VGA_BASE_PIN / 8
-  VJET_RENDER_COGS = 2  ' leave one cog for a later Spin draw loop
-  VJET_LINEBUF_LONGS = 256 * 8 / 4
+  VJET_RENDER_COGS = 2  ' VGA + 2 render; one cog left for a later Spin draw loop
+  VJET_LINEBUF_LONGS = vjetrend#WIDTH * vjetrend#LINE_BUFFERS / 4
   VJET_DLIST_LONGS = 4  ' empty list (next=0); grow when a draw cog exists
 
 
@@ -144,28 +146,38 @@ OBJ
       acia            : "acia_rc2014"
       vjetvga         : "VJET_vUXM_vga"             ' src/lib_vjet (add that folder to the search path)
       vjetrend        : "VJET_vUXM_rendering"
+      gl              : "VJET_v01_displaylist"      ' display-list builder; boot uses an empty list
 
 
 PUB main
 
   'start the serial terminal
   term.start (115200)
-  term.clear                                          ' clear terminal
   term.str (string("UX Module Initialised"))
-  term.lineFeed
+  term.newLine
+
+  if DIAG_TERM_ECHO                                   ' first bring-up: echo host bytes on FTDI
+    termEchoLoop
 
   'start the ACIA interface
   acia.start (PORT_DEFAULT) 'default for RC2014 ROM
 ' acia.start (PORT_ROMWBW)  'optional for RomWBW, when used together with SIO/2 Module on 0x80
 
-  'start the VGA text screen (serial console). Graphics is enterGraphics later.
+  if DIAG_ACIA_BRIDGE                                 ' FTDI + ACIA + text VGA + PS/2
+    waitcnt (clkfreq / 100 + cnt)                     ' 10 ms for the ACIA cog
+    screenInit
+    startDdc
+    kbd.start (KBD_DATA_PIN, KBD_CLK_PIN)
+    pulseZ80Reset
+    aciaBridgeLoop
+
+  'start the VGA text screen (serial console). Call enterGraphics from a later draw cog, not from main.
   screenInit
 
   'start the keyboard
   kbd.start (KBD_DATA_PIN, KBD_CLK_PIN)
 
-  'start i2c
-  i2c.init (SCL_PIN, SDA_PIN)
+  startDdc
 
   ' MAIN COG EVENT LOOP — one writer for acia.tx (no extra pump cog).
   ' Skip the keyboard while Z80→host or host→Z80 XMODEM is in progress.
@@ -179,53 +191,96 @@ PUB main
     readZ80
 
 
+PUB termEchoLoop | char
+{{FTDI RX to FTDI TX. No ACIA. CR becomes CR+LF. LF is ignored after CR.}}
+
+  repeat
+    if term.rxCheck
+      char := term.rx
+      if char == ASCII_CR
+        term.newLine
+      elseif char <> ASCII_LF
+        term.tx (char)
+
+
+PUB aciaBridgeLoop | n
+{{Host and PS/2 bytes to Z80 RDR. Z80 TDR to FTDI and text VGA.
+  No local echo. No VECTORJET.}}
+
+  repeat
+    if acia.takeParseIdle                             ' Z80 CR_RESET: abandon ESC/CSI/XMODEM
+      z80Parse := PARSE_IDLE
+      hostXmodem := 0
+    if not inXmodem and not hostXmodem
+      kbdToZ80
+    n := 0
+    repeat while term.rxCount > 0 and acia.txCheck and n < PUMP_LIMIT
+      acia.tx (term.rx)
+      n++
+    readZ80
+
+
+PRI pulseZ80Reset
+{{Drive RC2014 !RESET 1 ms. ACIA cog must already be running.}}
+
+  outa[ acia#RESET_PIN_NUM ]~
+  dira[ acia#RESET_PIN_NUM ]~~
+  waitcnt (clkfreq / 1000 + cnt)
+  dira[ acia#RESET_PIN_NUM ]~
+
+
 CON
 
   '' Visual differentiation
 
 
 PUB enterGraphics : okay
-{{Stop text VGA and start VECTORJET. Cog 0 still pumps ACIA. Empty list (black).
+{{Stop text VGA and the I2C DDC cog. Start VECTORJET. Cog 0 still pumps ACIA.
+  Empty list (black). Those three cogs become VGA + two render cogs.
   Call from a later draw cog or PORT_VJET handler. Not used at boot.}}
 
   if videoMode == VIDEO_GRAPHICS
     return true
 
-  wmf.stop
+  wmf.stop                                              ' free P16-P23
+  stopDdc                                               ' free one cog for VECTORJET
   vjetReady := 0
   vjetDlistPtr := @vjetList
-  longfill(@vjetList, 0, VJET_DLIST_LONGS)
+  gl.start (@vjetList, VJET_DLIST_LONGS * 4)            ' next=0 until a draw cog builds lists
+  gl.done
 
   if not vjetvga.start(VJET_PIN_GROUP, @vjetLinebuf, @vjetStatus)
-    screenInit
+    resumeText
     return false
   if not vjetrend.start(0, VJET_RENDER_COGS, @vjetLinebuf, @vjetDlistPtr, @vjetStatus, @vjetReady)
     vjetvga.stop
-    screenInit
+    resumeText
     return false
   if not vjetrend.start(1, VJET_RENDER_COGS, @vjetLinebuf, @vjetDlistPtr, @vjetStatus, @vjetReady)
     vjetrend.stop
     vjetvga.stop
-    screenInit
+    resumeText
     return false
 
   videoMode := VIDEO_GRAPHICS
-  vjetReady := 1
+  vjetReady := 1                                        ' render cogs wait for this
   return true
 
 
 PUB enterText
-{{Stop VECTORJET and restore VGA text. Cog 0 still pumps ACIA.}}
+{{Stop VECTORJET. Restore VGA text and the I2C DDC cog. Cog 0 still pumps ACIA.}}
 
   if videoMode == VIDEO_TEXT
     return
   vjetReady := 0
   vjetrend.stop
   vjetvga.stop
-  screenInit
+  resumeText
 
 
 PUB inGraphics : truefalse
+{{True while VECTORJET owns P16-P23. Cog 0 still pumps ACIA.}}
+
   truefalse := videoMode == VIDEO_GRAPHICS
 
 
@@ -261,6 +316,78 @@ PUB screenInit | retVal
 
   ' return to caller
   return
+
+
+PRI resumeText
+{{Text VGA plus I2C DDC. Used at a failed graphics start and at enterText.
+  Does not wait for EDID. The I2C cog fills Hub when the read completes.}}
+
+  screenInit
+  i2c.startCog
+  i2c.postEdid
+
+
+PRI stopDdc
+{{Free the I2C cog for VECTORJET. Pin DIRA drops when the cog stops.}}
+
+  i2c.stopCog
+
+
+PRI startDdc
+{{Start the I2C cog after VGA. Read EDID, then DDC/CI brightness. Report on FTDI and VGA.
+  Does not change VGA timing. Cog 0 waits up to 500 ms per request. Boot path only.}}
+
+  if not i2c.startCog
+    return
+  i2c.postEdid
+  i2c.waitIdle (500)
+  if i2c.edidPresent
+    i2c.postGetVcp (i2c#VCP_BRIGHT)
+    i2c.waitIdle (500)
+  reportDdc
+
+
+PRI reportDdc
+{{One EDID line and one DDC/CI line. Hardware cursor follows the VGA rows.}}
+
+  term.str (string("EDID "))
+  wmf.strScreen (string("EDID "))
+  if i2c.edidPresent
+    if byte[i2c.namePtr] <> 0
+      term.str (i2c.namePtr)
+      wmf.strScreen (i2c.namePtr)
+    else
+      term.str (i2c.mfgPtr)
+      wmf.strScreen (i2c.mfgPtr)
+    if i2c.hPix
+      term.tx (" ")
+      wmf.outScreen (" ")
+      term.dec (i2c.hPix)
+      wmf.decScreen (i2c.hPix, 4)
+      term.tx ("x")
+      wmf.outScreen ("x")
+      term.dec (i2c.vPix)
+      wmf.decScreen (i2c.vPix, 4)
+  else
+    term.str (string("none"))
+    wmf.strScreen (string("none"))
+  term.newLine
+  wmf.newLine
+  ++gTextCursY
+
+  term.str (string("DDC/CI "))
+  wmf.strScreen (string("DDC/CI "))
+  if i2c.ddcPresent
+    term.str (string("bright "))
+    wmf.strScreen (string("bright "))
+    term.dec (i2c.bright)
+    wmf.decScreen (i2c.bright, 3)
+  else
+    term.str (string("none"))
+    wmf.strScreen (string("none"))
+  term.newLine
+  wmf.newLine
+  ++gTextCursY
 
 
 PUB readZ80 | char, n, need
@@ -468,7 +595,7 @@ PRI setCursXY(x, y)
 PRI textOut(c)
 {{VGA text cell write. No-op in VECTORJET mode so Cog 0 still pumps ACIA.}}
 
-  if not videoMode
+  if not inGraphics
     wmf.outScreen (c)
 
 

@@ -21,6 +21,7 @@ CON
 
 {
 ' 1024 x 768 @ 76Hz settings: 128 x 64 characters
+' DMT 70Hz totals (1328x806, -H-V). pr=77 -> ~75.8 Hz at 118 MHz.
 
   hp = 1024     'horizontal pixels
   vp = 768      'vertical pixels
@@ -36,6 +37,7 @@ CON
 }
 {
 ' 800 x 600 @ 67Hz settings: 100 x 50 characters
+' DMT 75Hz totals (1056x625, +H+V). pr=42 -> ~67.0 Hz at 118 MHz.
 
   hp = 800      'horizontal pixels
   vp = 600      'vertical pixels
@@ -51,6 +53,7 @@ CON
 }
 {
 ' 640 x 480 @ 85Hz settings: 80 x 40 characters
+' 72Hz line (832x520, -H-V) at ~85.2 Hz. HSYNC ~1.1 us.
 
   hp = 640      'horizontal pixels
   vp = 480      'vertical pixels
@@ -66,6 +69,7 @@ CON
 }
 '{
 ' 640 x 480 @ 70Hz settings: 80 x 40 characters
+' VGA 60Hz totals (800x525, -H-V). pr=28 -> ~70.2 Hz. Active table.
 
   hp = 640      'horizontal pixels
   vp = 480      'vertical pixels

@@ -41,6 +41,8 @@ Resolution in UXM rendering: **WIDTH=256**, **NUM_LINES=240**, **LINE_BUFFERS=8*
 
 `vjet_test.spin` starts **3** render cogs + **1** VGA cog. That alone needs four cogs plus Spin. It cannot run beside the full UX text stack without stopping other drivers (`module-ux` cog budget).
 
+`ux_module.spin` links VGA, rendering, and the display-list builder. Boot stays in text mode. Product graphics uses **2** render cogs plus 1 VGA cog. The spare cog is for a later Spin draw loop. Next slice: start that draw cog from `enterGraphics`, wait `vjetStatus` `$01_00_00` / `$02_00_00`, and grow the lists. Do not call `enterGraphics` from `main`.
+
 Handshake: VGA writes line **240** in every blanking phase (not 0). Render cogs wait for `>= 240`, fill slots 0..7, then stay fewer than eight lines ahead of the live line. Spin publishes `dlist_ptr` at front porch and waits for vsync bit 17 before it rebuilds the other list.
 
 Video PLL: NCO 5 MHz, VCO/2, VCO 80 MHz (spec 64–128). Do not restore 10 MHz NCO + VCO/4 (VCO 160 MHz).
@@ -90,7 +92,7 @@ Demos flip `dlist_ptr` each frame and rebuild the inactive buffer. Render cogs r
 3. Preserve top-edge trap fixup and per-cog scanline striping (`currentscanline += total_cogs`).
 4. Treat UXM files as board-specialised; do not assume stock VECTORJET v1.0 timing.
 5. Do not write line 0 during vsync or back porch. Do not let a render cog write more than `LINE_BUFFERS` lines ahead of VGA.
-6. Stop text VGA (`wmf.stop`) before `VJET_vUXM_vga.start`. Stop VECTORJET VGA and `render.stop` before `wmf.init`. Never two VGA engines on P16–P23. Product switch is `enterGraphics` / `enterText` in `ux_module.spin`. Do not call `enterGraphics` from `main`.
+6. Stop text VGA (`wmf.stop`) **and** the I2C DDC cog (`i2c.stopCog`) before `VJET_vUXM_vga.start`. Stop VECTORJET VGA and `render.stop` before `wmf.init` and `i2c.startCog`. Never two VGA engines on P16–P23. Product switch is `enterGraphics` / `enterText` in `ux_module.spin`. Do not call `enterGraphics` from `main`.
 7. Do not put the display-list builder on Cog 0 if ACIA must keep pumping (`module-ux`).
 8. Prose: `style-ste-writing`.
 

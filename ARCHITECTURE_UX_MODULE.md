@@ -27,12 +27,15 @@ ux_module.spin
 ├── terminal_ftdi.spin      Full-duplex UART on P31/P30 (Prop Plug pins)
 ├── keyboard_ps2.spin       PS/2 decode on P27 data / P26 clock
 ├── acia_rc2014.spin        6850 register and bus timing emulator
-├── i2c.spin                Hub EEPROM helpers (P29 SCL / P28 SDA, swapped)
-└── wmf_terminal_vga.spin   Screen buffer, colours, terminal print helpers
-    └── hires_text_vga.spin Dual-cog VGA text engine (Parallax / Chip Gracey)
+├── i2c.spin                DDC EDID / DDC/CI Spin cog (P29 SCL / P28 SDA, swapped)
+├── wmf_terminal_vga.spin   Screen buffer, colours, terminal print helpers
+│   └── hires_text_vga.spin Dual-cog VGA text engine (Parallax / Chip Gracey)
+├── VJET_vUXM_vga.spin      VECTORJET VGA cog (search path `src/lib_vjet`)
+├── VJET_vUXM_rendering.spin
+└── VJET_v01_displaylist.spin
 ```
 
-Compile and upload with `ux_module.spin` as the top object.
+Compile and upload with `ux_module.spin` as the top object. Add `src/lib_vjet` to the library search path.
 
 ## Pin roles (summary)
 
@@ -43,7 +46,8 @@ Compile and upload with `ux_module.spin` as the top object.
 | VGA | P16–P23 |
 | /WAIT, /INT | P24, P25 (open-collector via diodes) |
 | PS/2 | P26 clock, P27 data |
-| I2C EEPROM | P28 SDA, P29 SCL |
+| I2C EEPROM (bootloader) | P28 SDA, P29 SCL |
+| VGA DDC (after boot) | P29 SCL, P28 SDA (`i2c.spin`). Swapped so EDID does not ACK the bootloader. |
 | FTDI | P30 TX, P31 RX |
 
 The 74HC4078 NOR combines `/IORQ` with A5–A1 so one Propeller pin can detect the ACIA I/O page. Detail: skill `hw-ux-pcb` and comments in `acia_rc2014.spin`.
@@ -56,9 +60,10 @@ Typical production start order in `ux_module.main`:
 2. ACIA cog (`acia.start`)
 3. Two VGA text cogs (`wmf.init` → `hires_text_vga.start`)
 4. PS/2 cog (`kbd.start`)
-5. Cog 0 remains in the main Spin loop (`kbdToZ80`, `termToZ80`, `readZ80`)
+5. I2C DDC cog (`i2c.startCog`) after VGA so the monitor is alive
+6. Cog 0 remains in the main Spin loop (`kbdToZ80`, `termToZ80`, `readZ80`)
 
-That uses six of eight cogs. I2C runs in Spin on an existing cog. Only the main cog calls `acia.tx`. Main skips `kbdToZ80` during Z80→host XMODEM (`inXmodem`) and host→Z80 XMODEM (`hostXmodem` from FTDI `SOH`/`STX`).
+Text mode uses seven of eight cogs. I2C is a Spin cog, not PASM. It reads EDID and DDC/CI. It does not change VGA timing. `enterGraphics` stops I2C and text VGA so VECTORJET can use those three cogs. `enterText` starts them again. Only the main cog calls `acia.tx`. Main skips `kbdToZ80` during Z80→host XMODEM (`inXmodem`) and host→Z80 XMODEM (`hostXmodem` from FTDI `SOH`/`STX`).
 
 ## Data paths
 
@@ -100,11 +105,13 @@ The PASM cog owns `/INT` as a level, held low while RIE or TIE match the flags. 
 
 `wmf_terminal_vga` owns the character buffer, per-row colours, and cursor bytes. `hires_text_vga` reads those Hub structures and generates VGA with two cogs. Resolution and character grid depend on which timing `CON` block is active in `hires_text_vga.spin` (for example 640×480 with 80×40 characters).
 
+The active block is 640×480 at about 70 Hz (VGA 60 Hz 800×525 totals, `pr=28`). EDID preferred timing is reported at boot. It does not retune this table. DDC/CI does not set resolution.
+
 Cursors are six bytes: text X/Y/mode and mouse X/Y/mode. The UX Module uses the text cursor and leaves the mouse cursor disabled.
 
 ## Relation to VECTORJET
 
-`src/lib_vjet` is linked from `ux_module.spin` but does not start at boot. `enterGraphics` stops text VGA and starts VECTORJET (empty list, black). `enterText` reverses that. Cog 0 keeps the ACIA pump. Put `draw` on another Spin cog. See `ARCHITECTURE_LIB_VJET.md`.
+`src/lib_vjet` is linked from `ux_module.spin` but does not start at boot. `enterGraphics` stops text VGA and the I2C DDC cog, then starts VECTORJET (empty list, black). `enterText` reverses that. Cog 0 keeps the ACIA pump. Put `draw` on another Spin cog. See `ARCHITECTURE_LIB_VJET.md`.
 
 ## External references
 

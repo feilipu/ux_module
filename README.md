@@ -143,6 +143,8 @@ The Parallax Propeller MCU stores its firmware in an external I2C EEPROM. The mi
 
 There is no need to put the EEPROM in a socket, as it can be programmed in-situ about a million times (literally) and you're never going to need to exchange it.
 
+The bootloader uses P28 as SCL and P29 as SDA. VGA DDC on this board is swapped (P29 SCL, P28 SDA). That match is VGA pin 15 and pin 12. A monitor EDID chip then does not ACK during boot. After boot, `i2c.startCog` uses that swapped pair to read the display. Do not use that cog to talk to the 24LC256.
+
 ### Overclocking
 
 The Parallax Propeller is specified to run at 80MHz. The typical mechanism to achieve this is to provide a 5MHz crystal or oscillator and use the Propeller internal 16x PLL capability to generate the 80MHz system clock.
@@ -205,6 +207,10 @@ To implement the functions required for the UX Module several SPIN/PASM modules 
 
 The only (at this stage) special PASM functions written for the UX Module are in the implementation of the ACIA MC6850 Serial Interface. These are in the [ACIA module](https://github.com/feilipu/ux_module/blob/main/src/acia_rc2014.spin).
 
+`i2c.spin` also runs a Spin cog after boot. It talks to the monitor on the VGA DDC pins (swapped vs the boot EEPROM). It reads EDID at `0x50` and, if the display answers, DDC/CI at `0x37`. It does not change VGA timing.
+
+VECTORJET (`src/lib_vjet`) is linked from `ux_module.spin`. Boot stays in text VGA. `enterGraphics` / `enterText` switch exclusive owners of pins P16–P23. Do not call `enterGraphics` from `main` until a draw cog exists.
+
 ```
 ux_module
 |
@@ -215,6 +221,9 @@ ux_module
 |---> wmf_terminal_vga
       |
       |---> hires_text_vga
+|---> VJET_vUXM_vga
+|---> VJET_vUXM_rendering
+|---> VJET_v01_displaylist
 ```
 
 ## Usage Notes
@@ -241,11 +250,15 @@ The UX Module can be alternately located on ports `0x40`, `0x41` or on `0xC0`, `
 
 It will (enhancement plan) be possible to implement a graphics interface (VJET library). It is likely that the graphics interface will use the `0xC0` and `0xC1` ports, and may be configured by settings on other ports.
 
+`PORT_VJET` in `ux_module.spin` is that reserved `0xC0` base. There is no Z80 command protocol in the tree yet. The product switch is `enterGraphics` / `enterText`. Boot remains the ACIA text console.
+
 ### Video VGA
 
 If you do not have a VGA monitor, it is possible to attach a VGA->HDMI adaptor. The VGA connector on the UX Module supplies 5V to the adaptor so no additional power connection (via USB) is required. The recommended VGA->HDMI adaptor is from [Vention and is available here](https://www.aliexpress.com/item/32844619223.html).
 
 The VGA timings (front porch and back porch) have been developed using the Vention HDMI adaptor. If an alternative HDMI adaptor or actual VGA monitor is used, the timings may need to be adjusted to ensure that all characters are visible.
+
+The active text table in `hires_text_vga.spin` is 640×480 at about 70 Hz (80×40 characters). Other Chip Gracey tables (1024×768, 800×600, 640×480 at 85 Hz) are in the same file, commented out. Timing is compile-time. EDID reports the preferred mode. DDC/CI cannot set resolution or aspect. Many HDMI adaptors answer EDID and do not answer DDC/CI (`0x37`).
 
 ### Keyboard PS/2
 

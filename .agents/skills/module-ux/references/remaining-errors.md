@@ -1,43 +1,56 @@
-# ACIA/flow repairs (closed list)
+# ACIA/flow punch list (open)
 
-These were open after `faabd9c`. They are implemented. Do not restore Spin writes to `acia_status`. Do not restore XON/XOFF on the 8-bit load path. Policy table: `module-ux` revert notes.
+Policy (what to keep or undo) is the revert-notes table in `module-ux`. This file is the tree vs that policy. It is **not** a clean bill of health.
 
-Residual hardware: **P0-3** (RC2014 reset button). Net `PRESET` (P5) is not pulled. C12 is 200 pF. PASM must not poll P5 as a reset input (the pin floats). The button pulls `!RESET` (D1 anode). ACIA state then follows ROM `$03` (`CR_RESET`, keep `tdre_hold`). CTRL+ALT+DEL holds P5 low for 1 ms and uses `req_master` (`do_master_reset`).
+Bus cog: **`569cd07` wait loop** (`rdlong` base, `waitpne`, `waitpeq wr`). No Hub between those waits. Rise wait is `wait_pin_high` (poll pin and `req_master`). Mailbox is **11 longs**. `last_rdr` is cog RAM.
 
-| ID | What landed | Revert |
-|----|-------------|--------|
-| P0-1 | `panicReset` holds `!RESET` during `masterReset`, then `tdreHold`. VGA `CS` always. FTDI `clear` only if `txSpace => 4`. | Blocking `term.clear` after releasing reset. |
-| P0-2 | Idle loop and `wait_pin_high` sample `req_master`. `/RD` `/WR` rise waits poll, they do not `waitpeq`. P5: `outa~` then `dira~~`, 1 ms, then release. | `waitpeq bus_rd/bus_wr` and a two-instruction pulse. |
-| P0-3 | Not sensed on P5. See residual above. `do_master_reset` writes config `$03` and `req_parse_idle`. | Polling floating P5. |
-| P0-4 | FTDI RX PASM drops the byte when `(head+1)==tail`. No wrap over unread data. Still no host pause (8B). | Store-always FullDuplexSerial head increment. |
-| P0-5 | `hostXmodem` set on FTDI `SOH`/`STX`, cleared on `EOT`/`CAN`, `CR_RESET`, panic. Main skips `kbdToZ80`. Ctrl-A (`$01`) also sets the flag. Panic clears it. | Keyboard during host→Z80 load. |
-| P1-1 | PASM writes `req_parse_idle` **before** zeroing indexes. Spin `tx`/`rx` abort if `req_parse_idle` or `req_master`. | Index update without the flag. |
-| P1-2 | `readZ80` pumps `ftdiNeed==0` (LF) even when FTDI TX is full. | Early return on `!term.txCheck`. |
-| P1-3 | `tdreAllow` only when the next byte fits (or the FIFO is empty and FTDI has a slot). | `tdreAllow` at the start of `readZ80`. |
-| P1-4 | `STX` → 1024 data. After data: CS then CRC. If the CRC byte is `SOH`/`STX`/`EOT`/`ETB`/`CAN`, treat it as the next frame (checksum mode). Bad `n/~n` returns to IDLE with no payload. | `SOH`+129 only. |
-| P2-1 | `do_master_reset` writes `acia_config` `$03`. Status reads stay 0 until a real control word. | Leave old TIE in config. |
-| P2-2 | Removed `transmit_data` RMW of `acia_status`. `sync_irq` is the only status writer. | RMW-clear `OVRN` on RDR read. |
-| P2-3 | Unchanged: TDR full drops the write. No TDR `OVRN`. | Setting `OVRN` on TDR full. |
-| P2-4 | Deleted `txFlush` / `rxFlush`. | Dual-writer flush of both ends. |
-| P2-5 | Hub map below. | |
-| P2-6 | `tx`/`rx` wait, but abort on reset flags. Callers still check space first. | Wait forever through `CR_RESET`. |
-| P3-1 | CSI cursor uses `clampCurs` / `setCursXY`. No `n // rows - 1`. | Modulo CUP. |
-| P3-2 | TAB: `wmf.outScreen(TB)` then copy `getColScreen` / `getRowScreen`. | Dual increment of `gTextCursX`. |
-| P3-3 | Z80 CR → `term.newLine` (CR+LF). `ftdiNeed` is 2. | `term.lineFeed` only. |
-| P3-4 | CON comment: up to `PUMP_LIMIT` bytes per `readZ80`. | “One byte per call.” |
-| P3-5 | `outa[n]~` before `dira[n]~~`. | `dira~~` alone. |
+Probe after each slice: ROM banner plus `ABC\r` → `ABC\r\n\r\n> `.
 
-## Hub writer map
+## Status vs tree
 
-| Cell | Writer | Notes |
-|------|--------|-------|
-| `tx_head` | Spin | Abort on `req_parse_idle` / `req_master`. PASM zeros on reset |
-| `tx_tail` | PASM | |
-| `rx_head` | PASM | |
-| `rx_tail` | Spin | Abort on reset flags |
-| `acia_status` | PASM `sync_irq` only | |
-| `acia_config` | PASM `receive_command` | `do_master_reset` writes `$03`. Spin `start` before `cognew` |
-| `tdre_hold` | Spin | PASM zeros only in `do_master_reset` |
-| `req_master` | Spin 1, PASM 0 | Sampled in `sync_irq`, idle poll, `wait_pin_high` |
-| `req_parse_idle` | PASM 1, Spin 0 | Written **before** FIFO zeros |
-| `last_rdr` | PASM cog RAM | Not a Hub long |
+| ID | Policy fix | In this tree | Notes |
+|----|------------|--------------|-------|
+| **P0-1** | Hold P5 1 ms, then `masterReset`, `tdreHold`, VGA `CS`, FTDI `clear` only if 4 TX slots | **Landed (Spin).** | Keep gated `clear`. |
+| **P0-2** | Sample `req_master` in idle/`wait_pin_high`; no `waitpeq` on `/RD` `/WR` rise | **Partial.** `wait_pin_high` samples `req_master`. Spin does **not** wait on the flag. Idle Hub between `waitpne` and `waitpeq wr` is forbidden. | Rise abort only. |
+| **P0-3** | Do not poll P5. Button → ROM `$03`. Keep `tdre_hold` | **Landed residual.** P5 is not polled. `$03` zeros FIFOs and keeps `tdre_hold`. | Do not poll P5. |
+| **P0-4** | FTDI RX drop when full; no XON/XOFF | **In tree.** | Do not restore wrap-over or XON. |
+| **P0-5** | Skip `kbdToZ80` on host `SOH`/`STX` | **In tree.** | Done. |
+| **P1-1** | `req_parse_idle` before PASM zeros indexes; Spin `tx`/`rx` abort | **Landed.** | Keep the take in the loop. |
+| **P1-2** | Pump LF when FTDI TX is full | **In tree.** | Done. |
+| **P1-3** | `tdreAllow` only when the next byte fits | **Landed.** `sync_irq` honours `tdre_hold`. | After `/WAIT` only. |
+| **P1-4** | XMODEM-1K parser | **In tree.** | Done (parser only). |
+| **P2-1** | Panic sets `acia_config` `$03` | **Landed.** | `do_master_reset` does not clear `tdre_hold`. |
+| **P2-2** | PASM only writer of `acia_status` | **Partial.** Live compose is `sync_irq` on a status read. Spin does not RMW `acia_status`. Spin still **pulses** `DIRA[25]` when RIE/TIE. Removing that pulse dropped host keys (RX empty). `start` writes initial status before `cognew`. | Do not idle `sync_irq`. Keep the Spin INT pulse. |
+| **P2-3** | Full TDR: drop write, no `OVRN` | **Landed.** | Done. |
+| **P2-4** | Delete `txFlush` / `rxFlush` | **Landed.** | Done. |
+| **P2-5** | Hub map | **11 longs.** `last_rdr` is cog RAM. | See table. |
+| **P2-6** | `tx`/`rx` abort on reset flags | **Landed** with P1-1. | Done. |
+| **P3-1** … **P3-5** | CUP, TAB, CR, `PUMP_LIMIT`, `outa` before `dira` | **In tree.** | Done. |
+
+## Empty / `/RTS` RDR
+
+**Landed.** Same drive timing as `569cd07` (rdbyte, then shl, then `or outa`). Empty or cached `CR_TID_RTS1` presents `last_rdr` and rewinds `tx_tail`. Earlier branch-before-drive `last_rdr` failed (`ACC`, high-bit bytes) and must not be restored.
+
+## Hub writer map (this image)
+
+| Cell | Writer now | Policy writer |
+|------|------------|---------------|
+| `tx_head` | Spin `tx` (abort on flags) | Spin (abort on flags) |
+| `tx_tail` | PASM; Spin `masterReset` (panic wipe while `waitpeq` has no match) | PASM only |
+| `rx_head` | PASM; Spin `masterReset` | PASM only |
+| `rx_tail` | Spin `rx` (abort on flags) | Spin (abort on flags) |
+| `acia_status` | PASM `sync_irq` (live). `start` before `cognew`. `$03` / `do_master_reset` write the reset value. | PASM `sync_irq` only |
+| `acia_config` | PASM `receive_command` / `do_master_reset`; Spin `start` / `masterReset` | PASM + `start` |
+| `tdre_hold` | Spin `tdreHold` / `tdreAllow` / `masterReset` | Spin |
+| `req_master` | Spin `masterReset` sets 1; PASM `do_master_reset` sets 0 | Spin 1, PASM 0 |
+| `req_parse_idle` | PASM `$03` / `do_master_reset` sets 1; Spin `takeParseIdle` / `start` sets 0 | PASM 1, Spin 0 |
+| `DIRA[25]` | Spin `tx`/`rxCount` pulse when RIE/TIE. PASM `sync_irq` level on a status read. | PASM level only |
+
+## Failed slices (do not retry the same way)
+
+1. `last_rdr` with extra Hub/branch **before** the RDR drive (echoed `ACC` / high-bit bytes).
+2. `sync_irq` as the only status writer **and** no Spin INT pulse (RX empty).
+3. Idle `sync_irq` between `waitpne` and `waitpeq wr` (silent 8085).
+4. Spin `masterReset` wait on `req_master` while P5 is held (deadlock).
+
+Do not: idle `sync_irq`, Hub between `waitpne` and `waitpeq wr`, poll P5, restore XON/XOFF, drop the Spin INT pulse.

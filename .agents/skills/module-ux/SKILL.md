@@ -18,14 +18,15 @@ ux_module.spin                 ' top object — compile/upload this
 ├── terminal_ftdi.spin         ' FullDuplex serial on P31/P30
 ├── keyboard_ps2.spin          ' PS/2 on P27/P26
 ├── acia_rc2014.spin           ' MC6850 bus emulator (PASM cog)
-├── i2c.spin                   ' EEPROM bus helpers (Spin bit-bang)
+├── i2c.spin                   ' DDC EDID / DDC/CI Spin cog (P29 SCL, P28 SDA)
 ├── wmf_terminal_vga.spin      ' terminal services + screen buffer
 │   └── hires_text_vga.spin    ' dual-cog VGA text (Chip Gracey)
 ├── VJET_vUXM_vga.spin         ' src/lib_vjet (search path)
-└── VJET_vUXM_rendering.spin
+├── VJET_vUXM_rendering.spin
+└── VJET_v01_displaylist.spin  ' empty list at boot; draw cog later
 ```
 
-Boot starts text VGA only. `enterGraphics` / `enterText` switch exclusive owners of P16–P23. Do not call `enterGraphics` from `main` until a draw cog exists. Serial and ACIA keep running in both modes.
+Boot starts text VGA only. `enterGraphics` / `enterText` switch exclusive owners of P16–P23 **and** of the I2C DDC cog (text mode only). Do not call `enterGraphics` from `main` until a draw cog exists. Serial and ACIA keep running in both modes.
 
 Archive demos under `archive/` are not part of the production tree.
 
@@ -38,8 +39,9 @@ Archive demos under `archive/` are not part of the production tree.
 | ACIA bus | `acia_rc2014` PASM |
 | PS/2 | `keyboard_ps2` PASM |
 | VGA text ×2 | `hires_text_vga` (two cogs) |
+| I2C DDC | `i2c` Spin cog (EDID + DDC/CI). Not the boot EEPROM. |
 
-That is six cogs when all start successfully. Two cogs remain. Only the main Spin cog calls `acia.tx`. `enterGraphics` stops the text pair and starts 1 VECTORJET VGA cog plus 2 render cogs (seven total). One cog remains for a later Spin draw loop. See `library-vjet`.
+Text mode uses seven cogs. One cog remains. `enterGraphics` stops the text VGA pair **and** the I2C DDC cog, then starts 1 VECTORJET VGA cog plus 2 render cogs (seven total). One cog remains for a later Spin draw loop. `enterText` restores text VGA and I2C. Only the main Spin cog calls `acia.tx`. See `library-vjet`.
 
 ## Main loop data paths
 
@@ -68,18 +70,20 @@ Boot banner `"UX Module Initialised"` goes to FTDI and VGA.
 
 ## ACIA emulation (agent-critical)
 
+**Tree now:** ACIA PASM is `569cd07` wait (`waitpne` then `waitpeq wr`). Mailbox is 11 longs. Rise wait is `wait_pin_high`. `sync_irq` composes `acia_status` on a status read (after `/WAIT`). `last_rdr` is cog RAM (empty or `/RTS` high rewinds `tx_tail`). Spin pulses `DIRA[25]` when RIE/TIE; it does not RMW `acia_status`. Dropping that pulse drops host keys. Punch list: [references/remaining-errors.md](references/remaining-errors.md).
+
 - One PASM cog watches the decoded I/O address with `WAITPNE` / `WAITPEQ`.
 - Match uses `waitpeq … wr` so `/WAIT` asserts via **destination += mask**. Do not drop `wr`. Loop contract: `lang-pasm/references/acia-wait.md`.
-- Handler releases `/WAIT` with `or outa, bus_wait` after it places data or captures a write. `/RD` `/WR` rise uses `wait_pin_high` (polls `req_master`). Do not put Hub ops on the match path to `waitpeq … wr`.
+- Handler releases `/WAIT` with `or outa, bus_wait` after it places data or captures a write. `/RD` `/WR` rise uses `wait_pin_high` (poll pin and `req_master`). Do not put Hub ops on the match path to `waitpeq … wr`.
 - Hub block at `PAR` (11 longs): `rx_head`, `rx_tail`, `tx_head`, `tx_tail`, `acia_base`, `acia_config`, `acia_status`, `buffer_ptr`, `tdre_hold`, `req_master`, `req_parse_idle`, then rx/tx byte FIFOs.
 - Perspective: Z80 “receive” is Propeller `tx_*` (host→Z80); Z80 “transmit” is Propeller `rx_*`.
-- PASM `sync_irq` is the only writer of `acia_status`. `sync_irq` derives `RDRF` from the TX FIFO and `/RTS`, and `TDRE` from RX room and `tdre_hold`.
-- Spin `tx` / `rx` move FIFO indexes only. They abort on `req_parse_idle` / `req_master`. `rxCount` / `rxCheck` / `txCheck` / `txSpace` / `rxPeek` are counts or peeks only.
-- `tdreHold` / `tdreAllow` write Hub `tdre_hold` (0/1). They do not write `acia_status` or drive `/INT`.
-- `/RTS` high (`CR_TID_RTS1`): hide `RDRF`, keep FIFO bytes. `/RTS` low: set `RDRF` if the TX FIFO holds data.
-- Empty or `/RTS`-high RDR: present last byte, do not move `tx_tail`. Full TDR: drop the write, do not set `OVRN` (that bit is a receiver error).
+- PASM `sync_irq` is the live writer of `acia_status` (status read, after `/WAIT`). `sync_irq` derives `RDRF` from the TX FIFO and `/RTS`, and `TDRE` from RX room and `tdre_hold`.
+- Spin `tx` / `rx` move FIFO indexes only. They abort on `req_parse_idle` / `req_master`. `rxCount` / `rxCheck` / `txCheck` / `txSpace` / `rxPeek` are counts or peeks only. Spin does not RMW `acia_status`.
+- `tdreHold` / `tdreAllow` write Hub `tdre_hold` (0/1). They do not write `acia_status`.
+- `/RTS` high (`CR_TID_RTS1`): hide `RDRF`, keep FIFO bytes, present `last_rdr`. `/RTS` low: set `RDRF` if the TX FIFO holds data.
+- Empty or `/RTS`-high RDR: present `last_rdr`, do not move `tx_tail`. Full TDR: drop the write, do not set `OVRN` (that bit is a receiver error).
 - CR5/CR6 is a two-bit field. TIE is the exact value `CR_TIE_RTS0`, not bit 5 alone. Master reset `$03` zeros both FIFOs and sets `req_parse_idle`. It does not clear `tdre_hold`.
-- `/INT` is a **level** from this cog only (`sync_irq`). Spin must not touch `DIRA[25]`.
+- `/INT` level from `sync_irq` on a status read. Spin still pulses `DIRA[25]` when RIE/TIE so the 8085 sees a key while PASM is in `waitpeq`. Do not drop that pulse.
 
 Edit with `lang-pasm` + `hw-ux-pcb`. Datasheet: `docs/MC6850.pdf`. OBEX idioms: `lang-pasm/references/obex-pasm.md`.
 
@@ -103,24 +107,25 @@ These replace earlier WIP (`ea4502e` XON/XOFF, `569cd07` flow). Change the named
 | Host CR | Z80 CR → `term.newLine` (CR+LF). `ftdiNeed` 2. | PST and typical hosts need CR. | `term.lineFeed` only. |
 | Board reset button | Not sensed on P5 (floats, C12 200 pF). ROM `$03` is the ACIA path. | Polling P5 false-triggers. | Idle poll of P5. |
 
-Hub writers: [references/remaining-errors.md](references/remaining-errors.md). Closed repair IDs P0-1…P3-5 live there. Residual: P0-3 button sense.
+Hub writers and open IDs: [references/remaining-errors.md](references/remaining-errors.md). Residual: P0-3 button is not sensed (correct). P0-2 Spin must not wait on `req_master` while P5 is held. P2-2 still needs the Spin INT pulse. Do not idle `sync_irq`.
 
 ## VGA text path
 
 - `wmf.init(VGA_BASE_PIN, @gTextCursX)` allocates screen/colour/cursor buffers and starts `hires_text_vga`.
 - Default timing block in `hires_text_vga.spin` is selected by which CON section is uncommented; pixel rate `pr` is tuned for ~118 MHz.
+- Active table: 640×480 at about 70 Hz (80×40). EDID is reported only. DDC/CI does not set resolution.
 - Screen bytes: bit7 = inverse; bits6..0 = glyph. Row colours are words `%%RRGGBB` style.
-- `textOut` / CSI J K m skip WMF when `videoMode` is graphics. FTDI and ACIA still run.
+- `textOut` / CSI J K m skip WMF when `inGraphics` is true. FTDI and ACIA still run.
 
 ## Build / upload
 
 1. PropellerIDE (or compatible) with **`ux_module.spin` in the foreground**. Add `src/lib_vjet` to the library search path (`VJET_vUXM_vga`).
-2. Program with an **FT232** Prop Plug (`proploader` on `/dev/cu.usbserial-*`, DTR reset). See `tool-propeller`. USB CDC (`/dev/cu.usbmodem*`, 8086net 5 V stick) is console only. Download on CDC was tried and failed (ROM handshake). Paused until an FT232 is available.
+2. Program with an **FT232** Prop Plug (`proploader` on `/dev/cu.usbserial-*`, DTR reset). SparkFun FTDI Basic: DTR is pin 6 from GND (GRN). See `tool-propeller` / `ux-load`. USB CDC (`/dev/cu.usbmodem*`, 8086net 5 V stick) is console only. Download on CDC was tried and failed (ROM handshake).
 3. Toggle DTR on the FT232 to reboot stand-alone. CDC pin 1 is RTS, not DTR.
 
 ## Agent rules
 
-1. Do not start lib_vjet VGA while `hires_text_vga` still owns P16–P23 and two cogs without an explicit mode switch that stops the text driver (`wmf.stop`). Stop VECTORJET render and VGA cogs before `wmf.init`. Do not build display lists on Cog 0 while the ACIA pump must run.
+1. Do not start lib_vjet VGA while `hires_text_vga` still owns P16–P23. `enterGraphics` must `wmf.stop` and `i2c.stopCog` first. Stop VECTORJET render and VGA cogs before `wmf.init` and `i2c.startCog`. Do not build display lists on Cog 0 while the ACIA pump must run.
 2. Keep ACIA base selection in one place (`PORT_DEFAULT` / `PORT_ROMWBW` in `ux_module.spin`).
 3. Preserve non-blocking main loop behaviour; long work belongs in other cogs.
 4. New shared Hub structures need a stated single writer. Only Cog 0 calls `acia.tx`. `req_master` is Spin→PASM. `req_parse_idle` is PASM→Spin.

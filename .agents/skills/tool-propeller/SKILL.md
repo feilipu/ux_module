@@ -102,7 +102,20 @@ openspin -L src/lib_vjet -b -o build/vjet_test.binary src/lib_vjet/vjet_test.spi
 
 ## Load (FT232 Prop Plug only)
 
-The ROM bootloader clocks bits with `0xF9`. That needs a low-latency USB-UART (**FTDI FT232 / FT231**, SparkFun FTDI Basic, Parallax Prop Plug). Default reset is **DTR** on header pin 1 (`/RES`).
+The ROM bootloader clocks bits with `0xF9`. That needs a low-latency USB-UART (**FTDI FT232 / FT231**, SparkFun FTDI Basic, Parallax Prop Plug). Default reset is **DTR**.
+
+SparkFun FTDI Basic uses the FTDI TTL-232R 6-pin SIL, with **pin 6 swapped from RTS# to DTR#** so Arduino-style `/RES` works ([hookup guide](https://learn.sparkfun.com/tutorials/sparkfun-usb-to-serial-uart-boards-hookup-guide)). Align GRN (pin 6) to GRN, BLK (pin 1) to BLK.
+
+| Pin | SparkFun Basic | Colour | UX Module |
+|-----|----------------|--------|-----------|
+| 1 | GND | BLACK | GND (BLK) |
+| 2 | CTS# | BROWN | NC |
+| 3 | VCC | RED | VCC |
+| 4 | TXO | ORANGE | P31 RX |
+| 5 | RXI | YELLOW | P30 TX |
+| 6 | **DTR#** (active low) | GREEN | `!DTR` → `/RES` (GRN) |
+
+A genuine FTDI TTL-232R cable still has **RTS# on pin 6**; that needs `-D reset=rts`, not DTR.
 
 ```bash
 proploader -P                          # list serial ports
@@ -132,23 +145,24 @@ Tried and failed on this board (2026-09-10), 8086 Consultancy USB-C to UART Adap
 | `-D reset=rts-inv` (local PropLoader) | `Propeller not found` |
 | Manual GRN–BLK (`-D reset=none`) | `Propeller not found` |
 
-Cause: header pin 1 on that stick is **RTS**, not DTR. Software RTS did not reach `/RES` until a jumper exists. Even with a hand pulse, CDC ACM latency breaks the ROM `0xF9` handshake. Console at 115200 can still work.
+Cause: header pin 1 on that stick is **RTS**, not DTR. Software RTS did not reach `/RES` until a jumper exists. Even with a hand pulse, CDC ACM latency breaks the ROM `0xF9` handshake. Console at 115200 can still work. Do not use CDC to download.
 
-**Paused:** do not keep trying CDC download. Wait for an FT232. Use CDC only for `ux-screen` after EEPROM is programmed.
-
-This machine’s PropLoader (`~/Projects/PropLoader`) also has `-D reset=rts-inv` and `-D reset=none` (prints `Release /RES now`). Stock PropLoader has `dtr` and `rts` only.
+This machine’s PropLoader (`~/Projects/PropLoader`) default is **DTR** (SparkFun FTDI Basic pin 6 DTR#). Extra methods: `-D reset=rts` (stock FTDI cable pin 6), `-D reset=rts-inv`, `-D reset=none` (prints `Release /RES now`).
 
 ## Console helpers (this machine)
 
 | Command | Role |
 |---------|------|
-| `~/bin/ux-screen` | GNU `screen` 115200 8N1, RX/TX only, no XON/XOFF (XMODEM). One `/dev/cu.usbmodem*` per session. Pass `/dev/cu.usbserial-XXXX` for FT232. |
-| `~/bin/ux-load` | EEPROM load. Default `reset=rts-inv`. `-m` is manual `/RES`. Do not use until an FT232 is on the header. |
-| `~/.screenrc-ux` | `flow off`; `C-a x` / `C-a r` prefills `lsx` / `lrx` (Homebrew `lrzsz`). |
+| `~/bin/ux-screen` | GNU `screen` 115200 8N1, RX/TX only, no XON/XOFF (XMODEM). Prefers `/dev/cu.usbserial-*`. `ux-ftdi-relay` holds DTR off (macOS asserts DTR on open; that pin is `/RES`). Screen talks to `/tmp/ux-pty-$UID`. |
+| `~/bin/ux-probe` | Headless TX/RX log (`serial_probe.py`). Holds DTR off. Prints `BOOT`/`TX`/`RX` as `repr` plus `<CR>`/`<LF>`. Quit screen first. |
+| `~/bin/ux-load` | EEPROM load on SparkFun FTDI Basic. Default `reset=dtr` on `/dev/cu.usbserial-*`. `-m` is manual `/RES`. Refuses `/dev/cu.usbmodem*`. |
+| `~/.screenrc-ux` | `flow off`; `C-a s` send / `C-a r` receive prefill `lsx` / `lrx` (Homebrew `lrzsz`). `C-a q` stays unbound (XON). `C-a x` is default lockscreen. **TEMP:** `bindkey ^? stuff ^H` maps Mac Delete (RUBOUT `$7F`) to BS. Current CPM-IDE ROM echoes the erased character. **Remove that bindkey when the ROM appnote fix is burned.** |
 
 ```bash
-ux-screen                         # one CDC stick
-ux-screen /dev/cu.usbserial-XXXX  # FT232 console
+ux-screen                         # FT232 if present, else one CDC stick
+ux-screen /dev/cu.usbserial-XXXX  # force FT232
+ux-probe                          # banner only (quit screen first)
+ux-probe $'ABC123\r'              # send CR-terminated text; print TX and RX
 ```
 
 ## Optional / out of scope

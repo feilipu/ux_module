@@ -8,7 +8,7 @@ Prose style: `.agents/skills/style-ste-writing`.
 
 VECTORJET builds a display list in Spin, renders scanlines with one or more PASM cogs, and outputs VGA with a dedicated PASM cog. The UXM-prefixed files are a specialisation for the RC2014 UX Module pinout and clock. Upstream credit in the sources: IRQsome Software, with VGA lineage from Kwabena W. Agyeman / Parallax-style video generators.
 
-The library is **not** linked from `ux_module.spin` today. Demos use their own top objects (`vjet_test.spin`, `graphtest.spin`).
+The library is linked from `ux_module.spin`. Boot does not start VECTORJET. Demos still use their own top objects (`vjet_test.spin`, `graphtest.spin`).
 
 ## Files
 
@@ -127,12 +127,12 @@ For the UX Module, demos pass `pinGroup = 16/8` (group 2 → P16–P23), which m
 
 Pins P16–P23 have one owner. `hires_text_vga` (two cogs, 640×480 cells) and `VJET_vUXM_vga` (one cog, 256×240 scanlines) must not run at the same time.
 
-| Mode | VGA cogs | Other cogs that stay | Free for VECTORJET |
-|------|----------|----------------------|--------------------|
-| Text (today) | 2 (`hires_text_vga`) | Spin, FTDI, ACIA, PS/2 (4) | none (2 spare) |
-| Graphics | 1 (`VJET_vUXM_vga`) | Spin, FTDI, ACIA, PS/2 (4) | 3 (render, or 2 render + 1 Spin draw) |
+| Mode | Video cogs | Other cogs that stay | Free |
+|------|------------|----------------------|------|
+| Text | 2 (`hires_text_vga`) + 1 I2C DDC | Spin, FTDI, ACIA, PS/2 (4) | 1 |
+| Graphics | 1 (`VJET_vUXM_vga`) + 2 render | Spin, FTDI, ACIA, PS/2 (4) | 1 (Spin draw) |
 
-`wmf.stop` stops the text pair. `vga.stop` (VECTORJET) and `render.stop` stop graphics. After `cogstop`, those cogs leave the pins. Then start the other driver.
+`enterGraphics` stops the text pair and `i2c.stopCog`. `enterText` stops VECTORJET, then `wmf.init` and `i2c.startCog`. After `cogstop`, those cogs leave the pins. Then start the other driver.
 
 Do **not** build the display list on Cog 0 if the ACIA pump must stay live. Cog 0 is the only `acia.tx` writer. `vjet_test` blocks Cog 0 in `Vblank` + `draw`. That starves keyboard, FTDI, and Z80 I/O.
 
@@ -144,8 +144,8 @@ Recommended product split:
 
 Hooks in `ux_module.spin` (boot stays in text mode):
 
-1. `enterGraphics` sets `videoMode`, calls `wmf.stop`, starts VECTORJET VGA plus two render cogs, publishes an empty list.
-2. `enterText` stops VECTORJET and calls `screenInit`.
+1. `enterGraphics` sets `videoMode`, calls `wmf.stop` and `i2c.stopCog`, starts VECTORJET VGA plus two render cogs, publishes an empty list.
+2. `enterText` stops VECTORJET, calls `screenInit`, and starts the I2C DDC cog.
 3. `inGraphics` is the mode flag for `readZ80` (`textOut` is a no-op in graphics).
 4. Mailbox: `vjetStatus`, `vjetDlistPtr`, `vjetReady`. Cog 0 writes the pointer and ready flag at the switch. A later draw cog may own the lists.
 
@@ -159,10 +159,12 @@ Hub cost: eight line slots are 2 KB. Two lists of 900 longs are about 7 KB. The 
 
 Useful work while keeping the architecture intact:
 
-1. Start a Spin draw cog from `enterGraphics` (not Cog 0)
-2. Drive the back list from Z80 I/O at `PORT_VJET` (needs a command protocol)
-3. Tune render cog count against available cogs and fill rate
-4. Keep display-list field layouts documented in one place (builder comments ↔ renderer reads)
+1. Start a Spin draw cog from `enterGraphics` (not Cog 0). Wait `vjetStatus` bit 16 (`$01_00_00`), publish `vjetDlistPtr`, wait bit 17 (`$02_00_00`), then `gl.start` on the idle list. See `vjet_test.spin`.
+2. Grow `vjetList` (or reuse the text screen Hub) to two lists of about 900 longs. The boot list is four longs and stays black.
+3. Drive the back list from Z80 I/O at `PORT_VJET` (needs a command protocol)
+4. Tune render cog count against available cogs and fill rate
+5. Keep display-list field layouts documented in one place (builder comments ↔ renderer reads)
+6. Link `hexfont.spin` only when text shapes are required. Do not call `enterGraphics` from `main` until that draw cog exists.
 
 ## External references
 

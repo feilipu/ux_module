@@ -14,6 +14,7 @@
  - Added object instance identifier
  - Added isBusy
  - Added self-demo PUB Main
+ - UX Module: Spin DDC cog (EDID 0x50, DDC/CI 0x37) on swapped VGA pins
 
 -----------------------------------------------------------------------------------------------------------------------------------------------------------------------
 }}
@@ -72,6 +73,34 @@ CON
           SCL_PIN = 29                                              'This is reversed from standard pinout, to ensure that only the EEPROM
           SDA_PIN = 28                                              'appears on the I2C bus during boot process. Ensures no address conflicts.
 
+          EDID_ADDR   = $50                                            ' DDC EDID EEPROM (7-bit)
+          DDC_ADDR    = $37                                            ' DDC/CI display (7-bit); many HDMI adaptors have none
+          DDC_HOST    = $51                                            ' host source address in DDC/CI packets
+          VCP_BRIGHT  = $10                                            ' VESA VCP: luminance (does not set resolution)
+
+          CMD_NONE    = 0
+          CMD_EDID    = 1                                              ' read 128-byte base EDID
+          CMD_GETVCP  = 2                                              ' DDC/CI Get VCP
+          CMD_SETVCP  = 3                                              ' DDC/CI Set VCP
+
+VAR
+
+  long  cog                         ' 0 = stopped; else cog id + 1
+  long  stack[80]                   ' Spin cog stack. I2C cog writer of DIRA on P28/P29.
+  long  cmd                         ' Cog 0 posts CMD_*; I2C cog writes 0 when done
+  long  vcpCode                     ' VCP feature for Get/Set
+  long  vcpValue                    ' Set VCP payload
+  long  opOk                        ' 0 fail, 1 ok (I2C cog writer)
+  long  edidOk                      ' 1 after a valid checksummed EDID
+  long  ddcOk                       ' 1 after a valid Get VCP reply
+  long  hActive                     ' preferred DTD width (pixels)
+  long  vActive                     ' preferred DTD height (pixels)
+  long  vcpCur                      ' last Get VCP current value
+  long  vcpMax                      ' last Get VCP maximum
+  byte  edid[128]                   ' base EDID block
+  byte  mfg[4]                      ' 3-letter PNP id + NUL
+  byte  monName[14]                 ' monitor name ($FC) + NUL
+
 DAT
           PINscl              LONG    0                             'Use DAT variable to make the assignment stick for later calls to the object, and optionally
           PINsda              LONG    0                             'assign to default pin numbers. Use init( ) to change at runtime. Best for many chips same one bus.
@@ -106,7 +135,98 @@ PUB isInitialized
    RETURN BusInitialized
 
 
+PUB startCog : okay
+{{Float the DDC pins (P29 SCL, P28 SDA) and run bit-bang I2C in its own Spin cog.
+  VGA DDC is swapped vs the boot EEPROM. This pin pair talks to the monitor.}}
+
+  stopCog
+  init(SCL_PIN, SDA_PIN)
+  cmd := 0
+  opOk := 0
+  edidOk := 0
+  ddcOk := 0
+  okay := cog := cognew(worker, @stack) + 1
+
+
+PUB stopCog
+{{Stop the DDC cog. DIRA on P28/P29 drops with the cog.}}
+
+  if cog
+    cogstop(cog~ - 1)
+    cmd := 0
+
+
+PUB postEdid
+{{Ask the I2C cog to read EDID. Cog 0 must waitIdle before it reads Hub.}}
+
+  if cog and cmd == CMD_NONE
+    cmd := CMD_EDID
+
+
+PUB postGetVcp(code)
+{{Ask the I2C cog for one VCP. Cog 0 must waitIdle before it reads Hub.}}
+
+  if cog and cmd == CMD_NONE
+    vcpCode := code
+    cmd := CMD_GETVCP
+
+
+PUB postSetVcp(code, value)
+{{Ask the I2C cog to write one VCP. Resolution is not a VCP.}}
+
+  if cog and cmd == CMD_NONE
+    vcpCode := code
+    vcpValue := value
+    cmd := CMD_SETVCP
+
+
+PUB busy : truefalse
+{{True while the I2C cog still holds cmd.}}
+
+  truefalse := cmd <> CMD_NONE
+
+
+PUB waitIdle(ms) : truefalse | t
+{{Wait until cmd is CMD_NONE, or until ms elapses. Returns false on timeout.}}
+
+  t := cnt
+  repeat while cmd <> CMD_NONE
+    if cnt - t > (clkfreq / 1000) * ms
+      truefalse := 0
+      return
+  truefalse := 1
+
+
+PUB edidPresent : truefalse
+  truefalse := edidOk
+
+PUB ddcPresent : truefalse
+  truefalse := ddcOk
+
+PUB hPix : n
+  n := hActive
+
+PUB vPix : n
+  n := vActive
+
+PUB bright : n
+  n := vcpCur
+
+PUB vcpLimit : n
+  n := vcpMax
+
+PUB mfgPtr : p
+  p := @mfg
+
+PUB namePtr : p
+  p := @monName
+
+PUB edidPtr : p
+  p := @edid
+
+
 'CHIP LEVEL METHODS    - calls BUS LEVEL METHODS below, encapsulates the details of the workings of the bus
+'DDC uses callChip / start / stop / writeBus / readBus. The A8/A16 helpers stay for other chips.
 '=================================================================================================================================================
 'Write
 
@@ -394,6 +514,145 @@ PUB stop                                                            'Send stop s
   DIRA[PINscl] := 0                                                 'float SCL and
   WAITPEQ(|<PINscl,|<PINscl,0)                                      'wait for SCL to be released
   DIRA[PINsda] := 0                                                 'and leave SDA floating
+
+
+PRI worker
+{{I2C cog. Owns DIRA on P28/P29. Cog 0 only posts cmd.}}
+
+  outa[PINscl] := 0
+  outa[PINsda] := 0
+  dira[PINscl] := 0
+  dira[PINsda] := 0
+  repeat
+    case cmd
+      CMD_EDID:
+        opOk := doEdid
+        cmd := CMD_NONE
+      CMD_GETVCP:
+        opOk := doGetVcp
+        cmd := CMD_NONE
+      CMD_SETVCP:
+        opOk := doSetVcp
+        cmd := CMD_NONE
+      other:
+        waitcnt(clkfreq / 1000 + cnt)
+
+
+PRI doEdid : ok | i, sum
+{{Read 128-byte base EDID at 0x50. Parse mfg, name, preferred timing.}}
+
+  edidOk := 0
+  hActive := 0
+  vActive := 0
+  bytefill(@mfg, 0, 4)
+  bytefill(@monName, 0, 14)
+  bytefill(@edid, 0, 128)
+  ok := 0
+  if callChip(EDID_ADDR << 1) <> ACK
+    return
+  writeBus(0)
+  start
+  if writeBus(EDID_ADDR << 1 | 1) <> ACK
+    stop
+    return
+  repeat i from 0 to 126
+    edid[i] := readBus(ACK)
+  edid[127] := readBus(NAK)
+  stop
+  if edid[0] <> 0 or edid[1] <> $FF or edid[7] <> 0
+    return
+  sum := 0
+  repeat i from 0 to 127
+    sum += edid[i]
+  if (sum & $FF) <> 0
+    return
+  parseEdid
+  edidOk := 1
+  ok := 1
+
+
+PRI parseEdid | b0, b1, i, base, n
+{{Fill mfg, monName, hActive, vActive from a valid base block.}}
+
+  b0 := edid[8]
+  b1 := edid[9]
+  mfg[0] := ((b0 >> 2) & $1F) + "A" - 1
+  mfg[1] := (((b0 & 3) << 3) | (b1 >> 5)) + "A" - 1
+  mfg[2] := (b1 & $1F) + "A" - 1
+  mfg[3] := 0
+  repeat i from 0 to 3
+    base := 54 + i * 18
+    if edid[base] == 0 and edid[base+1] == 0 and edid[base+3] == $FC
+      n := 0
+      repeat while n < 13
+        if edid[base+5+n] == $0A
+          quit
+        monName[n] := edid[base+5+n]
+        n++
+      monName[n] := 0
+    elseif (edid[base] <> 0 or edid[base+1] <> 0) and hActive == 0
+      hActive := edid[base+2] | ((edid[base+4] & $F0) << 4)
+      vActive := edid[base+5] | ((edid[base+7] & $F0) << 4)
+
+
+PRI doGetVcp : ok | pkt[6], reply[11], i, x
+{{DDC/CI Get VCP Feature. vcpCode in, vcpCur/vcpMax out.}}
+
+  ddcOk := 0
+  vcpCur := 0
+  vcpMax := 0
+  ok := 0
+  pkt[0] := DDC_HOST
+  pkt[1] := $82
+  pkt[2] := $01
+  pkt[3] := vcpCode
+  x := DDC_ADDR << 1
+  repeat i from 0 to 3
+    x ^= pkt[i]
+  pkt[4] := x
+  if callChip(DDC_ADDR << 1) <> ACK
+    return
+  repeat i from 0 to 4
+    writeBus(pkt[i])
+  stop
+  waitcnt(clkfreq / 20 + cnt)                     ' 50 ms before the reply
+  start
+  if writeBus((DDC_ADDR << 1) | 1) <> ACK
+    stop
+    return
+  repeat i from 0 to 9
+    reply[i] := readBus(ACK)
+  reply[10] := readBus(NAK)
+  stop
+  if reply[2] <> $02 or reply[3] <> 0 or reply[4] <> vcpCode
+    return
+  vcpMax := (reply[6] << 8) | reply[7]
+  vcpCur := (reply[8] << 8) | reply[9]
+  ddcOk := 1
+  ok := 1
+
+
+PRI doSetVcp : ok | pkt[8], i, x
+{{DDC/CI Set VCP Feature. vcpCode and vcpValue in.}}
+
+  ok := 0
+  pkt[0] := DDC_HOST
+  pkt[1] := $84
+  pkt[2] := $03
+  pkt[3] := vcpCode
+  pkt[4] := (vcpValue >> 8) & $FF
+  pkt[5] := vcpValue & $FF
+  x := DDC_ADDR << 1
+  repeat i from 0 to 5
+    x ^= pkt[i]
+  pkt[6] := x
+  if callChip(DDC_ADDR << 1) <> ACK
+    return
+  repeat i from 0 to 6
+    writeBus(pkt[i])
+  stop
+  waitcnt(clkfreq / 20 + cnt)
+  ok := 1
 
 
 DAT

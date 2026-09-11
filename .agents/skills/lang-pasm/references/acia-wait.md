@@ -16,10 +16,11 @@ At entry the cog ORs `/M1` and `WAIT_PIN` into the Hub `acia_base` long. Each pa
 
 ```
 waitpne outa, port_active_mask      ' this cycle has ended (idle: returns at once)
-… idle INA poll / sync_irq …        ' optional; cog ops only on the match path
 waitpeq outa, port_active_mask wr   ' match + assert /WAIT
 andn    outa, bus_int               ' undo carry into P25
 ```
+
+Do not put Hub work (`RDLONG` / `WRLONG` / `CALL #sync_irq`) or an idle poll between `waitpne` and `waitpeq`. `1ea0c6b` did that and missed the 8085 I/O cycle. `sync_irq` runs in `transmit_status` after `/WAIT` is asserted.
 
 Then decode A0 / `/RD` / `/WR`. Handlers release `/WAIT` with `or outa, bus_wait` before they return to `wait`. After release, wait for `/RD` or `/WR` high with `wait_pin_high` (poll `req_master`). Do not use `waitpeq bus_rd` / `bus_wr` for that wait.
 
@@ -43,11 +44,11 @@ Then decode A0 / `/RD` / `/WR`. Handlers release `/WAIT` with `or outa, bus_wait
 
 Hold the pin low while `(RIE and (RDRF or OVRN)) or (exact CR5/CR6 TIE and TDRE)`. Float it when that is false. `OUTA` bit 25 stays 0 so a driven pin is low. `SR_IRQ` follows the pin (`docs/MC6850.pdf` pages 6 and 9).
 
-`sync_irq` runs from this cog only. It is the only writer of `acia_status`. Idle poll and `wait_pin_high` also sample `req_master` and may `jmp #do_master_reset`. Spin `tx` / `rx` update FIFO indexes and abort on reset flags. Spin `tdreHold` / `tdreAllow` write Hub `tdre_hold`. Spin does not touch `DIRA[25]`. Product flow: `module-ux`. Closed IDs: `module-ux/references/remaining-errors.md`.
+Tree: `sync_irq` composes `acia_status` on a status read after `/WAIT`. Spin does not RMW that long. Spin still pulses `DIRA[25]` when RIE/TIE. `wait_pin_high` samples `req_master` and may `jmp #do_master_reset`. Spin `tx` / `rx` abort on reset flags. Spin `tdreHold` / `tdreAllow` write Hub `tdre_hold`. Product flow: `module-ux`. Open IDs: `module-ux/references/remaining-errors.md`.
 
 ## Related
 
-- Code: `src/acia_rc2014.spin` labels `wait`, `matched`, `sync_irq`
+- Code: `src/acia_rc2014.spin` labels `wait`, `sync_irq`
 - Flags and FIFOs: `module-ux`
 - Pins: `hw-ux-pcb`
 - OBEX `WAITPEQ` tip: [obex-pasm.md](obex-pasm.md)

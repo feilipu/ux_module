@@ -38,10 +38,10 @@ Board: RC2014 User Experience Module (Propeller P8X32A). Schematics and gerbers:
 | P25 | /INT (open-collector via diode) |
 | P26 | PS/2 clock |
 | P27 | PS/2 data |
-| P28 | I2C **SDA** (swapped vs Propeller default labels in `i2c.spin`) |
-| P29 | I2C **SCL** |
-| P30 | FTDI / Prop Plug TX (Propeller → host). SparkFun FTDI Basic pin 2 RXI |
-| P31 | FTDI / Prop Plug RX (host → Propeller). SparkFun FTDI Basic pin 3 TXO |
+| P28 | I2C **SDA** for Spin DDC (`i2c.spin`). Bootloader SCL. VGA pin 12 (VESA SDA). |
+| P29 | I2C **SCL** for Spin DDC. Bootloader SDA. VGA pin 15 (VESA SCL). |
+| P30 | FTDI TX (Propeller → host). SparkFun FTDI Basic pin 5 RXI (YELLOW) |
+| P31 | FTDI RX (host → Propeller). SparkFun FTDI Basic pin 4 TXO (ORANGE) |
 
 Constants: `src/ux_module.spin`, `src/acia_rc2014.spin`, `src/i2c.spin`.
 
@@ -81,9 +81,18 @@ Eight pins through resistor DAC (270 Ω / 560 Ω / 130 Ω) as documented in `hir
 
 1. Change pin numbers in **one** owning module, then import via `object#CONST`.
 2. Any ACIA mask change must update `port_active_mask`, `DATA_BASE`, and schematic comments together.
-3. Do not put extra I2C devices on P28/P29 that answer during Propeller boot.
+3. Do not put extra I2C devices on P28/P29 that answer during Propeller boot. VGA DDC SDA/SCL are swapped so a monitor EDID chip does not ACK the bootloader. After boot, `i2c.startCog` uses the swapped pair to read EDID at 0x50 and DDC/CI at 0x37. Do not talk to the 24LC256 with that pin pair.
 4. DTR on the FTDI connector resets the Propeller (same idea as Arduino). Tools: `serial_dtr.py`, `serial_tool.py`. Load the chip with an **FT232** Prop Plug (`tool-propeller`). USB CDC is not a loader.
-5. SparkFun FTDI Basic 6-pin is DTR, RXI, TXO, VCC, CTS, GND. DTR is net `!DTR` to Propeller `/RES` only. CTS is not connected. RTS is not on this header. The Propeller cannot pause the host with RTS/CTS or DTR. Software flow choice (no XON/XOFF): `module-ux` revert notes.
+5. SparkFun FTDI Basic 6-pin matches the FTDI TTL-232R SIL except **pin 6 is DTR#**, not RTS# ([hookup guide](https://learn.sparkfun.com/tutorials/sparkfun-usb-to-serial-uart-boards-hookup-guide)). Align GRN to GRN, BLK to BLK. CTS is NC. RTS is not on this header. Load with `proploader` DTR (`ux-load`). No RTS/CTS or DTR flow to the Propeller. Software flow: `module-ux` revert notes.
+
+| Pin | SparkFun / Arduino | FTDI TTL-232R cable | Colour | UX Module |
+|-----|--------------------|---------------------|--------|-----------|
+| 1 | GND | GND | BLACK | GND (BLK) |
+| 2 | CTS# | CTS# | BROWN | NC |
+| 3 | VCC | VCC | RED | VCC |
+| 4 | TXO | TXD | ORANGE | P31 RX |
+| 5 | RXI | RXD | YELLOW | P30 TX |
+| 6 | **DTR#** | RTS# | GREEN | `!DTR` → `/RES` (GRN) |
 6. 8086 Consultancy USB-C CDC adaptor (5 V, [Tindie](https://www.tindie.com/products/8086net/uusbusb-c-cdc-serial-adaptor-5v/)) is RTS, RX, TX, 5V, CTS, GND. Pin 1 is RTS, not DTR. macOS node `/dev/cu.usbmodem*`. Fine for 115200 console (`ux-screen`). Do not use it as a Prop Plug. An FT232 enumerates as `/dev/cu.usbserial-*`.
 
 ## Related
