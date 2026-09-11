@@ -28,14 +28,11 @@ ux_module.spin
 ├── keyboard_ps2.spin       PS/2 decode on P27 data / P26 clock
 ├── acia_rc2014.spin        6850 register and bus timing emulator
 ├── i2c.spin                DDC EDID / DDC/CI Spin cog (P29 SCL / P28 SDA, swapped)
-├── wmf_terminal_vga.spin   Screen buffer, colours, terminal print helpers
-│   └── hires_text_vga.spin Dual-cog VGA text engine (Parallax / Chip Gracey)
-├── VJET_vUXM_vga.spin      VECTORJET VGA cog (search path `src/lib_vjet`)
-├── VJET_vUXM_rendering.spin
-└── VJET_v01_displaylist.spin
+└── wmf_terminal_vga.spin   Screen buffer, colours, terminal print helpers
+    └── hires_text_vga.spin Dual-cog VGA text engine (Parallax / Chip Gracey)
 ```
 
-Compile and upload with `ux_module.spin` as the top object. Add `src/lib_vjet` to the library search path.
+Compile and upload with `ux_module.spin` as the top object. Use `-L src` only. VECTORJET lives under `src/lib_vjet` with its own demo tops. The product top does not link it.
 
 ## Pin roles (summary)
 
@@ -59,11 +56,12 @@ Typical production start order in `ux_module.main`:
 1. FTDI terminal cog (`terminal_ftdi.start`)
 2. ACIA cog (`acia.start`)
 3. Two VGA text cogs (`wmf.init` → `hires_text_vga.start`)
-4. PS/2 cog (`kbd.start`)
-5. I2C DDC cog (`i2c.startCog`) after VGA so the monitor is alive
-6. Cog 0 remains in the main Spin loop (`kbdToZ80`, `termToZ80`, `readZ80`)
+4. I2C DDC cog (`i2c.startCog`) after VGA so the monitor is alive
+5. PS/2 cog (`kbd.start`)
+6. 1 ms Z80 `/RESET` pulse (no FIFO flush)
+7. Cog 0 remains in the main Spin loop (`kbdToZ80`, `termToZ80`, `readZ80`)
 
-Text mode uses seven of eight cogs. I2C is a Spin cog, not PASM. It reads EDID and DDC/CI. It does not change VGA timing. `enterGraphics` stops I2C and text VGA so VECTORJET can use those three cogs. `enterText` starts them again. Only the main cog calls `acia.tx`. Main skips `kbdToZ80` during Z80→host XMODEM (`inXmodem`) and host→Z80 XMODEM (`hostXmodem` from FTDI `SOH`/`STX`).
+Text mode uses seven of eight cogs. I2C is a Spin cog, not PASM. It reads EDID and DDC/CI. It does not change VGA timing. The spare cog is unused. Only the main cog calls `acia.tx`. Main skips `kbdToZ80` during a Z80→host XMODEM session (`z80XmSess`, including the ACK gap) and a host→Z80 packet session (`hostXm <> OFF`). Trailer bytes are counted, not sniffed. DDC still runs while the 8085 is live. Do not hold `/RESET` across DDC.
 
 ## Data paths
 
@@ -107,11 +105,11 @@ The PASM cog owns `/INT` as a level, held low while RIE or TIE match the flags. 
 
 The active block is 640×480 at about 70 Hz (VGA 60 Hz 800×525 totals, `pr=28`). EDID preferred timing is reported at boot. It does not retune this table. DDC/CI does not set resolution.
 
-Cursors are six bytes: text X/Y/mode and mouse X/Y/mode. The UX Module uses the text cursor and leaves the mouse cursor disabled.
+Cursors are six bytes: text X/Y/mode and mouse X/Y/mode. The UX Module uses the text cursor and leaves the mouse cursor disabled. Overlay X/Y copies the WMF column and row after text ops. Idle backspace at column 0 is eaten. The firmware does not guess a shell prompt width.
 
 ## Relation to VECTORJET
 
-`src/lib_vjet` is linked from `ux_module.spin` but does not start at boot. `enterGraphics` stops text VGA and the I2C DDC cog, then starts VECTORJET (empty list, black). `enterText` reverses that. Cog 0 keeps the ACIA pump. Put `draw` on another Spin cog. See `ARCHITECTURE_LIB_VJET.md`.
+`src/lib_vjet` is not linked from the product top. Compile VECTORJET demos with their own top objects and `-L src -L src/lib_vjet`. Pins P16–P23 have one owner. See `ARCHITECTURE_LIB_VJET.md`.
 
 ## External references
 

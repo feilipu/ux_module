@@ -2,6 +2,8 @@
 
 Policy (what to keep or undo) is the revert-notes table in `module-ux`. This file is the tree vs that policy. It is **not** a clean bill of health.
 
+XMODEM, VGA cursor, and boot-reset findings: [ship-review.md](ship-review.md).
+
 Bus cog: **`569cd07` wait loop** (`rdlong` base, `waitpne`, `waitpeq wr`). No Hub between those waits. Rise wait is `wait_pin_high` (poll pin and `req_master`). Mailbox is **11 longs**. `last_rdr` is cog RAM.
 
 Probe after each slice: ROM banner plus `ABC\r` → `ABC\r\n\r\n> `.
@@ -14,13 +16,13 @@ Probe after each slice: ROM banner plus `ABC\r` → `ABC\r\n\r\n> `.
 | **P0-2** | Sample `req_master` in idle/`wait_pin_high`; no `waitpeq` on `/RD` `/WR` rise | **Partial.** `wait_pin_high` samples `req_master`. Spin does **not** wait on the flag. Idle Hub between `waitpne` and `waitpeq wr` is forbidden. | Rise abort only. |
 | **P0-3** | Do not poll P5. Button → ROM `$03`. Keep `tdre_hold` | **Landed residual.** P5 is not polled. `$03` zeros FIFOs and keeps `tdre_hold`. | Do not poll P5. |
 | **P0-4** | FTDI RX drop when full; no XON/XOFF | **In tree.** | Do not restore wrap-over or XON. |
-| **P0-5** | Skip `kbdToZ80` on host `SOH`/`STX` | **In tree.** | Done. |
+| **P0-5** | Skip `kbdToZ80` on host `SOH`/`STX` | **Landed (packet machine).** | `hostXm` ends on `EOT`/`ETB`/`CAN` in GAP only. `z80XmSess` covers the ACK gap. |
 | **P1-1** | `req_parse_idle` before PASM zeros indexes; Spin `tx`/`rx` abort | **Landed.** | Keep the take in the loop. |
 | **P1-2** | Pump LF when FTDI TX is full | **In tree.** | Done. |
 | **P1-3** | `tdreAllow` only when the next byte fits | **Landed.** `sync_irq` honours `tdre_hold`. | After `/WAIT` only. |
-| **P1-4** | XMODEM-1K parser | **In tree.** | Done (parser only). |
+| **P1-4** | XMODEM-1K parser | **Landed.** Opaque trailers (1 checksum, 2 CRC / `STX`). | Do not sniff CRC-lo as `SOH`. No live transfer check yet. |
 | **P2-1** | Panic sets `acia_config` `$03` | **Landed.** | `do_master_reset` does not clear `tdre_hold`. |
-| **P2-2** | PASM only writer of `acia_status` | **Partial.** Live compose is `sync_irq` on a status read. Spin does not RMW `acia_status`. Spin still **pulses** `DIRA[25]` when RIE/TIE. Removing that pulse dropped host keys (RX empty). `start` writes initial status before `cognew`. | Do not idle `sync_irq`. Keep the Spin INT pulse. |
+| **P2-2** | PASM only writer of `acia_status` | **Partial.** Live compose is `sync_irq` on a status read. Spin does not RMW `acia_status`. Spin still **pulses** `DIRA[25]` when RIE/TIE. Trailing `tx` pulse uses `not (config & mask)`. Removing that pulse dropped host keys (RX empty). `start` writes initial status before `cognew`. | Do not idle `sync_irq`. Keep the Spin INT pulse. |
 | **P2-3** | Full TDR: drop write, no `OVRN` | **Landed.** | Done. |
 | **P2-4** | Delete `txFlush` / `rxFlush` | **Landed.** | Done. |
 | **P2-5** | Hub map | **11 longs.** `last_rdr` is cog RAM. | See table. |

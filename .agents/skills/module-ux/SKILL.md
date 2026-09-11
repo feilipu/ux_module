@@ -19,14 +19,11 @@ ux_module.spin                 ' top object — compile/upload this
 ├── keyboard_ps2.spin          ' PS/2 on P27/P26
 ├── acia_rc2014.spin           ' MC6850 bus emulator (PASM cog)
 ├── i2c.spin                   ' DDC EDID / DDC/CI Spin cog (P29 SCL, P28 SDA)
-├── wmf_terminal_vga.spin      ' terminal services + screen buffer
-│   └── hires_text_vga.spin    ' dual-cog VGA text (Chip Gracey)
-├── VJET_vUXM_vga.spin         ' src/lib_vjet (search path)
-├── VJET_vUXM_rendering.spin
-└── VJET_v01_displaylist.spin  ' empty list at boot; draw cog later
+└── wmf_terminal_vga.spin      ' terminal services + screen buffer
+    └── hires_text_vga.spin    ' dual-cog VGA text (Chip Gracey)
 ```
 
-Boot starts text VGA only. `enterGraphics` / `enterText` switch exclusive owners of P16–P23 **and** of the I2C DDC cog (text mode only). Do not call `enterGraphics` from `main` until a draw cog exists. Serial and ACIA keep running in both modes.
+Boot is text VGA only. There is no DIAG_ switch. VECTORJET stays under `src/lib_vjet` with its own demo tops. Do not link it from `ux_module.spin` until graphics work resumes (`library-vjet`).
 
 Archive demos under `archive/` are not part of the production tree.
 
@@ -41,7 +38,7 @@ Archive demos under `archive/` are not part of the production tree.
 | VGA text ×2 | `hires_text_vga` (two cogs) |
 | I2C DDC | `i2c` Spin cog (EDID + DDC/CI). Not the boot EEPROM. |
 
-Text mode uses seven cogs. One cog remains. `enterGraphics` stops the text VGA pair **and** the I2C DDC cog, then starts 1 VECTORJET VGA cog plus 2 render cogs (seven total). One cog remains for a later Spin draw loop. `enterText` restores text VGA and I2C. Only the main Spin cog calls `acia.tx`. See `library-vjet`.
+Text mode uses seven of eight cogs. I2C is a Spin cog, not PASM. The spare cog is unused. Only the main cog calls `acia.tx`. Main skips `kbdToZ80` during a Z80→host session (`z80XmSess`) and a host→Z80 packet session (`hostXm <> OFF`).
 
 ## Main loop data paths
 
@@ -56,13 +53,13 @@ Cog 0 is the only `acia.tx` writer. Do not add a pump cog. Each of `kbdToZ80`, `
 
 `readZ80` is a non-blocking parser (`PARSE_IDLE` / `PARSE_ESC` / `PARSE_CSI` / `PARSE_CSI_M` / `PARSE_XMODEM_*`). Each call uses bytes that are already in the FIFO. Pump `ftdiNeed==0` bytes even when FTDI TX is full. Allow `TDRE` only when the next byte fits.
 
-`inXmodem` is Z80 TDR `SOH`/`STX` through trailer (Z80→host). `hostXmodem` is FTDI `SOH`/`STX` until `EOT`/`CAN` (host→Z80). Skip `kbdToZ80` if either is true. Ctrl-A (`$01`) also sets `hostXmodem`. Panic or `$03` clears it.
+`inXmodem` is `z80XmSess`: Z80 TDR `SOH`/`STX` until idle `EOT`/`ETB`/`CAN` (includes the ACK gap). Trailer count is 1 (checksum) or 2 (CRC-16 / `STX`). Do not sniff CRC-lo as a new frame. Host `'C'` / `NAK` while not in a host session set CRC vs checksum for the next Z80→host send. `hostXmodem` is `hostXm <> OFF`: packet machine. `EOT`/`ETB`/`CAN` end the session only in the gap, not in payload. Skip `kbdToZ80` if either is true. Ctrl-A (`$01`) still starts a host session. Panic or `$03` clears both.
 
 Arrow, Home, Left, and Right need three FIFO slots (`acia.txSpace >= 3`) before `kbd.getKey`. Other keys need one slot (`acia.txCheck`).
 
 If FTDI TX cannot take the next byte, `readZ80` calls `acia.tdreHold`. `term.rxCount` is a count only. There is no XON/XOFF. FTDI RX PASM drops inbound bytes when that FIFO is full. The header does not wire CTS or RTS.
 
-CTRL+ALT+DEL: `outa[5]~`, drive P5 1 ms, `masterReset` (FIFOs, `last_rdr`, `tdre_hold`, config `$03`), `tdreHold`, `PARSE_IDLE`, VGA clear, FTDI clear only if `txSpace => 4`, then release P5. Z80 `CR_RESET` sets `req_parse_idle` **then** zeros FIFOs. Keep `tdre_hold`. Spin `tx`/`rx` abort while that flag is set.
+CTRL+ALT+DEL: `outa[5]~`, drive P5 1 ms, `masterReset` (FIFOs, `last_rdr`, `tdre_hold`, config `$03`), `tdreHold`, `PARSE_IDLE`, clear `z80XmSess` and `hostXm`, VGA clear, FTDI clear only if `txSpace => 4`, then release P5. Z80 `CR_RESET` sets `req_parse_idle` **then** zeros FIFOs. Keep `tdre_hold`. Spin `tx`/`rx` abort while that flag is set. Boot `pulseZ80Reset` is 1 ms and does not flush FIFOs. Do not hold `/RESET` across DDC.
 
 ASCII and XMODEM `CON` names are lookup tables. Do not delete unused names.
 
@@ -97,35 +94,35 @@ These replace earlier WIP (`ea4502e` XON/XOFF, `569cd07` flow). Change the named
 | `TDRE` hold | Hub `tdre_hold`. `tdreHold` / `tdreAllow` write that long only. | PASM `receive_data` and Spin `rx` used to set `TDRE` and undo the hold. | Restore only if PASM and `acia.rx` both honour a sticky hold. |
 | `OVRN` | Receiver bit only. Full TDR write is dropped. Do not set `OVRN`. | Datasheet `OVRN` is unread RDR, not a TDR overwrite. ROMs that saw `OVRN` read RDR or issued `$03`. | Setting `OVRN` on TDR full is the old leak. Do not restore it. |
 | Pump cap | `PUMP_LIMIT` (16) bytes per role per main-loop pass. | Unbounded `termToZ80` delayed `tdreHold`. | Raise or remove the cap if a path needs more than 16 bytes per pass at 115200. |
-| FTDI emit | `readZ80` peeks, uses `ftdiNeed`, then `acia.rx`. BS/DEL need 3 TX slots. | `term.tx` blocks. One free slot plus backspace stalled Cog 0. | Blocking `term.tx` from the parser is the old stall. |
+| FTDI emit | `readZ80` peeks, uses `ftdiNeed`, then `acia.rx`. Idle BS/DEL need 3 TX slots if column > 0, else 0. | `term.tx` blocks. One free slot plus backspace stalled Cog 0. | Blocking `term.tx` from the parser is the old stall. |
 | Empty / `/RTS` RDR | Present `last_rdr`. Do not move `tx_tail`. | Datasheet keeps the last byte. `/RTS` high must not consume queued keys. | Presenting `0` and advancing the tail was the empty-FIFO junk path. |
 | CTRL+ALT+DEL | Hold P5 1 ms, `masterReset` (FIFOs, `last_rdr`, `tdre_hold`, config `$03`), `tdreHold`, VGA `CS`, FTDI clear if 4 TX slots. Then release P5. | Panic must not block Cog 0 on `term.tx` while the Z80 runs. | Short pulse then blocking `term.clear`. |
 | Z80 `CR_RESET` | Set `req_parse_idle` first. Zero FIFOs and `last_rdr`. **Keep `tdre_hold`.** | Parser is not a 6850 object. `$03` must not mean “FTDI has room.” Flag-first stops Spin tearing indexes. | Clearing `tdre_hold` on `$03`, or zeroing indexes before the flag. |
 | `req_master` sample | Idle poll, `sync_irq`, and `wait_pin_high`. | `waitpeq /RD /WR` ignored `req_master` and deadlocked Cog 0. | Sample only in `sync_irq`. |
 | XON/XOFF | Removed. No `term.rxFlow`. FTDI RX drops when full. | Binary XMODEM can contain `0x11`/`0x13`. Host cannot be paused on this header. | Restore `rxFlow` from `ea4502e` only for interactive paste. Wrap-over of FTDI RX. |
-| Keyboard vs XMODEM | Skip `kbdToZ80` when `inXmodem` or `hostXmodem`. | Host→Z80 `SOH`/`STX` used to inject keys into RDR. | Gate on Z80 TDR `SOH` only. |
+| Keyboard vs XMODEM | Skip `kbdToZ80` when `z80XmSess` or `hostXm <> OFF`. | Host payload `EOT` used to unmute the keyboard. Packet gap used to inject keys. | Latch on any UART `EOT`. Gate only `PARSE_XMODEM_*`. |
 | Host CR | Z80 CR → `term.newLine` (CR+LF). `ftdiNeed` 2. | PST and typical hosts need CR. | `term.lineFeed` only. |
 | Board reset button | Not sensed on P5 (floats, C12 200 pF). ROM `$03` is the ACIA path. | Polling P5 false-triggers. | Idle poll of P5. |
 
-Hub writers and open IDs: [references/remaining-errors.md](references/remaining-errors.md). Residual: P0-3 button is not sensed (correct). P0-2 Spin must not wait on `req_master` while P5 is held. P2-2 still needs the Spin INT pulse. Do not idle `sync_irq`.
+Hub writers and open IDs: [references/remaining-errors.md](references/remaining-errors.md). Residual: P0-3 button is not sensed (correct). P0-2 Spin must not wait on `req_master` while P5 is held. P2-2: keep the Spin INT pulse (`not (config & mask)` on the trailing `tx` pulse). Do not idle `sync_irq`. Review checklist: [references/ship-review.md](references/ship-review.md).
 
 ## VGA text path
 
-- `wmf.init(VGA_BASE_PIN, @gTextCursX)` allocates screen/colour/cursor buffers and starts `hires_text_vga`.
+- `wmf.init(VGA_BASE_PIN, @gTextCursX)` allocates screen/colour/cursor buffers and starts `hires_text_vga`. Overlay `gTextCursX/Y` copies WMF after text ops (`syncCurs`). Idle BS-space-BS runs only if column > 0. Do not guess a prompt width.
 - Default timing block in `hires_text_vga.spin` is selected by which CON section is uncommented; pixel rate `pr` is tuned for ~118 MHz.
 - Active table: 640×480 at about 70 Hz (80×40). EDID is reported only. DDC/CI does not set resolution.
 - Screen bytes: bit7 = inverse; bits6..0 = glyph. Row colours are words `%%RRGGBB` style.
-- `textOut` / CSI J K m skip WMF when `inGraphics` is true. FTDI and ACIA still run.
+- `textOut` always writes WMF. Product build does not switch to VECTORJET.
 
 ## Build / upload
 
-1. PropellerIDE (or compatible) with **`ux_module.spin` in the foreground**. Add `src/lib_vjet` to the library search path (`VJET_vUXM_vga`).
+1. PropellerIDE (or compatible) with **`ux_module.spin` in the foreground**. Product objects live under `src/`. Add `src/lib_vjet` only when you compile a VECTORJET demo.
 2. Program with an **FT232** Prop Plug (`proploader` on `/dev/cu.usbserial-*`, DTR reset). SparkFun FTDI Basic: DTR is pin 6 from GND (GRN). See `tool-propeller` / `ux-load`. USB CDC (`/dev/cu.usbmodem*`, 8086net 5 V stick) is console only. Download on CDC was tried and failed (ROM handshake).
 3. Toggle DTR on the FT232 to reboot stand-alone. CDC pin 1 is RTS, not DTR.
 
 ## Agent rules
 
-1. Do not start lib_vjet VGA while `hires_text_vga` still owns P16–P23. `enterGraphics` must `wmf.stop` and `i2c.stopCog` first. Stop VECTORJET render and VGA cogs before `wmf.init` and `i2c.startCog`. Do not build display lists on Cog 0 while the ACIA pump must run.
+1. Do not start lib_vjet VGA from `ux_module.spin`. `hires_text_vga` owns P16–P23 for the product build. When graphics work resumes, stop text VGA and the I2C DDC cog before `VJET_vUXM_vga.start` (`library-vjet`).
 2. Keep ACIA base selection in one place (`PORT_DEFAULT` / `PORT_ROMWBW` in `ux_module.spin`).
 3. Preserve non-blocking main loop behaviour; long work belongs in other cogs.
 4. New shared Hub structures need a stated single writer. Only Cog 0 calls `acia.tx`. `req_master` is Spin→PASM. `req_parse_idle` is PASM→Spin.

@@ -11,10 +11,6 @@ CON
   _clkmode      = XTAL1 + PLL16X
   _xinfreq      = 7_372_800
 
-  ' Bring-up. One of these is 1, or both 0 for the full path.
-  DIAG_TERM_ECHO   = 0  ' FTDI local echo only
-  DIAG_ACIA_BRIDGE = 1  ' shipped path: FTDI + ACIA + text VGA + PS/2 + DDC. No VECTORJET.
-
 
 CON
 
@@ -82,6 +78,7 @@ CON
   XMODEM_NAK    = $15 ' Negative acknowledge
   XMODEM_ETB    = $17 ' End of Transmission Block
   XMODEM_CAN    = $18 ' Cancel
+  XMODEM_C      = $43 ' receiver CRC request
 
   ' Non-blocking Z80 output parser (readZ80). Up to PUMP_LIMIT bytes per call.
   PARSE_IDLE      = 0   ' normal stream
@@ -91,17 +88,16 @@ CON
   PARSE_XMODEM_N  = 4   ' SOH/STX, waiting packet number
   PARSE_XMODEM_M  = 5   ' waiting complemented packet number
   PARSE_XMODEM    = 6   ' data bytes (z80Remain)
-  PARSE_XMODEM_CS = 7   ' first trailer (checksum or CRC hi)
-  PARSE_XMODEM_CRC= 8   ' second trailer unless next-frame start
+  PARSE_XMODEM_CS = 7   ' opaque trailers (z80XmTrail: 1 checksum, 2 CRC)
+
+  HOST_XM_OFF     = 0   ' no host→Z80 XMODEM session
+  HOST_XM_GAP     = 1   ' between packets: SOH/STX/EOT/ETB/CAN only
+  HOST_XM_BLK     = 2
+  HOST_XM_NBLK    = 3
+  HOST_XM_DATA    = 4
+  HOST_XM_TRAIL   = 5
 
   PUMP_LIMIT      = 16  ' max bytes each of kbd / FTDI / ACIA drain per main-loop pass
-
-  VIDEO_TEXT      = 0   ' hires_text_vga owns P16-P23 (boot / serial console)
-  VIDEO_GRAPHICS  = 1   ' VECTORJET owns P16-P23; enterGraphics, not boot
-  VJET_PIN_GROUP  = VGA_BASE_PIN / 8
-  VJET_RENDER_COGS = 2  ' VGA + 2 render; one cog left for a later Spin draw loop
-  VJET_LINEBUF_LONGS = vjetrend#WIDTH * vjetrend#LINE_BUFFERS / 4
-  VJET_DLIST_LONGS = 4  ' empty list (next=0); grow when a draw cog exists
 
 
 VAR
@@ -124,17 +120,17 @@ VAR
   long  gScreenBufferPtr                              ' holds the address of the video buffer passed back from the VGA driver
 
   byte  z80Parse                                      ' PARSE_* state for readZ80
-  byte  hostXmodem                                    ' FTDI SOH/STX seen; skip keyboard until EOT/CAN
+  byte  z80XmSess                                     ' Z80→host session (SOH/STX until idle EOT/ETB/CAN)
+  byte  z80XmCrc                                      ' 1: CRC-16 trailers (2), 0: checksum (1)
+  byte  z80XmTrail                                    ' trailer bytes still opaque
+  byte  hostXm                                        ' HOST_XM_* host→Z80 packet machine
+  byte  hostXmCrc                                     ' 1: CRC-16 trailers for host packets
+  byte  hostXmTrail
+  long  hostXmLen                                     ' 128 or 1024
+  long  hostXmRemain
   long  z80N, z80M                                    ' CSI n and m (ESC [ n ; m H)
   long  z80Remain                                     ' XMODEM data bytes still to copy to FTDI
   long  z80XmLen                                      ' 128 (SOH) or 1024 (STX)
-
-  long  videoMode                                     ' VIDEO_TEXT or VIDEO_GRAPHICS; Cog 0 writer
-  long  vjetStatus                                    ' VECTORJET VGA phase; VGA cog writer
-  long  vjetDlistPtr                                  ' live display list; Cog 0 at switch, later draw cog
-  long  vjetReady                                     ' render cogs wait for non-zero; Cog 0 writer
-  long  vjetLinebuf[VJET_LINEBUF_LONGS]
-  long  vjetList[VJET_DLIST_LONGS]                    ' empty list until a draw cog publishes one
 
 
 OBJ
@@ -144,9 +140,6 @@ OBJ
       wmf             : "wmf_terminal_vga"
       i2c             : "i2c"
       acia            : "acia_rc2014"
-      vjetvga         : "VJET_vUXM_vga"             ' src/lib_vjet (add that folder to the search path)
-      vjetrend        : "VJET_vUXM_rendering"
-      gl              : "VJET_v01_displaylist"      ' display-list builder; boot uses an empty list
 
 
 PUB main
@@ -156,67 +149,26 @@ PUB main
   term.str (string("UX Module Initialised"))
   term.newLine
 
-  if DIAG_TERM_ECHO                                   ' first bring-up: echo host bytes on FTDI
-    termEchoLoop
-
   'start the ACIA interface
   acia.start (PORT_DEFAULT) 'default for RC2014 ROM
 ' acia.start (PORT_ROMWBW)  'optional for RomWBW, when used together with SIO/2 Module on 0x80
 
-  if DIAG_ACIA_BRIDGE                                 ' FTDI + ACIA + text VGA + PS/2
-    waitcnt (clkfreq / 100 + cnt)                     ' 10 ms for the ACIA cog
-    screenInit
-    startDdc
-    kbd.start (KBD_DATA_PIN, KBD_CLK_PIN)
-    pulseZ80Reset
-    aciaBridgeLoop
-
-  'start the VGA text screen (serial console). Call enterGraphics from a later draw cog, not from main.
+  waitcnt (clkfreq / 100 + cnt)                     ' 10 ms for the ACIA cog
   screenInit
-
-  'start the keyboard
-  kbd.start (KBD_DATA_PIN, KBD_CLK_PIN)
-
   startDdc
+  kbd.start (KBD_DATA_PIN, KBD_CLK_PIN)
+  pulseZ80Reset
 
   ' MAIN COG EVENT LOOP — one writer for acia.tx (no extra pump cog).
   ' Skip the keyboard while Z80→host or host→Z80 XMODEM is in progress.
   repeat
     if acia.takeParseIdle                             ' Z80 CR_RESET: abandon ESC/CSI/XMODEM
       z80Parse := PARSE_IDLE
-      hostXmodem := 0
+      z80XmSess := 0
+      hostXm := HOST_XM_OFF
     if not inXmodem and not hostXmodem
       kbdToZ80
     termToZ80
-    readZ80
-
-
-PUB termEchoLoop | char
-{{FTDI RX to FTDI TX. No ACIA. CR becomes CR+LF. LF is ignored after CR.}}
-
-  repeat
-    if term.rxCheck
-      char := term.rx
-      if char == ASCII_CR
-        term.newLine
-      elseif char <> ASCII_LF
-        term.tx (char)
-
-
-PUB aciaBridgeLoop | n
-{{Host and PS/2 bytes to Z80 RDR. Z80 TDR to FTDI and text VGA.
-  No local echo. No VECTORJET.}}
-
-  repeat
-    if acia.takeParseIdle                             ' Z80 CR_RESET: abandon ESC/CSI/XMODEM
-      z80Parse := PARSE_IDLE
-      hostXmodem := 0
-    if not inXmodem and not hostXmodem
-      kbdToZ80
-    n := 0
-    repeat while term.rxCount > 0 and acia.txCheck and n < PUMP_LIMIT
-      acia.tx (term.rx)
-      n++
     readZ80
 
 
@@ -234,60 +186,8 @@ CON
   '' Visual differentiation
 
 
-PUB enterGraphics : okay
-{{Stop text VGA and the I2C DDC cog. Start VECTORJET. Cog 0 still pumps ACIA.
-  Empty list (black). Those three cogs become VGA + two render cogs.
-  Call from a later draw cog or PORT_VJET handler. Not used at boot.}}
-
-  if videoMode == VIDEO_GRAPHICS
-    return true
-
-  wmf.stop                                              ' free P16-P23
-  stopDdc                                               ' free one cog for VECTORJET
-  vjetReady := 0
-  vjetDlistPtr := @vjetList
-  gl.start (@vjetList, VJET_DLIST_LONGS * 4)            ' next=0 until a draw cog builds lists
-  gl.done
-
-  if not vjetvga.start(VJET_PIN_GROUP, @vjetLinebuf, @vjetStatus)
-    resumeText
-    return false
-  if not vjetrend.start(0, VJET_RENDER_COGS, @vjetLinebuf, @vjetDlistPtr, @vjetStatus, @vjetReady)
-    vjetvga.stop
-    resumeText
-    return false
-  if not vjetrend.start(1, VJET_RENDER_COGS, @vjetLinebuf, @vjetDlistPtr, @vjetStatus, @vjetReady)
-    vjetrend.stop
-    vjetvga.stop
-    resumeText
-    return false
-
-  videoMode := VIDEO_GRAPHICS
-  vjetReady := 1                                        ' render cogs wait for this
-  return true
-
-
-PUB enterText
-{{Stop VECTORJET. Restore VGA text and the I2C DDC cog. Cog 0 still pumps ACIA.}}
-
-  if videoMode == VIDEO_TEXT
-    return
-  vjetReady := 0
-  vjetrend.stop
-  vjetvga.stop
-  resumeText
-
-
-PUB inGraphics : truefalse
-{{True while VECTORJET owns P16-P23. Cog 0 still pumps ACIA.}}
-
-  truefalse := videoMode == VIDEO_GRAPHICS
-
-
 PUB screenInit | retVal
   ' Start VGA text and place the boot banner. Static init only.
-
-  videoMode := VIDEO_TEXT
 
   ' text cursor starting position and as blinking underscore
   gTextCursX     := 0
@@ -312,25 +212,10 @@ PUB screenInit | retVal
   gScreenBufferPtr := retVal >> 16
 
   wmf.strScreenLn (string("UX Module Initialised"))
-  ++gTextCursY
+  syncCurs
 
   ' return to caller
   return
-
-
-PRI resumeText
-{{Text VGA plus I2C DDC. Used at a failed graphics start and at enterText.
-  Does not wait for EDID. The I2C cog fills Hub when the read completes.}}
-
-  screenInit
-  i2c.startCog
-  i2c.postEdid
-
-
-PRI stopDdc
-{{Free the I2C cog for VECTORJET. Pin DIRA drops when the cog stops.}}
-
-  i2c.stopCog
 
 
 PRI startDdc
@@ -348,7 +233,7 @@ PRI startDdc
 
 
 PRI reportDdc
-{{One EDID line and one DDC/CI line. Hardware cursor follows the VGA rows.}}
+{{One EDID line and one DDC/CI line. Overlay cursor follows WMF.}}
 
   term.str (string("EDID "))
   wmf.strScreen (string("EDID "))
@@ -373,7 +258,6 @@ PRI reportDdc
     wmf.strScreen (string("none"))
   term.newLine
   wmf.newLine
-  ++gTextCursY
 
   term.str (string("DDC/CI "))
   wmf.strScreen (string("DDC/CI "))
@@ -387,7 +271,7 @@ PRI reportDdc
     wmf.strScreen (string("none"))
   term.newLine
   wmf.newLine
-  ++gTextCursY
+  syncCurs
 
 
 PUB readZ80 | char, n, need
@@ -424,7 +308,10 @@ PRI ftdiNeed(char) : n
   if z80Parse == PARSE_IDLE
     case char
       ASCII_BS, ASCII_DEL:
-        n := 3
+        if wmf.getColScreen > 0
+          n := 3
+        else
+          n := 0
       ASCII_LF:
         n := 0
       ASCII_CR:
@@ -432,9 +319,15 @@ PRI ftdiNeed(char) : n
 
 
 PRI inXmodem : truefalse
-{{True while readZ80 is inside a Z80→host XMODEM packet (SOH/STX through trailer).}}
+{{True for the whole Z80→host XMODEM session, including the ACK gap.}}
 
-  truefalse := z80Parse == PARSE_XMODEM_N or z80Parse == PARSE_XMODEM_M or z80Parse == PARSE_XMODEM or z80Parse == PARSE_XMODEM_CS or z80Parse == PARSE_XMODEM_CRC
+  truefalse := z80XmSess
+
+
+PRI hostXmodem : truefalse
+{{True while the host→Z80 packet machine is not OFF (includes GAP).}}
+
+  truefalse := hostXm <> HOST_XM_OFF
 
 
 PRI takeZ80Byte(char)
@@ -491,16 +384,10 @@ PRI takeZ80Byte(char)
       if ( z80Remain == 0 )
         z80Parse := PARSE_XMODEM_CS
 
-    PARSE_XMODEM_CS:                                ' checksum or CRC hi
+    PARSE_XMODEM_CS:                                ' checksum or CRC bytes; never delimiters
       term.tx (char)
-      z80Parse := PARSE_XMODEM_CRC
-
-    PARSE_XMODEM_CRC:                               ' CRC lo, or next-frame start (checksum mode)
-      if char == XMODEM_SOH or char == XMODEM_STX or char == XMODEM_EOT or char == XMODEM_ETB or char == XMODEM_CAN
-        z80Parse := PARSE_IDLE
-        takeZ80Idle (char)
-      else
-        term.tx (char)
+      z80XmTrail := z80XmTrail - 1
+      if ( z80XmTrail == 0 )
         z80Parse := PARSE_IDLE
 
     other:                                          ' PARSE_IDLE
@@ -515,38 +402,46 @@ PRI takeZ80Idle(char)
     XMODEM_SOH:                                     ' XMODEM-128 Start of Header
       term.tx (char)
       z80XmLen := 128
+      if z80XmCrc
+        z80XmTrail := 2
+      else
+        z80XmTrail := 1
+      z80XmSess := 1
       z80Parse := PARSE_XMODEM_N
 
-    XMODEM_STX:                                     ' XMODEM-1K Start of Header
+    XMODEM_STX:                                     ' XMODEM-1K Start of Header (CRC-16)
       term.tx (char)
       z80XmLen := 1024
+      z80XmCrc := 1
+      z80XmTrail := 2
+      z80XmSess := 1
       z80Parse := PARSE_XMODEM_N
 
+    XMODEM_EOT, XMODEM_ETB, XMODEM_CAN:
+      term.tx (char)
+      z80XmSess := 0
+
     ASCII_BS, ASCII_DEL:                            ' backspace (edit), delete
-      term.tx (ASCII_BS)
-      term.tx (ASCII_SPACE)
-      term.tx (ASCII_BS)
-      if ( gTextCursX > 0 )
-        --gTextCursX
-      textOut (wmf#BS)
-      textOut (wmf#ASCII_SPACE)
-      textOut (wmf#BS)
+      if wmf.getColScreen > 0
+        term.tx (ASCII_BS)
+        term.tx (ASCII_SPACE)
+        term.tx (ASCII_BS)
+        textOut (wmf#BS)
+        textOut (wmf#ASCII_SPACE)
+        textOut (wmf#BS)
+      syncCurs
 
     ASCII_TAB:                                      ' horizontal tab; WMF owns glyph cursor
       term.tx (char)
-      if not videoMode
-        wmf.outScreen (wmf#TB)
-        gTextCursX := wmf.getColScreen
-        gTextCursY := wmf.getRowScreen
+      wmf.outScreen (wmf#TB)
+      syncCurs
 
-    ASCII_LF:                                       ' eat linefeed from Z80
+    ASCII_LF:                                       ' eat linefeed from Z80 (CP/M CR+LF)
 
     ASCII_CR:                                       ' carriage return
       term.newLine                                  ' CR+LF for PST / typical hosts
-      gTextCursX := 0
-      if ( gTextCursY < gScreenRows-1 )
-        ++gTextCursY
       textOut (wmf#NL)
+      syncCurs
 
     ASCII_ESC:                                      ' escape; next byte decides CSI vs literal
       term.tx (char)
@@ -558,16 +453,11 @@ PRI takeZ80Idle(char)
 
 
 PRI echoPrintable(char)
-{{Write a printable byte to the VGA cursor. Control bytes are ignored here.}}
+{{Write a printable byte through WMF, then copy the overlay from WMF.}}
 
   if ( char => $20 )                                ' only printable characters to the screen
-    if ( gTextCursX < gScreenCols - 1 )
-      ++gTextCursX
-    else
-      if ( gTextCursY < gScreenRows - 1 )
-        ++gTextCursY
-      gTextCursX := 0
     textOut (char)
+    syncCurs
 
 
 PRI clampCurs(v, maxv) : r
@@ -581,6 +471,13 @@ PRI clampCurs(v, maxv) : r
     r := v
 
 
+PRI syncCurs
+{{Hardware overlay follows WMF column and row.}}
+
+  gTextCursX := wmf.getColScreen
+  gTextCursY := wmf.getRowScreen
+
+
 PRI setCursXY(x, y)
 {{Clamp and publish the overlay and WMF cursors.}}
 
@@ -590,13 +487,13 @@ PRI setCursXY(x, y)
   textOut (gTextCursY)
   textOut (wmf#PX)
   textOut (gTextCursX)
+  syncCurs
 
 
 PRI textOut(c)
-{{VGA text cell write. No-op in VECTORJET mode so Cog 0 still pumps ACIA.}}
+{{VGA text cell write.}}
 
-  if not inGraphics
-    wmf.outScreen (c)
+  wmf.outScreen (c)
 
 
 PRI applyCsiH
@@ -645,33 +542,31 @@ PRI applyCsi(char)
       setCursXY (0, z80N - 1)
 
     "J":                                            ' clear screen
-      if not videoMode
-        if ( z80N == 0 )
-          bytefill ( gScreenBufferPtr + gTextCursY*gScreenCols + gTextCursX, ASCII_SPACE, gScreenRows*gScreenCols - gTextCursY*gScreenCols - gTextCursX )
-        elseif ( z80N == 1 )
-          bytefill ( gScreenBufferPtr, ASCII_SPACE, gTextCursY*gScreenCols + gTextCursX + 1 )
-        elseif ( z80N == 2 )
-          gTextCursX := gTextCursY := 0
-          textOut ( wmf#CS )
+      if ( z80N == 0 )
+        bytefill ( gScreenBufferPtr + gTextCursY*gScreenCols + gTextCursX, ASCII_SPACE, gScreenRows*gScreenCols - gTextCursY*gScreenCols - gTextCursX )
+      elseif ( z80N == 1 )
+        bytefill ( gScreenBufferPtr, ASCII_SPACE, gTextCursY*gScreenCols + gTextCursX + 1 )
+      elseif ( z80N == 2 )
+        textOut ( wmf#CS )
+      syncCurs
 
     "K":                                            ' clear line
-      if not videoMode
-        if ( z80N == 0 )
-          bytefill ( gScreenBufferPtr + gTextCursY*gScreenCols + gTextCursX, ASCII_SPACE, gScreenCols - gTextCursX)
-        elseif ( z80N == 1 )
-          bytefill ( gScreenBufferPtr + gTextCursY*gScreenCols, ASCII_SPACE, gTextCursX + 1 )
-        elseif ( z80N == 2 )
-          bytefill ( gScreenBufferPtr + gTextCursY*gScreenCols, ASCII_SPACE, gScreenCols )
-          gTextCursX := 0
-          textOut (wmf#PX)
-          textOut (gTextCursX)
+      if ( z80N == 0 )
+        bytefill ( gScreenBufferPtr + gTextCursY*gScreenCols + gTextCursX, ASCII_SPACE, gScreenCols - gTextCursX)
+      elseif ( z80N == 1 )
+        bytefill ( gScreenBufferPtr + gTextCursY*gScreenCols, ASCII_SPACE, gTextCursX + 1 )
+      elseif ( z80N == 2 )
+        bytefill ( gScreenBufferPtr + gTextCursY*gScreenCols, ASCII_SPACE, gScreenCols )
+        gTextCursX := 0
+        textOut (wmf#PX)
+        textOut (gTextCursX)
+      syncCurs
 
     "m":                                            ' set graphics rendition parameters
-      if not videoMode
-        if ( z80N == 0 )
-          wmf.setLineColor ( gTextCursY, wmf#CTHEME_DEFAULT_FG, wmf#CTHEME_DEFAULT_BG )
-        elseif ( z80N == 7 )
-          wmf.setLineColor ( gTextCursY, wmf#CTHEME_DEFAULT_BG, wmf#CTHEME_DEFAULT_FG )
+      if ( z80N == 0 )
+        wmf.setLineColor ( gTextCursY, wmf#CTHEME_DEFAULT_FG, wmf#CTHEME_DEFAULT_BG )
+      elseif ( z80N == 7 )
+        wmf.setLineColor ( gTextCursY, wmf#CTHEME_DEFAULT_BG, wmf#CTHEME_DEFAULT_FG )
 
 
 PUB kbdToZ80 | char, n
@@ -731,17 +626,63 @@ PUB kbdToZ80 | char, n
 
 PUB termToZ80 | n, b
 {{FTDI RX into the ACIA TX FIFO. Same cog as kbdToZ80. No XON/XOFF.
-  SOH/STX from the host gates the keyboard until EOT/CAN.}}
+  Host packet machine: EOT/ETB/CAN end the session only in OFF or GAP.}}
 
   n := 0
   repeat while term.rxCount > 0 and acia.txCheck and n < PUMP_LIMIT
     b := term.rx
-    if b == XMODEM_SOH or b == XMODEM_STX
-      hostXmodem := 1
-    elseif b == XMODEM_EOT or b == XMODEM_CAN
-      hostXmodem := 0
+    takeHostXm (b)
     acia.tx (b)
     n++
+
+
+PRI takeHostXm(b)
+{{Advance HOST_XM_*. Payload bytes are never session delimiters.}}
+
+  case hostXm
+
+    HOST_XM_BLK:
+      hostXm := HOST_XM_NBLK
+
+    HOST_XM_NBLK:
+      hostXmRemain := hostXmLen
+      hostXm := HOST_XM_DATA
+
+    HOST_XM_DATA:
+      hostXmRemain := hostXmRemain - 1
+      if hostXmRemain == 0
+        hostXm := HOST_XM_TRAIL
+
+    HOST_XM_TRAIL:
+      hostXmTrail := hostXmTrail - 1
+      if hostXmTrail == 0
+        hostXm := HOST_XM_GAP
+
+    other:                                          ' OFF or GAP
+      if b == XMODEM_SOH
+        hostXmBegin (128)
+      elseif b == XMODEM_STX
+        hostXmCrc := 1
+        hostXmBegin (1024)
+      elseif b == XMODEM_EOT or b == XMODEM_ETB or b == XMODEM_CAN
+        hostXm := HOST_XM_OFF
+      elseif hostXm == HOST_XM_OFF and b == XMODEM_NAK
+        z80XmCrc := 0
+      elseif hostXm == HOST_XM_OFF and b == XMODEM_C
+        z80XmCrc := 1
+
+
+PRI hostXmBegin(len)
+{{Enter a host→Z80 data packet after SOH or STX.}}
+
+  hostXmLen := len
+  if len == 1024
+    hostXmTrail := 2
+  elseif hostXmCrc
+    hostXmTrail := 2
+  else
+    hostXmTrail := 1
+  hostXm := HOST_XM_BLK
 
 
 PRI panicReset
@@ -753,9 +694,10 @@ PRI panicReset
   acia.masterReset                                  ' FIFOs, last_rdr, tdre_hold, config $03, status
   acia.tdreHold                                     ' keep TDR closed until readZ80 sees FTDI room
   z80Parse := PARSE_IDLE
-  hostXmodem := 0
-  gTextCursX := gTextCursY := 0
+  z80XmSess := 0
+  hostXm := HOST_XM_OFF
   textOut (wmf#CS)
+  syncCurs
   if term.txSpace => 4                              ' ESC [ 2 J
     term.clear
   dira[ acia#RESET_PIN_NUM ]~                       ' release Z80 after local state is quiet

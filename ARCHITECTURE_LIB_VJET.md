@@ -8,7 +8,7 @@ Prose style: `.agents/skills/style-ste-writing`.
 
 VECTORJET builds a display list in Spin, renders scanlines with one or more PASM cogs, and outputs VGA with a dedicated PASM cog. The UXM-prefixed files are a specialisation for the RC2014 UX Module pinout and clock. Upstream credit in the sources: IRQsome Software, with VGA lineage from Kwabena W. Agyeman / Parallax-style video generators.
 
-The library is linked from `ux_module.spin`. Boot does not start VECTORJET. Demos still use their own top objects (`vjet_test.spin`, `graphtest.spin`).
+The product top `ux_module.spin` does not link this library. Demos use their own top objects (`vjet_test.spin`, `graphtest.spin`). Compile those with `-L src -L src/lib_vjet`.
 
 ## Files
 
@@ -132,7 +132,7 @@ Pins P16–P23 have one owner. `hires_text_vga` (two cogs, 640×480 cells) and `
 | Text | 2 (`hires_text_vga`) + 1 I2C DDC | Spin, FTDI, ACIA, PS/2 (4) | 1 |
 | Graphics | 1 (`VJET_vUXM_vga`) + 2 render | Spin, FTDI, ACIA, PS/2 (4) | 1 (Spin draw) |
 
-`enterGraphics` stops the text pair and `i2c.stopCog`. `enterText` stops VECTORJET, then `wmf.init` and `i2c.startCog`. After `cogstop`, those cogs leave the pins. Then start the other driver.
+The product firmware does not call `enterGraphics`. When graphics work resumes, stop the text pair and `i2c.stopCog` before VECTORJET VGA. Stop VECTORJET, then `wmf.init` and `i2c.startCog`. After `cogstop`, those cogs leave the pins. Then start the other driver.
 
 Do **not** build the display list on Cog 0 if the ACIA pump must stay live. Cog 0 is the only `acia.tx` writer. `vjet_test` blocks Cog 0 in `Vblank` + `draw`. That starves keyboard, FTDI, and Z80 I/O.
 
@@ -142,14 +142,7 @@ Recommended product split:
 2. **Graphics mode** — stop text VGA. Start VECTORJET VGA + two render cogs. Start a **second Spin cog** that waits for blanking and builds lists. Cog 0 only pumps ACIA / keyboard / FTDI and writes a small mailbox (camera, mode, flip). That uses all eight cogs: 4 I/O + 1 draw + 1 VGA + 2 render.
 3. **Standalone demo** — `vjet_test` / `graphtest` as now (no ACIA). Three render cogs on Cog 0 as the draw loop.
 
-Hooks in `ux_module.spin` (boot stays in text mode):
-
-1. `enterGraphics` sets `videoMode`, calls `wmf.stop` and `i2c.stopCog`, starts VECTORJET VGA plus two render cogs, publishes an empty list.
-2. `enterText` stops VECTORJET, calls `screenInit`, and starts the I2C DDC cog.
-3. `inGraphics` is the mode flag for `readZ80` (`textOut` is a no-op in graphics).
-4. Mailbox: `vjetStatus`, `vjetDlistPtr`, `vjetReady`. Cog 0 writes the pointer and ready flag at the switch. A later draw cog may own the lists.
-
-Do not call `enterGraphics` from `main` until that draw cog exists. Serial tests use the text boot path.
+The product top has no graphics hooks. `PORT_VJET` remains a reserved ACIA base. Serial tests use the text boot path.
 
 Hub cost: eight line slots are 2 KB. Two lists of 900 longs are about 7 KB. The text screen is 80×40 bytes plus colours. 32 KB Hub cannot keep a large text buffer and two fat lists at once. Reuse the text screen region for lists when you leave text mode.
 
@@ -159,12 +152,12 @@ Hub cost: eight line slots are 2 KB. Two lists of 900 longs are about 7 KB. The 
 
 Useful work while keeping the architecture intact:
 
-1. Start a Spin draw cog from `enterGraphics` (not Cog 0). Wait `vjetStatus` bit 16 (`$01_00_00`), publish `vjetDlistPtr`, wait bit 17 (`$02_00_00`), then `gl.start` on the idle list. See `vjet_test.spin`.
-2. Grow `vjetList` (or reuse the text screen Hub) to two lists of about 900 longs. The boot list is four longs and stays black.
+1. When graphics work resumes, start a Spin draw cog (not Cog 0). Wait `vjetStatus` bit 16 (`$01_00_00`), publish the list pointer, wait bit 17 (`$02_00_00`), then `gl.start` on the idle list. See `vjet_test.spin`.
+2. Grow Hub lists to two buffers of about 900 longs. Reuse the text screen region if needed.
 3. Drive the back list from Z80 I/O at `PORT_VJET` (needs a command protocol)
 4. Tune render cog count against available cogs and fill rate
 5. Keep display-list field layouts documented in one place (builder comments ↔ renderer reads)
-6. Link `hexfont.spin` only when text shapes are required. Do not call `enterGraphics` from `main` until that draw cog exists.
+6. Link `hexfont.spin` only when text shapes are required. Do not start VECTORJET from product `main` until that draw cog exists.
 
 ## External references
 

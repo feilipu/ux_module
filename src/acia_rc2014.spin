@@ -206,7 +206,7 @@ PUB tx(txbyte)
     return
   tx_head := ++tx_head & BUFFER_MASK
 
-  if not acia_config & constant ( CR_TID_RTS1 << DATA_BASE )
+  if not ( acia_config & constant ( CR_TID_RTS1 << DATA_BASE ) )
     if acia_config & constant ( CR_RIE << DATA_BASE )
       dira[ INT_PIN_NUM ]~~
       dira[ INT_PIN_NUM ]~

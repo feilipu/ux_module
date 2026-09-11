@@ -667,7 +667,7 @@ RETURNS: Nothing.
 
 PUB newLine
 {{
-DESCRIPTION: Moves the terminal cursor home and outputs a carriage return.
+DESCRIPTION: Moves the terminal cursor to column 0. Scrolls if the cursor is on the last row.
 
 PARMS: None.
 

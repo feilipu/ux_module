@@ -181,14 +181,14 @@ Both tools target **Propeller 1 (P8X32A)** only. Do not use Propeller 2 loaders 
 Example compile and load (macOS / Linux). Adjust the serial device from `proploader -P`.
 
 ```sh
-openspin -L src -L src/lib_vjet -b -o build/ux_module.binary src/ux_module.spin
+openspin -L src -b -o build/ux_module.binary src/ux_module.spin
 proploader -p /dev/cu.usbserial-XXXX -e -r build/ux_module.binary
 ```
 
 Notes for agents:
 
 1. Pass the **top object** on the `openspin` command line (`src/ux_module.spin`). Do not compile a child module alone.
-2. Use `-L src -L src/lib_vjet` (or `-I`) so nested objects and VECTORJET resolve.
+2. Use `-L src` for the product. Add `-L src/lib_vjet` only for a VECTORJET demo top.
 3. Prefer `/dev/cu.*` over `/dev/tty.*` on macOS.
 4. `-e -r` writes EEPROM and then runs. Use `-r` alone for a RAM-only load.
 5. Agent edit rules and tool paths live in `AGENTS.md` and `.agents/skills/tool-propeller/`.
@@ -209,7 +209,7 @@ The only (at this stage) special PASM functions written for the UX Module are in
 
 `i2c.spin` also runs a Spin cog after boot. It talks to the monitor on the VGA DDC pins (swapped vs the boot EEPROM). It reads EDID at `0x50` and, if the display answers, DDC/CI at `0x37`. It does not change VGA timing.
 
-VECTORJET (`src/lib_vjet`) is linked from `ux_module.spin`. Boot stays in text VGA. `enterGraphics` / `enterText` switch exclusive owners of pins P16–P23. Do not call `enterGraphics` from `main` until a draw cog exists.
+VECTORJET (`src/lib_vjet`) is not linked from the product top. Boot is text VGA only. Compile VECTORJET demos with their own tops.
 
 ```
 ux_module
@@ -221,9 +221,6 @@ ux_module
 |---> wmf_terminal_vga
       |
       |---> hires_text_vga
-|---> VJET_vUXM_vga
-|---> VJET_vUXM_rendering
-|---> VJET_v01_displaylist
 ```
 
 ## Usage Notes
@@ -250,7 +247,7 @@ The UX Module can be alternately located on ports `0x40`, `0x41` or on `0xC0`, `
 
 It will (enhancement plan) be possible to implement a graphics interface (VJET library). It is likely that the graphics interface will use the `0xC0` and `0xC1` ports, and may be configured by settings on other ports.
 
-`PORT_VJET` in `ux_module.spin` is that reserved `0xC0` base. There is no Z80 command protocol in the tree yet. The product switch is `enterGraphics` / `enterText`. Boot remains the ACIA text console.
+`PORT_VJET` in `ux_module.spin` is that reserved `0xC0` base. There is no Z80 command protocol in the tree yet. Boot remains the ACIA text console.
 
 ### Video VGA
 
