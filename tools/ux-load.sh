@@ -7,7 +7,8 @@
 #   tools/ux-load.sh
 #   tools/ux-load.sh /dev/cu.usbserial-XXXX
 #   tools/ux-load.sh -m               # hand pulse /RES
-# Quit GNU screen / tools/ux-screen.sh first.
+# Stops the ux-ftdi-relay if it holds the port. Quit GNU screen first
+# (C-a k) so the PTY session is not left on a dead slave.
 
 set -euo pipefail
 export PATH="/opt/homebrew/bin:$HOME/bin:$PATH"
@@ -57,6 +58,23 @@ else
   print -u2 "ux-load: pass an FT232 path (/dev/cu.usbserial-*)"
   print -u2 "  ${found[@]}"
   exit 1
+fi
+
+pidfile="/tmp/ux-relay-${UID}.pid"
+devfile="/tmp/ux-relay-${UID}.dev"
+if [[ -f $pidfile ]]; then
+  rpid="$(<"$pidfile")"
+  if [[ "$rpid" == <-> ]]; then
+    print -u2 "ux-load: stopping FTDI relay pid $rpid"
+    kill "$rpid" 2>/dev/null || true
+    for _ in {1..20}; do
+      kill -0 "$rpid" 2>/dev/null || break
+      sleep 0.05
+    done
+    kill -KILL "$rpid" 2>/dev/null || true
+  fi
+  rm -f "$pidfile" "$devfile"
+  sleep 0.15
 fi
 
 if [[ "$reset_method" == none ]]; then

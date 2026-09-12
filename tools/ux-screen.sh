@@ -11,6 +11,7 @@
 #   tools/ux-screen.sh
 #   tools/ux-screen.sh /dev/cu.usbserial-AB0JQLG6
 #   tools/ux-screen.sh AB0JQLG6
+#   tools/ux-screen.sh --stop     # close the FTDI relay (pulses DTR)
 # Detach: C-a d    Quit: C-a k
 # XMODEM send:    C-a s   then file path (or C-a : exec !! lsx -b -q -X FILE)
 # XMODEM 1K send: C-a : exec !! lsx -b -q -X -k FILE
@@ -99,14 +100,39 @@ pick_port() {
   print -r -- "${found[n]}"
 }
 
+pty="/tmp/ux-pty-${UID}"
+pidfile="/tmp/ux-relay-${UID}.pid"
+devfile="/tmp/ux-relay-${UID}.dev"
+
+stop_ux_relay() {
+  local pid
+  if [[ -f $pidfile ]]; then
+    pid="$(<"$pidfile")"
+    if [[ "$pid" == <-> ]]; then
+      kill "$pid" 2>/dev/null || true
+      for _ in {1..20}; do
+        kill -0 "$pid" 2>/dev/null || break
+        sleep 0.05
+      done
+      kill -KILL "$pid" 2>/dev/null || true
+    fi
+  fi
+  rm -f "$pidfile" "$devfile"
+}
+
+if [[ "${1:-}" == --stop ]]; then
+  stop_ux_relay
+  print -u2 "ux-screen: relay stopped"
+  exit 0
+fi
+
 dev="$(pick_port "${1:-}")" || exit 1
 
 rc="$here/screenrc-ux"
 # macOS asserts DTR on open of cu.usbserial-*. On the SparkFun Basic that
-# pin is /RES, so GNU screen on the FTDI holds the Propeller in reset.
-# Relay keeps DTR released; screen talks to a PTY.
+# pin is /RES. Keep one relay process so later screen attach does not
+# reopen the FTDI. ux-load.sh / ux-screen.sh --stop close it.
 relay="$here/ux-ftdi-relay.py"
-pty="/tmp/ux-pty-${UID}"
 if [[ ! -x $relay ]]; then
   print -u2 "ux-screen: missing $relay"
   exit 1
@@ -116,27 +142,65 @@ if [[ ! -f $rc ]]; then
   exit 1
 fi
 
-"$relay" "$dev" "$pty" &
-relpid=$!
-cleanup() {
-  kill "$relpid" 2>/dev/null || true
-  wait "$relpid" 2>/dev/null || true
-}
-trap cleanup EXIT INT TERM
-ok=0
-for _ in {1..50}; do
-  if [[ -L $pty ]]; then
-    ok=1
-    break
+need_start=1
+if [[ -f $pidfile ]]; then
+  relpid="$(<"$pidfile")"
+  if [[ "$relpid" == <-> ]] && kill -0 "$relpid" 2>/dev/null; then
+    olddev=""
+    [[ -f $devfile ]] && olddev="$(<"$devfile")"
+    if [[ -n $olddev && $olddev != $dev ]]; then
+      print -u2 "ux-screen: relay holds $olddev; restart for $dev (DTR pulse)"
+      stop_ux_relay
+    elif [[ -L $pty ]]; then
+      need_start=0
+    else
+      print -u2 "ux-screen: relay pid $relpid has no $pty; restart"
+      stop_ux_relay
+    fi
   fi
-  sleep 0.05
-done
-if (( ! ok )); then
-  print -u2 "ux-screen: relay did not create $pty"
-  exit 1
 fi
-# EEPROM boot after DTR release is ~1 s; banner follows term.start's 1/4 s wait.
-print -u2 "UX Module  $dev  via $pty  115200 8N1 RX/TX  (C-a s send / C-a r receive XMODEM)"
-print -u2 "wait for UX Module Initialised  (DTR held off)"
+
+if (( need_start )); then
+  nohup "$relay" "$dev" "$pty" >>"/tmp/ux-relay-${UID}.log" 2>&1 &
+  relpid=$!
+  print -r -- "$relpid" > "$pidfile"
+  print -r -- "$dev" > "$devfile"
+  ok=0
+  for _ in {1..50}; do
+    if [[ -L $pty ]]; then
+      ok=1
+      break
+    fi
+    sleep 0.05
+  done
+  if (( ! ok )); then
+    print -u2 "ux-screen: relay did not create $pty"
+    stop_ux_relay
+    exit 1
+  fi
+  print -u2 "UX Module  $dev  via $pty  115200 8N1 RX/TX  (C-a s send / C-a r receive XMODEM)"
+  print -u2 "first open of $dev pulses DTR (/RES). Wait for UX Module Initialised."
+else
+  print -u2 "UX Module  $dev  via $pty  115200 8N1 RX/TX  (C-a s send / C-a r receive XMODEM)"
+  print -u2 "relay pid $relpid already holds $dev  (DTR not pulsed)"
+fi
 print -u2 "if XMODEM leaves a dead window: C-a k, then run this script again"
-/usr/bin/screen -c "$rc" "$pty" || true
+print -u2 "quit screen does not close the relay. ux-load.sh stops it before a download."
+# Named session so a later ux-screen reattaches. A second
+# `screen $pty` exclusive-opens the slave and used to kill the relay.
+# No baud flags: Apple screen then treats the PTY as a modem.
+sock="uxmod"
+(
+  slave="$(readlink "$pty" 2>/dev/null || true)"
+  for _ in {1..20}; do
+    [[ -n $slave && -e $slave ]] || break
+    stty -f "$slave" -ixon -ixoff -echo -icanon 2>/dev/null && break
+    sleep 0.1
+  done
+) &
+if /usr/bin/screen -ls 2>/dev/null | grep -q "\.${sock}"; then
+  print -u2 "reattach session $sock (FTDI already open)"
+  /usr/bin/screen -d -r "$sock" || true
+else
+  /usr/bin/screen -S "$sock" -fn -c "$rc" "$pty" || true
+fi

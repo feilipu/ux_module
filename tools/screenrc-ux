@@ -5,6 +5,7 @@ startup_message off
 vbell off
 defflow off
 flow off
+# Do not set baud flags. ux-screen.sh runs stty -ixon on the PTY.
 c1 off
 # Apple /usr/bin/screen 4.00.03 wraps exec in login -pflq when the
 # window is "logged in". After lsx/lrx exit, that leaves a dead window
