@@ -131,6 +131,9 @@ VAR
   long  z80N, z80M                                      ' CSI n and m (ESC [ n ; m H)
   long  z80Remain                                       ' XMODEM data bytes still to copy to FTDI
   long  z80XmLen                                        ' 128 (SOH) or 1024 (STX)
+  byte  busRstArmed                                     ' 1: P5 low, debounce clock running
+  byte  busRstDidWipe                                   ' 1: already wiped this backplane pulse
+  long  busRstStamp                                     ' CNT at first P5-low sample
 
 
 OBJ
@@ -142,7 +145,7 @@ OBJ
       acia            : "acia_rc2014"
 
 
-PUB main
+PUB main | busHeld
 
   'start the serial terminal
   term.start (115200)
@@ -161,24 +164,27 @@ PUB main
 
   ' MAIN COG EVENT LOOP — one writer for acia.tx (no extra pump cog).
   ' Skip the keyboard while Z80→host or host→Z80 XMODEM is in progress.
+  ' Backplane /RESET holds P5 low through D1/C12. Do not drive P5. Wipe once.
   repeat
+    busHeld := pollBusReset
     if acia.takeParseIdle                               ' Z80 CR_RESET: abandon ESC/CSI/XMODEM
       z80Parse := PARSE_IDLE
       z80XmSess := 0
       hostXm := HOST_XM_OFF
-    if not inXmodem and not hostXmodem
-      kbdToZ80
-    termToZ80
-    readZ80
+    if not busHeld
+      if not inXmodem and not hostXmodem
+        kbdToZ80
+      termToZ80
+      readZ80
 
 
 PRI pulseZ80Reset
-{{Drive RC2014 !RESET 1 ms. ACIA cog must already be running.}}
+{{Drive RC2014 !RESET 1 ms. Drop host leftovers before the 8085 runs.}}
 
-  outa[ acia#RESET_PIN_NUM ]~
-  dira[ acia#RESET_PIN_NUM ]~~
-  waitcnt (clkfreq / 1000 + cnt)
-  dira[ acia#RESET_PIN_NUM ]~
+  holdZ80Reset
+  waitcnt (clkfreq / 1000 + cnt)                        ' 1 ms; C12 is 200 pF and does not stretch
+  wipeAciaWhileReset
+  releaseZ80Reset
 
 
 CON
@@ -686,22 +692,82 @@ PRI hostXmBegin(len)
   hostXm := HOST_XM_BLK
 
 
-PRI panicReset
-{{Hold RC2014 !RESET while the ACIA is reset, then clear local consoles without blocking.}}
+PRI holdZ80Reset
+{{Drive P5 low. Spin DIRA[5] stays set until releaseZ80Reset.}}
 
   outa[ acia#RESET_PIN_NUM ]~
   dira[ acia#RESET_PIN_NUM ]~~
-  waitcnt (clkfreq / 1000 + cnt)                        ' 1 ms; C12 is 200 pF and does not stretch
-  acia.masterReset                                      ' FIFOs, last_rdr, tdre_hold, config $03, status
+
+
+PRI releaseZ80Reset
+{{Float P5. ACIA PASM DIRA does not drive this pin.}}
+
+  dira[ acia#RESET_PIN_NUM ]~
+
+
+PRI discardHostInputs
+{{Drop FTDI RX and PS/2 so they cannot refill the ACIA TX FIFO.}}
+
+  repeat while term.rxCount > 0
+    term.rx
+  repeat while kbd.gotKey
+    kbd.getKey
+
+
+PRI wipeAciaWhileReset
+{{Z80 must already be in reset. Restart the ACIA cog so last_rdr and both
+  FIFOs are zero. Do not wait on req_master (PASM is in waitpeq). Discard
+  FTDI RX and PS/2 so termToZ80 cannot inject leftovers after release.}}
+
+  discardHostInputs
+  acia.start (PORT_DEFAULT)                             ' stop + cognew; last_rdr := 0
+  waitcnt (clkfreq / 1000 + cnt)                        ' ACIA cog before 8085 runs
   acia.tdreHold                                         ' keep TDR closed until readZ80 sees FTDI room
   z80Parse := PARSE_IDLE
   z80XmSess := 0
   hostXm := HOST_XM_OFF
+
+
+PRI pollBusReset : held
+{{True while the backplane holds /RESET and we are not driving P5.
+  D1 pulls P5 high when /RESET is idle. A 1 ms low is a button pulse.
+  Wipe FIFOs once. Do not drive P5.}}
+
+  if dira[ acia#RESET_PIN_NUM ]                         ' our pulse owns the pin
+    busRstArmed := 0
+    busRstDidWipe := 0
+    held := 0
+    return
+  if ina[ acia#RESET_PIN_NUM ]
+    busRstArmed := 0
+    busRstDidWipe := 0
+    held := 0
+    return
+  held := 1
+  if busRstArmed == 0
+    busRstArmed := 1
+    busRstStamp := cnt
+    return
+  if busRstDidWipe
+    discardHostInputs
+    return
+  if (cnt - busRstStamp) < clkfreq / 1000               ' 1 ms debounce
+    return
+  wipeAciaWhileReset
+  busRstDidWipe := 1
+
+
+PRI panicReset
+{{Hold RC2014 !RESET while the ACIA is reset, then clear local consoles without blocking.}}
+
+  holdZ80Reset
+  waitcnt (clkfreq / 1000 + cnt)                        ' 1 ms; C12 is 200 pF and does not stretch
+  wipeAciaWhileReset
   textOut (wmf#CS)
   syncCurs
   if term.txSpace => 4                                  ' ESC [ 2 J
     term.clear
-  dira[ acia#RESET_PIN_NUM ]~                           ' release Z80 after local state is quiet
+  releaseZ80Reset                                       ' release Z80 after local state is quiet
 
 
 DAT

@@ -59,7 +59,7 @@ Arrow, Home, Left, and Right need three FIFO slots (`acia.txSpace >= 3`) before 
 
 If FTDI TX cannot take the next byte, `readZ80` calls `acia.tdreHold`. `term.rxCount` is a count only. There is no XON/XOFF. FTDI RX PASM drops inbound bytes when that FIFO is full. The header does not wire CTS or RTS.
 
-CTRL+ALT+DEL: `outa[5]~`, drive P5 1 ms, `masterReset` (FIFOs, `last_rdr`, `tdre_hold`, config `$03`), `tdreHold`, `PARSE_IDLE`, clear `z80XmSess` and `hostXm`, VGA clear, FTDI clear only if `txSpace => 4`, then release P5. Z80 `CR_RESET` sets `req_parse_idle` **then** zeros FIFOs. Keep `tdre_hold`. Spin `tx`/`rx` abort while that flag is set. Boot `pulseZ80Reset` is 1 ms and does not flush FIFOs. Do not hold `/RESET` across DDC.
+CTRL+ALT+DEL and boot `pulseZ80Reset`: hold P5 1 ms, discard FTDI RX and PS/2, `acia.start` (new cog: FIFOs and `last_rdr` zero), `tdreHold`, `PARSE_IDLE`, clear `z80XmSess` and `hostXm`, then release P5. Panic also VGA `CS` and FTDI clear if `txSpace => 4`. Backplane `/RESET` does not reset the Propeller. Sample P5 when not driving (D1 pulls P5 high while idle). After 1 ms low, wipe once and skip pumps until P5 is high. Do not drive P5 in reply. Do not wait on `req_master` while P5 is held. Z80 `CR_RESET` sets `req_parse_idle` **then** zeros FIFOs. Keep `tdre_hold`. Spin `tx`/`rx` abort while that flag is set. Do not hold `/RESET` across DDC.
 
 ASCII and XMODEM `CON` names are lookup tables. Do not delete unused names.
 
@@ -96,15 +96,15 @@ These replace earlier WIP (`ea4502e` XON/XOFF, `569cd07` flow). Change the named
 | Pump cap | `PUMP_LIMIT` (16) bytes per role per main-loop pass. | Unbounded `termToZ80` delayed `tdreHold`. | Raise or remove the cap if a path needs more than 16 bytes per pass at 115200. |
 | FTDI emit | `readZ80` peeks, uses `ftdiNeed`, then `acia.rx`. Idle BS/DEL need 3 TX slots if column > 0, else 0. | `term.tx` blocks. One free slot plus backspace stalled Cog 0. | Blocking `term.tx` from the parser is the old stall. |
 | Empty / `/RTS` RDR | Present `last_rdr`. Do not move `tx_tail`. | Datasheet keeps the last byte. `/RTS` high must not consume queued keys. | Presenting `0` and advancing the tail was the empty-FIFO junk path. |
-| CTRL+ALT+DEL | Hold P5 1 ms, `masterReset` (FIFOs, `last_rdr`, `tdre_hold`, config `$03`), `tdreHold`, VGA `CS`, FTDI clear if 4 TX slots. Then release P5. | Panic must not block Cog 0 on `term.tx` while the Z80 runs. | Short pulse then blocking `term.clear`. |
+| CTRL+ALT+DEL / boot pulse | Hold P5 1 ms, discard host RX, `acia.start` (FIFOs and `last_rdr` zero), `tdreHold`, parser idle. Panic also VGA `CS` and gated FTDI clear. Then release P5. | Leftover RDR and FTDI RX hang 8085 boot. Do not wait on `req_master`. | 1 ms pulse with no FIFO wipe. |
 | Z80 `CR_RESET` | Set `req_parse_idle` first. Zero FIFOs and `last_rdr`. **Keep `tdre_hold`.** | Parser is not a 6850 object. `$03` must not mean “FTDI has room.” Flag-first stops Spin tearing indexes. | Clearing `tdre_hold` on `$03`, or zeroing indexes before the flag. |
 | `req_master` sample | Idle poll, `sync_irq`, and `wait_pin_high`. | `waitpeq /RD /WR` ignored `req_master` and deadlocked Cog 0. | Sample only in `sync_irq`. |
 | XON/XOFF | Removed. No `term.rxFlow`. FTDI RX drops when full. | Binary XMODEM can contain `0x11`/`0x13`. Host cannot be paused on this header. | Restore `rxFlow` from `ea4502e` only for interactive paste. Wrap-over of FTDI RX. |
 | Keyboard vs XMODEM | Skip `kbdToZ80` when `z80XmSess` or `hostXm <> OFF`. | Host payload `EOT` used to unmute the keyboard. Packet gap used to inject keys. | Latch on any UART `EOT`. Gate only `PARSE_XMODEM_*`. |
 | Host CR | Z80 CR → `term.newLine` (CR+LF). `ftdiNeed` 2. | PST and typical hosts need CR. | `term.lineFeed` only. |
-| Board reset button | Not sensed on P5 (floats, C12 200 pF). ROM `$03` is the ACIA path. | Polling P5 false-triggers. | Idle poll of P5. |
+| Board reset button | Sample P5 when not driving. D1 pulls P5 high while `/RESET` is idle. 1 ms low = backplane pulse. Wipe ACIA once. Do not drive P5. Skip pumps while held. | Button does not reset the Propeller. Leftover RDR hangs 8085 boot. | Idle poll with no debounce, or drive P5 in reply. |
 
-Hub writers and open IDs: [references/remaining-errors.md](references/remaining-errors.md). Residual: P0-3 button is not sensed (correct). P0-2 Spin must not wait on `req_master` while P5 is held. P2-2: keep the Spin INT pulse (`not (config & mask)` on the trailing `tx` pulse). Do not idle `sync_irq`. Review checklist: [references/ship-review.md](references/ship-review.md). Host ACIA clients: [references/acia-host-drivers.md](references/acia-host-drivers.md).
+Hub writers and open IDs: [references/remaining-errors.md](references/remaining-errors.md). P0-3: backplane `/RESET` is sampled on P5 with a 1 ms debounce. P0-2 Spin must not wait on `req_master` while P5 is held. P2-2: keep the Spin INT pulse (`not (config & mask)` on the trailing `tx` pulse). Do not idle `sync_irq`. Review checklist: [references/ship-review.md](references/ship-review.md). Host ACIA clients: [references/acia-host-drivers.md](references/acia-host-drivers.md).
 
 ## VGA text path
 

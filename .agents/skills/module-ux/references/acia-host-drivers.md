@@ -43,7 +43,7 @@ Default decode is `acia.start(PORT_DEFAULT)` (`0x80`). `PORT_ROMWBW` (`0x40`) is
 ## Gaps to know. Do not “fix” for this RC
 
 1. **RomWBW + SIO on `0x80`.** HBIOS ACIA then sits at `0x40`. Use the commented `PORT_ROMWBW` line. Wrong base: detect fails.
-2. **CP/M warm boot does not `$03` the chip.** `_acia_reset` only clears 8085 rings. Propeller FIFOs stay. Boot `pulseZ80Reset` also does not flush. Do not add `txFlush`/`rxFlush`.
+2. **CP/M warm boot does not `$03` the chip.** `_acia_reset` only clears 8085 rings. Propeller boot and panic now restart the ACIA cog while P5 is held. Warm boot without a P5 pulse still leaves FIFOs. Do not add `txFlush`/`rxFlush`. Do not poll P5.
 3. **`tdre_hold`.** If FTDI TX is full, this tree hides `TDRE`. RomWBW `ACIA_OUT` and CPM-IDE `putc` wait. Console pauses. That is FTDI back-pressure, not a 6850 miss.
 4. **Live XMODEM.** Both sides pass 8-bit data. Host/Z80 session gates have no live transfer check yet. Text console does not need that.
 

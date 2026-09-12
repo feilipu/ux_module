@@ -12,9 +12,9 @@ Probe after each slice: ROM banner plus `ABC\r` → `ABC\r\n\r\n> `.
 
 | ID | Policy fix | In this tree | Notes |
 |----|------------|--------------|-------|
-| **P0-1** | Hold P5 1 ms, then `masterReset`, `tdreHold`, VGA `CS`, FTDI `clear` only if 4 TX slots | **Landed (Spin).** | Keep gated `clear`. |
+| **P0-1** | Hold P5 1 ms, discard host RX, restart ACIA cog (`last_rdr` and FIFOs zero), `tdreHold`. Panic: VGA `CS`, FTDI `clear` only if 4 TX slots | **Landed (Spin).** Boot `pulseZ80Reset` uses the same wipe. | Do not wait on `req_master`. Keep gated `clear`. |
 | **P0-2** | Sample `req_master` in idle/`wait_pin_high`; no `waitpeq` on `/RD` `/WR` rise | **Partial.** `wait_pin_high` samples `req_master`. Spin does **not** wait on the flag. Idle Hub between `waitpne` and `waitpeq wr` is forbidden. | Rise abort only. |
-| **P0-3** | Do not poll P5. Button → ROM `$03`. Keep `tdre_hold` | **Landed residual.** P5 is not polled. `$03` zeros FIFOs and keeps `tdre_hold`. | Do not poll P5. |
+| **P0-3** | Sample P5 when not driving. 1 ms debounce. Wipe ACIA once per backplane `/RESET`. Keep `tdre_hold` | **Landed.** D1 pulls P5 high while `/RESET` is idle. Do not drive P5 in reply. | Idle poll with no debounce was the false-trigger. |
 | **P0-4** | FTDI RX drop when full; no XON/XOFF | **In tree.** | Do not restore wrap-over or XON. |
 | **P0-5** | Skip `kbdToZ80` on host `SOH`/`STX` | **Landed (packet machine).** | `hostXm` ends on `EOT`/`ETB`/`CAN` in GAP only. `z80XmSess` covers the ACK gap. |
 | **P1-1** | `req_parse_idle` before PASM zeros indexes; Spin `tx`/`rx` abort | **Landed.** | Keep the take in the loop. |
@@ -55,4 +55,4 @@ Probe after each slice: ROM banner plus `ABC\r` → `ABC\r\n\r\n> `.
 3. Idle `sync_irq` between `waitpne` and `waitpeq wr` (silent 8085).
 4. Spin `masterReset` wait on `req_master` while P5 is held (deadlock).
 
-Do not: idle `sync_irq`, Hub between `waitpne` and `waitpeq wr`, poll P5, restore XON/XOFF, drop the Spin INT pulse.
+Do not: idle `sync_irq`, Hub between `waitpne` and `waitpeq wr`, poll P5 with no debounce, drive P5 in reply to a backplane pulse, restore XON/XOFF, drop the Spin INT pulse.

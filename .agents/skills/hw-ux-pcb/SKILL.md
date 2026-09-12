@@ -70,7 +70,7 @@ Status/control bit names mirror `docs/MC6850.pdf` (`SR_RDRF`, `SR_TDRE`, `CR_RIE
 
 - Propeller asserts `/WAIT` on address match so the Z80 stretches the I/O cycle until PASM finishes. Match uses `waitpeq … wr` (dest+mask). Rules: `lang-pasm/references/acia-wait.md`.
 - `/INT` is open-collector on P25 (`OUTA` bit 25 stays 0). PASM `sync_irq` holds `DIRA` P25 on a status read. Spin also pulses `DIRA[25]` when RIE or TIE, so a key is seen while PASM is in `waitpeq`. Each cog has its own `DIRA`. The pin is the OR of driven lows.
-- CTRL+ALT+DEL: `outa[5]~`, `dira[5]~~`, hold 1 ms, `masterReset`, local clear, then `dira[5]~`. Net `PRESET` is P5, D1 cathode, and C12 (200 pF). `!RESET` is the RC2014 bus (D1 anode, C12 other end). C12 does not stretch the pulse. P5 is not pulled. Do not poll it as a reset input. The board button uses ROM `$03`.
+- CTRL+ALT+DEL and boot pulse: `outa[5]~`, `dira[5]~~`, hold 1 ms, wipe ACIA (restart cog), then `dira[5]~`. Net `PRESET` is P5, D1 cathode, and C12 (200 pF). `!RESET` is the RC2014 bus (D1 anode, C12 other end). C12 does not stretch the pulse. When `/RESET` is idle, D1 pulls P5 high. A backplane button pulse makes P5 low. Sample P5 only when Spin is not driving it. Debounce 1 ms. Wipe FIFOs once. Do not drive P5 in reply.
 - Data bus bytes in Hub are often stored **pre-shifted** by `DATA_BASE` (8) so they OR straight onto `OUTA`.
 
 ## VGA analogue network

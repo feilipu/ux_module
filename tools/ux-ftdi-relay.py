@@ -45,6 +45,21 @@ def dtr_release(fd):
         print(f'ux-ftdi-relay: TIOCMBIC DTR: {e}', file=sys.stderr)
 
 
+def write_all(fd, data):
+    view = memoryview(data)
+    while view:
+        try:
+            n = os.write(fd, view)
+        except OSError as e:
+            if e.errno in (errno.EAGAIN, errno.EWOULDBLOCK):
+                select.select([], [fd], [], 0.5)
+                continue
+            raise
+        if n <= 0:
+            raise OSError(errno.EPIPE, 'short write')
+        view = view[n:]
+
+
 def main():
     if len(sys.argv) != 3:
         die('usage: ux-ftdi-relay.py SERIAL PTY_LINK')
@@ -90,7 +105,7 @@ def main():
                         break
                 if not data:
                     break
-                os.write(master, data)
+                write_all(master, data)
             if master in r:
                 try:
                     data = os.read(master, 1024)
@@ -101,7 +116,7 @@ def main():
                         break
                 if not data:
                     break
-                os.write(sfd, data)
+                write_all(sfd, data)
     finally:
         dtr_release(sfd)
         try:

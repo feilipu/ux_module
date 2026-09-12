@@ -58,7 +58,7 @@ Typical production start order in `ux_module.main`:
 3. Two VGA text cogs (`wmf.init` → `hires_text_vga.start`)
 4. DDC I2C cog (`i2c.startCog` in `ddc_i2c.spin`) after VGA so the monitor is alive
 5. PS/2 cog (`kbd.start`)
-6. 1 ms Z80 `/RESET` pulse (no FIFO flush)
+6. 1 ms Z80 `/RESET` pulse. Discard FTDI RX and restart the ACIA cog while held. A backplane `/RESET` button is sampled on P5 (1 ms debounce) and uses the same wipe. It does not reset the Propeller.
 7. Cog 0 remains in the main Spin loop (`kbdToZ80`, `termToZ80`, `readZ80`)
 
 Text mode uses seven of eight cogs. I2C is a Spin cog, not PASM. It reads EDID and DDC/CI. It does not change VGA timing. The spare cog is unused. Only the main cog calls `acia.tx`. Main skips `kbdToZ80` during a Z80→host XMODEM session (`z80XmSess`, including the ACK gap) and a host→Z80 packet session (`hostXm <> OFF`). Trailer bytes are counted, not sniffed. DDC still runs while the 8085 is live. Do not hold `/RESET` across DDC.
@@ -93,7 +93,7 @@ Status and control bits follow the Motorola 6850 model (`docs/MC6850.pdf`) at a 
 
 FIFOs are 512 bytes each. Z80 receive is the Propeller `tx_*` FIFO (`RDRF`). Z80 transmit is the Propeller `rx_*` FIFO (`TDRE`). Spin `tx` and `rx` move bytes. `sync_irq` writes `acia_status` on a status read.
 
-PASM holds `/INT` low while RIE or TIE match the flags. Spin also pulses `DIRA[25]` when RIE or TIE, so a key is seen while PASM is in `waitpeq`. `/RTS` is the CR5/CR6 field. Master reset `$03` sets `req_parse_idle` then zeros both FIFOs. It does not clear `tdre_hold`. CTRL+ALT+DEL holds P5 for 1 ms, runs `masterReset` (including `tdre_hold` and config `$03`), then `tdreHold` until FTDI has room. An empty or `/RTS`-high RDR read presents the last byte and does not move `tx_tail`. A full TDR write is dropped and does not set `OVRN`. Spin `tdreHold` writes Hub `tdre_hold` so PASM keeps `TDRE` clear. Detail and revert notes: `.agents/skills/module-ux`. RomWBW and CPM-IDE ACIA clients: `.agents/skills/module-ux/references/acia-host-drivers.md`.
+PASM holds `/INT` low while RIE or TIE match the flags. Spin also pulses `DIRA[25]` when RIE or TIE, so a key is seen while PASM is in `waitpeq`. `/RTS` is the CR5/CR6 field. Master reset `$03` sets `req_parse_idle` then zeros both FIFOs. It does not clear `tdre_hold`. Boot pulse and CTRL+ALT+DEL hold P5 for 1 ms, discard host RX, and restart the ACIA cog so FIFOs and `last_rdr` are zero. Then `tdreHold` until FTDI has room. Do not wait on `req_master`. An empty or `/RTS`-high RDR read presents the last byte and does not move `tx_tail`. A full TDR write is dropped and does not set `OVRN`. Spin `tdreHold` writes Hub `tdre_hold` so PASM keeps `TDRE` clear. Detail and revert notes: `.agents/skills/module-ux`. RomWBW and CPM-IDE ACIA clients: `.agents/skills/module-ux/references/acia-host-drivers.md`.
 
 ## FTDI UART cog
 

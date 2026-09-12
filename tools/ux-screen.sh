@@ -12,9 +12,9 @@
 #   tools/ux-screen.sh /dev/cu.usbserial-AB0JQLG6
 #   tools/ux-screen.sh AB0JQLG6
 # Detach: C-a d    Quit: C-a k
-# XMODEM send:    C-a s   then file path (or C-a : exec !! lsx -b FILE)
-# XMODEM 1K send: C-a : exec !! lsx -b -k FILE
-# XMODEM receive: C-a r   then file path (or C-a : exec !! lrx -b FILE)
+# XMODEM send:    C-a s   then file path (or C-a : exec !! lsx -b -q -X FILE)
+# XMODEM 1K send: C-a : exec !! lsx -b -q -X -k FILE
+# XMODEM receive: C-a r   then file path (or C-a : exec !! lrx -b -q -X FILE)
 
 set -euo pipefail
 
@@ -118,6 +118,11 @@ fi
 
 "$relay" "$dev" "$pty" &
 relpid=$!
+cleanup() {
+  kill "$relpid" 2>/dev/null || true
+  wait "$relpid" 2>/dev/null || true
+}
+trap cleanup EXIT INT TERM
 ok=0
 for _ in {1..50}; do
   if [[ -L $pty ]]; then
@@ -127,13 +132,11 @@ for _ in {1..50}; do
   sleep 0.05
 done
 if (( ! ok )); then
-  kill "$relpid" 2>/dev/null || true
   print -u2 "ux-screen: relay did not create $pty"
   exit 1
 fi
 # EEPROM boot after DTR release is ~1 s; banner follows term.start's 1/4 s wait.
 print -u2 "UX Module  $dev  via $pty  115200 8N1 RX/TX  (C-a s send / C-a r receive XMODEM)"
 print -u2 "wait for UX Module Initialised  (DTR held off)"
-/usr/bin/screen -c "$rc" "$pty"
-kill "$relpid" 2>/dev/null || true
-wait "$relpid" 2>/dev/null || true
+print -u2 "if XMODEM leaves a dead window: C-a k, then run this script again"
+/usr/bin/screen -c "$rc" "$pty" || true

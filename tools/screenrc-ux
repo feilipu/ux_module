@@ -6,6 +6,11 @@ vbell off
 defflow off
 flow off
 c1 off
+# Apple /usr/bin/screen 4.00.03 wraps exec in login -pflq when the
+# window is "logged in". After lsx/lrx exit, that leaves a dead window
+# on the PTY (keys do nothing). Keep utmp login off for this session.
+deflogin off
+login off
 # Unbind software flow so C-a s / C-a q cannot inject DC3/DC1.
 # C-a q stays dead. C-a s is XMODEM send (below).
 bind q
@@ -15,9 +20,12 @@ bind ^q
 # then REMOVE this bindkey so $7F reaches the Z80 again.
 bindkey ^? stuff ^H
 # Prefill XMODEM send/receive. Type the file path and Enter.
-# C-a s  (or C-a C-s)  send host -> 8085, 128-byte. Add -k for 1K.
+# -q: lsx/lrx progress must not go down the PTY (CP/M then sees
+#     ASCII after block 1 and aborts: Cannot sync, Received 1 blocks).
+# -X: force XMODEM. Add -k for 1K.
+# C-a s  (or C-a C-s)  send host -> 8085
 # C-a r  (or C-a C-r)  receive 8085 -> host
-bind s colon "exec !! lsx -b "
-bind ^s colon "exec !! lsx -b "
-bind r colon "exec !! lrx -b "
-bind ^r colon "exec !! lrx -b "
+bind s colon "exec !! lsx -b -q -X "
+bind ^s colon "exec !! lsx -b -q -X "
+bind r colon "exec !! lrx -b -q -X "
+bind ^r colon "exec !! lrx -b -q -X "

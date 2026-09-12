@@ -46,8 +46,10 @@ openspin -L src -L src/lib_vjet -b -o build/vjet_test.binary src/lib_vjet/vjet_t
 |-----|--------|
 | `C-a k` | Quit screen (do this before `ux-load.sh`) |
 | `C-a d` | Detach |
-| `C-a s` | XMODEM send (`lsx`). Type the file path. |
-| `C-a r` | XMODEM receive (`lrx`) |
+| `C-a s` | XMODEM send (`lsx -b -q -X`). Type the file path. |
+| `C-a r` | XMODEM receive (`lrx -b -q -X`) |
+
+If `lsx`/`lrx` exits and the window no longer takes keys, quit (`C-a k`) and run `tools/ux-screen.sh` again. That does not pulse DTR. Apple `/usr/bin/screen` used to wrap `exec` in `login`; `tools/screenrc-ux` now sets `deflogin off`.
 
 `tools/ux-ftdi-relay.py` holds DTR off. macOS asserts DTR on open of `cu.usbserial-*`. That pin is Propeller `/RES`.
 
