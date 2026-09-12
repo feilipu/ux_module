@@ -176,7 +176,8 @@ Use the CLI toolchain. PropellerIDE remains valid for interactive work. Both pat
 | [OpenSpin](https://github.com/parallaxinc/OpenSpin) (`openspin`) | Compile Spin and PASM to a `.binary` or `.eeprom` image | Build from source (for example `~/Projects/OpenSpin`) |
 | [PropLoader](https://github.com/parallaxinc/PropLoader) (`proploader`) | Load the image over FTDI FT232 (DTR reset) | Build from source (for example `~/Projects/PropLoader`) |
 | `tools/ux-load.sh` | EEPROM load + run on `/dev/cu.usbserial-*` | This repository |
-| `tools/ux-screen.sh` | 115200 console. Holds DTR off | This repository |
+| `tools/ux-screen.sh` | 115200 FTDI console. Holds DTR off | This repository |
+| `rc-screen` (`tools/rc-screen.sh`) | 115200 ACIA console on USB CDC. Direct GNU `screen` | `$HOME/bin` |
 
 Copy this block. Quit GNU `screen` first (`C-a k`). The serial port must be free.
 
@@ -197,7 +198,7 @@ Same load without the helper. Adjust the device from `proploader -P`. Prefer `/d
 proploader -p /dev/cu.usbserial-XXXX -e -r build/ux_module.binary
 ```
 
-Full helper notes, VECTORJET compile, and screen keys: [`tools/README.md`](tools/README.md). Agent rules: `AGENTS.md` and `.agents/skills/tool-propeller/`.
+Full helper notes, VECTORJET compile, and screen keys: [`tools/README.md`](tools/README.md). Agent rules: `AGENTS.md`, `.agents/skills/tool-propeller/`, and `.agents/skills/tool-rc-screen/`.
 
 ### Programming Interface
 

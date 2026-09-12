@@ -115,7 +115,7 @@ Cursors are six bytes: text X/Y/mode and mouse X/Y/mode. The UX Module uses the 
 
 | Doc | Use |
 |-----|-----|
-| `tools/README.md` | Copy compile, `ux-load.sh`, and `ux-screen.sh` |
+| `tools/README.md` | Copy compile, `ux-load.sh`, `ux-screen.sh`, and `rc-screen.sh` |
 | `docs/P8X32A-Web-PropellerManual-v1.2.pdf` | Spin and PASM language |
 | `docs/Propeller Quick Reference v1.7.pdf` | Opcode and Spin cheat sheet |
 | `pcb/P8X32A-Propeller-Datasheet-v1.4.0_0.pdf` | Hub, video, counters, electrical |

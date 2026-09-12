@@ -21,6 +21,11 @@ set -euo pipefail
 
 here="${0:A:h}"
 export PATH="/opt/homebrew/bin:$HOME/bin:$here:$PATH"
+# Apple screen 4.00.03 keeps sockets in $TMPDIR/.screen. That path
+# changes per Terminal / agent. Pin one directory for session uxmod.
+screendir="${UX_SCREEN_DIR:-$HOME/.screen-uxmod}"
+mkdir -p -m 700 "$screendir"
+export SCREENDIR="$screendir"
 
 list_ports() {
   setopt localoptions nullglob
@@ -123,6 +128,19 @@ stop_ux_relay() {
 if [[ "${1:-}" == --stop ]]; then
   stop_ux_relay
   print -u2 "ux-screen: relay stopped"
+  exit 0
+fi
+
+if [[ "${1:-}" == --quit ]]; then
+  ids="$(/usr/bin/screen -ls 2>/dev/null || true)"
+  id=""
+  [[ "$ids" =~ ([0-9]+\.uxmod) ]] && id="$match[1]"
+  if [[ -z $id ]]; then
+    print -u2 "ux-screen: no session uxmod (SCREENDIR=$SCREENDIR)"
+    exit 0
+  fi
+  /usr/bin/screen -S "$id" -X quit || true
+  print -u2 "ux-screen: session $id quit (relay still up; --stop closes it)"
   exit 0
 fi
 

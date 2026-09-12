@@ -126,7 +126,7 @@ tools/ux-screen.sh
 
 1. PropellerIDE (or compatible) with **`ux_module.spin` in the foreground**. Product objects live under `src/`. Add `src/lib_vjet` only when you compile a VECTORJET demo.
 2. Program with an **FT232** Prop Plug (`tools/ux-load.sh` or `proploader` on `/dev/cu.usbserial-*`, DTR reset). SparkFun FTDI Basic: DTR is pin 6 from GND (GRN). See `tool-propeller`. USB CDC (`/dev/cu.usbmodem*`, 8086net 5 V stick) is console only. Download on CDC was tried and failed (ROM handshake).
-3. Toggle DTR on the FT232 to reboot stand-alone. CDC pin 1 is RTS, not DTR.
+3. Toggle DTR on the FT232 to reboot stand-alone. CDC pin 1 is RTS, not DTR. CP/M on the USB-C CDC stick uses `rc-screen` (`tool-rc-screen`), not the FTDI relay.
 
 ## Agent rules
 

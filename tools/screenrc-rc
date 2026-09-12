@@ -1,0 +1,34 @@
+# RC2014 ACIA console. GNU screen config for rc-screen.
+# Direct on /dev/cu.usbmodem* (USB CDC). No FTDI relay. No PTY.
+# RX/TX only. XMODEM needs 8-bit data and no XON/XOFF.
+# lsx / lrx come from PATH (Homebrew lrzsz is typical on macOS).
+startup_message off
+vbell off
+defflow off
+flow off
+# Baud is a screen command argument (115200,cs8,-ixon,-ixoff). Do not
+# put a baud line here.
+c1 off
+# Apple /usr/bin/screen 4.00.03 wraps exec in login -pflq when the
+# window is "logged in". After lsx/lrx exit, that leaves a dead window
+# (keys do nothing). Keep utmp login off for this session.
+deflogin off
+login off
+# Unbind software flow so C-a s / C-a q cannot inject DC3/DC1.
+# C-a q stays dead. C-a s is XMODEM send (below).
+bind q
+bind ^q
+# Mac Delete is RUBOUT ($7F). Current CPM-IDE ROM echoes the erased
+# character. Map Delete to BS ($08) until that ROM is updated, then
+# REMOVE this bindkey so $7F reaches the 8085 again.
+bindkey ^? stuff ^H
+# Prefill XMODEM send/receive. Type the file path and Enter.
+# -q: lsx/lrx progress must not go down the serial line (CP/M then
+#     sees ASCII after block 1 and aborts: Cannot sync).
+# -X: force XMODEM. Add -k for 1K.
+# C-a s  (or C-a C-s)  send host -> 8085
+# C-a r  (or C-a C-r)  receive 8085 -> host
+bind s colon "exec !! lsx -b -q -X "
+bind ^s colon "exec !! lsx -b -q -X "
+bind r colon "exec !! lrx -b -q -X "
+bind ^r colon "exec !! lrx -b -q -X "

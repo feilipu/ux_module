@@ -160,16 +160,18 @@ Scripts live in `tools/`. Humans and agents copy from [`tools/README.md`](../../
 
 | Command | Role |
 |---------|------|
-| `tools/ux-screen.sh` | GNU `screen` 115200 8N1, RX/TX only, no XON/XOFF (XMODEM). Prefers `/dev/cu.usbserial-*`. `tools/ux-ftdi-relay.py` holds DTR off (macOS asserts DTR on open; that pin is `/RES`). Screen talks to `/tmp/ux-pty-$UID`. Config: `tools/screenrc-ux`. |
-| `tools/serial_probe.py` | Headless TX/RX log. Holds DTR off. Prints `BOOT`/`TX`/`RX` as `repr` plus `<CR>`/`<LF>`. Quit screen first. |
+| `tools/ux-screen.sh` | GNU `screen` 115200 8N1 on SparkFun FTDI. `tools/ux-ftdi-relay.py` holds DTR off (that pin is `/RES`). Session `uxmod`. Config: `tools/screenrc-ux`. |
+| `rc-screen` | GNU `screen` 115200 8N1 on USB CDC (`/dev/cu.usbmodem*`). Direct attach. No relay. Session `rc2014`. `$HOME/bin/rc-screen`. See `tool-rc-screen`. |
+| `tools/serial_probe.py` | Headless TX/RX log on FTDI. Holds DTR off. Prints `BOOT`/`TX`/`RX` as `repr` plus `<CR>`/`<LF>`. Quit screen first. Not the CDC path. |
 | `tools/ux-load.sh` | EEPROM load on SparkFun FTDI Basic. Default `reset=dtr` on `/dev/cu.usbserial-*`. `-m` is manual `/RES`. Refuses `/dev/cu.usbmodem*`. |
-| `tools/screenrc-ux` | `flow off`; `C-a s` send / `C-a r` receive prefill `lsx` / `lrx` (Homebrew `lrzsz` on `PATH`). `C-a q` stays unbound (XON). **TEMP:** `bindkey ^? stuff ^H` maps Mac Delete (RUBOUT `$7F`) to BS. Current CPM-IDE ROM echoes the erased character. **Remove that bindkey when the ROM appnote fix is burned.** |
+| `tools/screenrc-ux` | FTDI session: `flow off`; `C-a s` / `C-a r` prefill `lsx` / `lrx`. |
 
 ```bash
-tools/ux-screen.sh                      # FT232 if present, else one CDC stick
-tools/ux-screen.sh /dev/cu.usbserial-XXXX  # force FT232
-tools/serial_probe.py                   # banner only (quit screen first)
-tools/serial_probe.py $'ABC123\r'       # send CR-terminated text; print TX and RX
+tools/ux-screen.sh                         # FT232 console (relay, DTR off)
+tools/ux-screen.sh /dev/cu.usbserial-XXXX
+rc-screen                                  # RC2014 ACIA on USB CDC (direct)
+tools/serial_probe.py                      # FTDI banner only (quit screen first)
+tools/serial_probe.py $'ABC123\r'
 ```
 
 ## Optional / out of scope

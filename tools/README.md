@@ -6,6 +6,8 @@ Put `openspin` and `proploader` on `PATH`. Build notes: `.agents/skills/tool-pro
 
 Quit GNU `screen` before a load (`C-a k`). `tools/ux-load.sh` then stops the FTDI relay so the port is free.
 
+Two consoles: `ux-screen` is SparkFun FTDI (DTR is `/RES`, relay). `rc-screen` is RC2014 ACIA on USB CDC (direct attach). Both live in `$HOME/bin`.
+
 ## Product firmware
 
 Top object: `src/ux_module.spin`. Search path: `-L src` only.
@@ -56,3 +58,35 @@ Do not pass baud flags to GNU `screen` on the PTY. Apple `screen` then treats th
 `tools/ux-ftdi-relay.py` holds DTR off. macOS asserts DTR on open of `cu.usbserial-*`. That pin is Propeller `/RES`. The relay stays up after you quit `screen`. A later `ux-screen` does not reopen the FTDI. The GNU `screen` session name is `uxmod`. A second `ux-screen` reattaches that session. The first start after a USB plug or `ux-screen.sh --stop` still pulses `/RES`. `tools/ux-load.sh` stops the relay, then uses DTR for the download.
 
 Older pyserial helpers (Linux `/dev/ttyUSB0` in the source): `tools/serial_dtr.py` pulses DTR. `tools/serial_tool.py` writes stdin to the port and comments HUPCL options. Prefer `tools/ux-load.sh` and `tools/ux-screen.sh` on macOS.
+
+## RC2014 ACIA console (`rc-screen`)
+
+GNU `screen` opens the USB CDC node (`/dev/cu.usbmodem*`) directly. There is no FTDI relay and no `serial_probe`. The session name is `rc2014`.
+
+General command: `$HOME/bin/rc-screen`. Config: `$HOME/.screenrc-rc`. In-tree copies: `tools/rc-screen.sh` and `tools/screenrc-rc`.
+
+This is the CP/M console on the 8086 Consultancy USB-C stick. Do not use this script on `/dev/cu.usbserial-*`. That FTDI pin 6 is Propeller `/RES`. Use `ux-screen` for the SparkFun port.
+
+```sh
+rc-screen
+rc-screen /dev/cu.usbmodem01031
+rc-screen --list
+rc-screen --quit
+```
+
+Sockets are in `$HOME/.screen-rc2014`. A bare `screen -S rc2014` looks in `$TMPDIR/.screen` and misses the session. Use `rc-screen --quit` to stop it.
+
+A terminal attaches. With no TTY the script starts a detached session. One session only.
+
+Same keys as `ux-screen`: `C-a s` send, `C-a r` receive. The screenrc sets `deflogin off` and unbinds XON.
+
+Host send after CP/M `xmodem NAME /r /q`:
+
+```sh
+rc-screen --send /path/to/file.com
+rc-screen --send --1k /path/to/file.com
+```
+
+`--send` waits one second so CP/M is in receive first. The script starts `screen` with `115200,cs8,-ixon,-ixoff`. A missing baud flag makes Apple `screen` reset the node to 9600.
+
+If `ux-ftdi-relay` holds the same CDC node, quit session `uxmod` and run `ux-screen --stop` first. Do not run both scripts on one node.
