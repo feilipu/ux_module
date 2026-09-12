@@ -143,7 +143,7 @@ The Parallax Propeller MCU stores its firmware in an external I2C EEPROM. The mi
 
 There is no need to put the EEPROM in a socket, as it can be programmed in-situ about a million times (literally) and you're never going to need to exchange it.
 
-The bootloader uses P28 as SCL and P29 as SDA. VGA DDC on this board is swapped (P29 SCL, P28 SDA). That match is VGA pin 15 and pin 12. A monitor EDID chip then does not ACK during boot. After boot, `i2c.startCog` uses that swapped pair to read the display. Do not use that cog to talk to the 24LC256.
+The bootloader uses P28 as SCL and P29 as SDA. VGA DDC on this board is swapped (P29 SCL, P28 SDA). That match is VGA pin 15 and pin 12. A monitor EDID chip then does not ACK during boot. After boot, `i2c.startCog` in `ddc_i2c.spin` uses that swapped pair to read the display. Do not use that cog to talk to the 24LC256.
 
 ### Overclocking
 
@@ -167,31 +167,37 @@ The UX Module is developed using the PropellerIDE, and therefore support will on
 
 The [PropellerIDE](https://developer.parallax.com/propelleride/) is available for Windows, OS X, Linux, and packaged for debian.
 
-### Command-line build (agents and scripts)
+### Command-line build (humans, agents, and scripts)
 
-AI agents and automation should use the CLI toolchain, not PropellerIDE.
+Use the CLI toolchain. PropellerIDE remains valid for interactive work. Both paths target **Propeller 1 (P8X32A)** only. Do not use Propeller 2 loaders (`loadp2`) or PASM2.
 
 | Tool | Role | Source |
 |------|------|--------|
 | [OpenSpin](https://github.com/parallaxinc/OpenSpin) (`openspin`) | Compile Spin and PASM to a `.binary` or `.eeprom` image | Build from source (for example `~/Projects/OpenSpin`) |
-| [PropLoader](https://github.com/parallaxinc/PropLoader) (`proploader`) | Load the image over FTDI FT232 (DTR reset), optional EEPROM write and terminal | Build from source (for example `~/Projects/PropLoader`) |
+| [PropLoader](https://github.com/parallaxinc/PropLoader) (`proploader`) | Load the image over FTDI FT232 (DTR reset) | Build from source (for example `~/Projects/PropLoader`) |
+| `tools/ux-load.sh` | EEPROM load + run on `/dev/cu.usbserial-*` | This repository |
+| `tools/ux-screen.sh` | 115200 console. Holds DTR off | This repository |
 
-Both tools target **Propeller 1 (P8X32A)** only. Do not use Propeller 2 loaders (`loadp2`) or PASM2 toolchains on this board.
-
-Example compile and load (macOS / Linux). Adjust the serial device from `proploader -P`.
+Copy this block. Quit GNU `screen` first (`C-a k`). The serial port must be free.
 
 ```sh
+mkdir -p build
 openspin -L src -b -o build/ux_module.binary src/ux_module.spin
+tools/ux-load.sh
+tools/ux-screen.sh
+```
+
+Top object is `src/ux_module.spin`. Product search path is `-L src` only. Add `-L src/lib_vjet` only for a VECTORJET demo top.
+
+`tools/ux-load.sh` writes EEPROM then runs. It uses DTR reset (SparkFun FTDI Basic pin 6). It refuses USB CDC (`/dev/cu.usbmodem*`). CDC is console only.
+
+Same load without the helper. Adjust the device from `proploader -P`. Prefer `/dev/cu.*` over `/dev/tty.*` on macOS.
+
+```sh
 proploader -p /dev/cu.usbserial-XXXX -e -r build/ux_module.binary
 ```
 
-Notes for agents:
-
-1. Pass the **top object** on the `openspin` command line (`src/ux_module.spin`). Do not compile a child module alone.
-2. Use `-L src` for the product. Add `-L src/lib_vjet` only for a VECTORJET demo top.
-3. Prefer `/dev/cu.*` over `/dev/tty.*` on macOS.
-4. `-e -r` writes EEPROM and then runs. Use `-r` alone for a RAM-only load.
-5. Agent edit rules and tool paths live in `AGENTS.md` and `.agents/skills/tool-propeller/`.
+Full helper notes, VECTORJET compile, and screen keys: [`tools/README.md`](tools/README.md). Agent rules: `AGENTS.md` and `.agents/skills/tool-propeller/`.
 
 ### Programming Interface
 
@@ -207,7 +213,7 @@ To implement the functions required for the UX Module several SPIN/PASM modules 
 
 The only (at this stage) special PASM functions written for the UX Module are in the implementation of the ACIA MC6850 Serial Interface. These are in the [ACIA module](https://github.com/feilipu/ux_module/blob/main/src/acia_rc2014.spin).
 
-`i2c.spin` also runs a Spin cog after boot. It talks to the monitor on the VGA DDC pins (swapped vs the boot EEPROM). It reads EDID at `0x50` and, if the display answers, DDC/CI at `0x37`. It does not change VGA timing.
+`ddc_i2c.spin` also runs a Spin cog after boot. It talks to the monitor on the VGA DDC pins (swapped vs the boot EEPROM). It reads EDID at `0x50` and, if the display answers, DDC/CI at `0x37`. It does not change VGA timing.
 
 VECTORJET (`src/lib_vjet`) is not linked from the product top. Boot is text VGA only. Compile VECTORJET demos with their own tops.
 
@@ -217,7 +223,7 @@ ux_module
 |---> terminal_ftdi 
 |---> keyboard_ps2
 |---> acia_rc2014
-|---> i2c
+|---> ddc_i2c
 |---> wmf_terminal_vga
       |
       |---> hires_text_vga
@@ -271,7 +277,7 @@ The UX Module is connected to the RC2014 Bus serial Tx and Rx lines. When using 
 
 The Propeller MCU `/RESET` pin is driven by the serial interface `DTR` pin, which is normally held high when the port is ready. However sometimes both Linux (MacOS) and Windows toggle `DTR` when opening a new serial interface. This impacts our ability to use the serial interface to upload code to the RC2014.
 
-There are several options proposed on the internet to avoid this issue (mainly driven by Arduino users wanting to have "long running" code). The solutions are written into the [`serial_tool.py`](https://github.com/feilipu/ux_module/blob/main/serial_tool.py) which is included to simplify uploading BASIC programs to the RC2014.
+There are several options proposed on the internet to avoid this issue (mainly driven by Arduino users wanting to have "long running" code). The solutions are written into [`tools/serial_tool.py`](tools/serial_tool.py), which is included to simplify uploading BASIC programs to the RC2014.
 
 For some machines, none of the software options work so the final solution is to bend the `DTR` pin out from the FTDI connector. Then an optional connection can be provided to enable Propeller reprogramming. Photos demonstrating one method to do this are provided in the [`docs`](https://github.com/feilipu/ux_module/tree/main/docs) directory.
 

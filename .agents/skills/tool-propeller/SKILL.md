@@ -82,14 +82,17 @@ The UX Module programmes over an **FTDI FT232** USB-UART on P30/P31 with **DTR**
 
 ## Compile this repo
 
-Top object must be the file on the `openspin` command line (same rule as PropellerIDE foreground).
+Copy from [`tools/README.md`](../../../tools/README.md). Top object must be the file on the `openspin` command line (same rule as PropellerIDE foreground).
 
 ```bash
-cd ~/Projects/ux_module
 mkdir -p build
-openspin -L src -L src/lib_vjet -b -o build/ux_module.binary src/ux_module.spin
-# EEPROM-sized image file (still load with proploader -e):
-openspin -L src -L src/lib_vjet -e -o build/ux_module.eeprom src/ux_module.spin
+openspin -L src -b -o build/ux_module.binary src/ux_module.spin
+```
+
+Product search path is `-L src` only. EEPROM-sized image file (still load with `proploader -e` or `tools/ux-load.sh`):
+
+```bash
+openspin -L src -e -o build/ux_module.eeprom src/ux_module.spin
 ```
 
 Useful flags: `-L`/`-I` object search path, `-b` binary, `-e` eeprom file, `-v` verbose, `-u` unused-method elimination.
@@ -97,7 +100,7 @@ Useful flags: `-L`/`-I` object search path, `-b` binary, `-e` eeprom file, `-v` 
 lib_vjet demos use their own top objects, for example:
 
 ```bash
-openspin -L src/lib_vjet -b -o build/vjet_test.binary src/lib_vjet/vjet_test.spin
+openspin -L src -L src/lib_vjet -b -o build/vjet_test.binary src/lib_vjet/vjet_test.spin
 ```
 
 ## Load (FT232 Prop Plug only)
@@ -118,6 +121,8 @@ SparkFun FTDI Basic uses the FTDI TTL-232R 6-pin SIL, with **pin 6 swapped from 
 A genuine FTDI TTL-232R cable still has **RTS# on pin 6**; that needs `-D reset=rts`, not DTR.
 
 ```bash
+tools/ux-load.sh                       # EEPROM + run, DTR, cu.usbserial-*
+tools/ux-load.sh /dev/cu.usbserial-XXXX
 proploader -P                          # list serial ports
 # FT232 is cu.usbserial-*, not cu.usbmodem-*
 proploader -p /dev/cu.usbserial-XXXX -r build/ux_module.binary
@@ -149,20 +154,22 @@ Cause: header pin 1 on that stick is **RTS**, not DTR. Software RTS did not reac
 
 This machine’s PropLoader (`~/Projects/PropLoader`) default is **DTR** (SparkFun FTDI Basic pin 6 DTR#). Extra methods: `-D reset=rts` (stock FTDI cable pin 6), `-D reset=rts-inv`, `-D reset=none` (prints `Release /RES now`).
 
-## Console helpers (this machine)
+## Console helpers (this repository)
+
+Scripts live in `tools/`. Humans and agents copy from [`tools/README.md`](../../../tools/README.md).
 
 | Command | Role |
 |---------|------|
-| `~/bin/ux-screen` | GNU `screen` 115200 8N1, RX/TX only, no XON/XOFF (XMODEM). Prefers `/dev/cu.usbserial-*`. `ux-ftdi-relay` holds DTR off (macOS asserts DTR on open; that pin is `/RES`). Screen talks to `/tmp/ux-pty-$UID`. |
-| `~/bin/ux-probe` | Headless TX/RX log (`serial_probe.py`). Holds DTR off. Prints `BOOT`/`TX`/`RX` as `repr` plus `<CR>`/`<LF>`. Quit screen first. |
-| `~/bin/ux-load` | EEPROM load on SparkFun FTDI Basic. Default `reset=dtr` on `/dev/cu.usbserial-*`. `-m` is manual `/RES`. Refuses `/dev/cu.usbmodem*`. |
-| `~/.screenrc-ux` | `flow off`; `C-a s` send / `C-a r` receive prefill `lsx` / `lrx` (Homebrew `lrzsz`). `C-a q` stays unbound (XON). `C-a x` is default lockscreen. **TEMP:** `bindkey ^? stuff ^H` maps Mac Delete (RUBOUT `$7F`) to BS. Current CPM-IDE ROM echoes the erased character. **Remove that bindkey when the ROM appnote fix is burned.** |
+| `tools/ux-screen.sh` | GNU `screen` 115200 8N1, RX/TX only, no XON/XOFF (XMODEM). Prefers `/dev/cu.usbserial-*`. `tools/ux-ftdi-relay.py` holds DTR off (macOS asserts DTR on open; that pin is `/RES`). Screen talks to `/tmp/ux-pty-$UID`. Config: `tools/screenrc-ux`. |
+| `tools/serial_probe.py` | Headless TX/RX log. Holds DTR off. Prints `BOOT`/`TX`/`RX` as `repr` plus `<CR>`/`<LF>`. Quit screen first. |
+| `tools/ux-load.sh` | EEPROM load on SparkFun FTDI Basic. Default `reset=dtr` on `/dev/cu.usbserial-*`. `-m` is manual `/RES`. Refuses `/dev/cu.usbmodem*`. |
+| `tools/screenrc-ux` | `flow off`; `C-a s` send / `C-a r` receive prefill `lsx` / `lrx` (Homebrew `lrzsz` on `PATH`). `C-a q` stays unbound (XON). **TEMP:** `bindkey ^? stuff ^H` maps Mac Delete (RUBOUT `$7F`) to BS. Current CPM-IDE ROM echoes the erased character. **Remove that bindkey when the ROM appnote fix is burned.** |
 
 ```bash
-ux-screen                         # FT232 if present, else one CDC stick
-ux-screen /dev/cu.usbserial-XXXX  # force FT232
-ux-probe                          # banner only (quit screen first)
-ux-probe $'ABC123\r'              # send CR-terminated text; print TX and RX
+tools/ux-screen.sh                      # FT232 if present, else one CDC stick
+tools/ux-screen.sh /dev/cu.usbserial-XXXX  # force FT232
+tools/serial_probe.py                   # banner only (quit screen first)
+tools/serial_probe.py $'ABC123\r'       # send CR-terminated text; print TX and RX
 ```
 
 ## Optional / out of scope

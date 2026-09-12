@@ -18,7 +18,7 @@ ux_module.spin                 ' top object — compile/upload this
 ├── terminal_ftdi.spin         ' FullDuplex serial on P31/P30
 ├── keyboard_ps2.spin          ' PS/2 on P27/P26
 ├── acia_rc2014.spin           ' MC6850 bus emulator (PASM cog)
-├── i2c.spin                   ' DDC EDID / DDC/CI Spin cog (P29 SCL, P28 SDA)
+├── ddc_i2c.spin               ' DDC EDID / DDC/CI Spin cog (P29 SCL, P28 SDA)
 └── wmf_terminal_vga.spin      ' terminal services + screen buffer
     └── hires_text_vga.spin    ' dual-cog VGA text (Chip Gracey)
 ```
@@ -36,7 +36,7 @@ Archive demos under `archive/` are not part of the production tree.
 | ACIA bus | `acia_rc2014` PASM |
 | PS/2 | `keyboard_ps2` PASM |
 | VGA text ×2 | `hires_text_vga` (two cogs) |
-| I2C DDC | `i2c` Spin cog (EDID + DDC/CI). Not the boot EEPROM. |
+| I2C DDC | `ddc_i2c` Spin cog (EDID + DDC/CI). Not the boot EEPROM. |
 
 Text mode uses seven of eight cogs. I2C is a Spin cog, not PASM. The spare cog is unused. Only the main cog calls `acia.tx`. Main skips `kbdToZ80` during a Z80→host session (`z80XmSess`) and a host→Z80 packet session (`hostXm <> OFF`).
 
@@ -82,7 +82,7 @@ Boot banner `"UX Module Initialised"` goes to FTDI and VGA.
 - CR5/CR6 is a two-bit field. TIE is the exact value `CR_TIE_RTS0`, not bit 5 alone. Master reset `$03` zeros both FIFOs and sets `req_parse_idle`. It does not clear `tdre_hold`.
 - `/INT` level from `sync_irq` on a status read. Spin still pulses `DIRA[25]` when RIE/TIE so the 8085 sees a key while PASM is in `waitpeq`. Do not drop that pulse.
 
-Edit with `lang-pasm` + `hw-ux-pcb`. Datasheet: `docs/MC6850.pdf`. OBEX idioms: `lang-pasm/references/obex-pasm.md`.
+Edit with `lang-pasm` + `hw-ux-pcb`. Datasheet: `docs/MC6850.pdf`. OBEX idioms: `lang-pasm/references/obex-pasm.md`. Host drivers (RomWBW, CPM-IDE 8085) vs this tree: [references/acia-host-drivers.md](references/acia-host-drivers.md).
 
 ## Flow and reset decisions (revert notes)
 
@@ -104,7 +104,7 @@ These replace earlier WIP (`ea4502e` XON/XOFF, `569cd07` flow). Change the named
 | Host CR | Z80 CR → `term.newLine` (CR+LF). `ftdiNeed` 2. | PST and typical hosts need CR. | `term.lineFeed` only. |
 | Board reset button | Not sensed on P5 (floats, C12 200 pF). ROM `$03` is the ACIA path. | Polling P5 false-triggers. | Idle poll of P5. |
 
-Hub writers and open IDs: [references/remaining-errors.md](references/remaining-errors.md). Residual: P0-3 button is not sensed (correct). P0-2 Spin must not wait on `req_master` while P5 is held. P2-2: keep the Spin INT pulse (`not (config & mask)` on the trailing `tx` pulse). Do not idle `sync_irq`. Review checklist: [references/ship-review.md](references/ship-review.md).
+Hub writers and open IDs: [references/remaining-errors.md](references/remaining-errors.md). Residual: P0-3 button is not sensed (correct). P0-2 Spin must not wait on `req_master` while P5 is held. P2-2: keep the Spin INT pulse (`not (config & mask)` on the trailing `tx` pulse). Do not idle `sync_irq`. Review checklist: [references/ship-review.md](references/ship-review.md). Host ACIA clients: [references/acia-host-drivers.md](references/acia-host-drivers.md).
 
 ## VGA text path
 
@@ -116,8 +116,16 @@ Hub writers and open IDs: [references/remaining-errors.md](references/remaining-
 
 ## Build / upload
 
+Copy from [`tools/README.md`](../../../tools/README.md).
+
+```sh
+openspin -L src -b -o build/ux_module.binary src/ux_module.spin
+tools/ux-load.sh
+tools/ux-screen.sh
+```
+
 1. PropellerIDE (or compatible) with **`ux_module.spin` in the foreground**. Product objects live under `src/`. Add `src/lib_vjet` only when you compile a VECTORJET demo.
-2. Program with an **FT232** Prop Plug (`proploader` on `/dev/cu.usbserial-*`, DTR reset). SparkFun FTDI Basic: DTR is pin 6 from GND (GRN). See `tool-propeller` / `ux-load`. USB CDC (`/dev/cu.usbmodem*`, 8086net 5 V stick) is console only. Download on CDC was tried and failed (ROM handshake).
+2. Program with an **FT232** Prop Plug (`tools/ux-load.sh` or `proploader` on `/dev/cu.usbserial-*`, DTR reset). SparkFun FTDI Basic: DTR is pin 6 from GND (GRN). See `tool-propeller`. USB CDC (`/dev/cu.usbmodem*`, 8086net 5 V stick) is console only. Download on CDC was tried and failed (ROM handshake).
 3. Toggle DTR on the FT232 to reboot stand-alone. CDC pin 1 is RTS, not DTR.
 
 ## Agent rules

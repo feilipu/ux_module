@@ -2,7 +2,7 @@
 
 Policy (what to keep or undo) is the revert-notes table in `module-ux`. This file is the tree vs that policy. It is **not** a clean bill of health.
 
-XMODEM, VGA cursor, and boot-reset findings: [ship-review.md](ship-review.md).
+XMODEM, VGA cursor, and boot-reset findings: [ship-review.md](ship-review.md). RomWBW and CPM-IDE ACIA clients vs this tree: [acia-host-drivers.md](acia-host-drivers.md). Text RC: those drivers do not need a 6850 feature this tree lacks. Live XMODEM is still open.
 
 Bus cog: **`569cd07` wait loop** (`rdlong` base, `waitpne`, `waitpeq wr`). No Hub between those waits. Rise wait is `wait_pin_high` (poll pin and `req_master`). Mailbox is **11 longs**. `last_rdr` is cog RAM.
 

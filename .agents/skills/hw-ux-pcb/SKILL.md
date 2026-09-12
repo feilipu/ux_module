@@ -38,12 +38,12 @@ Board: RC2014 User Experience Module (Propeller P8X32A). Schematics and gerbers:
 | P25 | /INT (open-collector via diode) |
 | P26 | PS/2 clock |
 | P27 | PS/2 data |
-| P28 | I2C **SDA** for Spin DDC (`i2c.spin`). Bootloader SCL. VGA pin 12 (VESA SDA). |
+| P28 | I2C **SDA** for Spin DDC (`ddc_i2c.spin`). Bootloader SCL. VGA pin 12 (VESA SDA). |
 | P29 | I2C **SCL** for Spin DDC. Bootloader SDA. VGA pin 15 (VESA SCL). |
 | P30 | FTDI TX (Propeller → host). SparkFun FTDI Basic pin 5 RXI (YELLOW) |
 | P31 | FTDI RX (host → Propeller). SparkFun FTDI Basic pin 4 TXO (ORANGE) |
 
-Constants: `src/ux_module.spin`, `src/acia_rc2014.spin`, `src/i2c.spin`.
+Constants: `src/ux_module.spin`, `src/acia_rc2014.spin`, `src/ddc_i2c.spin`.
 
 ## ACIA I/O decode
 
@@ -69,7 +69,7 @@ Status/control bit names mirror `docs/MC6850.pdf` (`SR_RDRF`, `SR_TDRE`, `CR_RIE
 ## Bus timing notes
 
 - Propeller asserts `/WAIT` on address match so the Z80 stretches the I/O cycle until PASM finishes. Match uses `waitpeq … wr` (dest+mask). Rules: `lang-pasm/references/acia-wait.md`.
-- `/INT` is a held open-collector level from the ACIA cog (`DIRA` P25, `OUTA` bit 25 stays 0). It is not a pulse. Spin must not drive P25.
+- `/INT` is open-collector on P25 (`OUTA` bit 25 stays 0). PASM `sync_irq` holds `DIRA` P25 on a status read. Spin also pulses `DIRA[25]` when RIE or TIE, so a key is seen while PASM is in `waitpeq`. Each cog has its own `DIRA`. The pin is the OR of driven lows.
 - CTRL+ALT+DEL: `outa[5]~`, `dira[5]~~`, hold 1 ms, `masterReset`, local clear, then `dira[5]~`. Net `PRESET` is P5, D1 cathode, and C12 (200 pF). `!RESET` is the RC2014 bus (D1 anode, C12 other end). C12 does not stretch the pulse. P5 is not pulled. Do not poll it as a reset input. The board button uses ROM `$03`.
 - Data bus bytes in Hub are often stored **pre-shifted** by `DATA_BASE` (8) so they OR straight onto `OUTA`.
 
@@ -81,9 +81,9 @@ Eight pins through resistor DAC (270 Ω / 560 Ω / 130 Ω) as documented in `hir
 
 1. Change pin numbers in **one** owning module, then import via `object#CONST`.
 2. Any ACIA mask change must update `port_active_mask`, `DATA_BASE`, and schematic comments together.
-3. Do not put extra I2C devices on P28/P29 that answer during Propeller boot. VGA DDC SDA/SCL are swapped so a monitor EDID chip does not ACK the bootloader. After boot, `i2c.startCog` uses the swapped pair to read EDID at 0x50 and DDC/CI at 0x37. Do not talk to the 24LC256 with that pin pair.
-4. DTR on the FTDI connector resets the Propeller (same idea as Arduino). Tools: `serial_dtr.py`, `serial_tool.py`. Load the chip with an **FT232** Prop Plug (`tool-propeller`). USB CDC is not a loader.
-5. SparkFun FTDI Basic 6-pin matches the FTDI TTL-232R SIL except **pin 6 is DTR#**, not RTS# ([hookup guide](https://learn.sparkfun.com/tutorials/sparkfun-usb-to-serial-uart-boards-hookup-guide)). Align GRN to GRN, BLK to BLK. CTS is NC. RTS is not on this header. Load with `proploader` DTR (`ux-load`). No RTS/CTS or DTR flow to the Propeller. Software flow: `module-ux` revert notes.
+3. Do not put extra I2C devices on P28/P29 that answer during Propeller boot. VGA DDC SDA/SCL are swapped so a monitor EDID chip does not ACK the bootloader. After boot, `i2c.startCog` in `ddc_i2c.spin` uses the swapped pair to read EDID at 0x50 and DDC/CI at 0x37. Do not talk to the 24LC256 with that pin pair.
+4. DTR on the FTDI connector resets the Propeller (same idea as Arduino). Tools: `tools/serial_dtr.py`, `tools/serial_tool.py`. Load the chip with an **FT232** Prop Plug (`tool-propeller`). USB CDC is not a loader.
+5. SparkFun FTDI Basic 6-pin matches the FTDI TTL-232R SIL except **pin 6 is DTR#**, not RTS# ([hookup guide](https://learn.sparkfun.com/tutorials/sparkfun-usb-to-serial-uart-boards-hookup-guide)). Align GRN to GRN, BLK to BLK. CTS is NC. RTS is not on this header. Load with `proploader` DTR (`tools/ux-load.sh`). No RTS/CTS or DTR flow to the Propeller. Software flow: `module-ux` revert notes.
 
 | Pin | SparkFun / Arduino | FTDI TTL-232R cable | Colour | UX Module |
 |-----|--------------------|---------------------|--------|-----------|

@@ -4,7 +4,7 @@ Combative review of `src/ux_module.spin` and child objects. Date: 2026-09-11. Pr
 
 Line numbers refer to the tree **before** the ship fixes. This file is the checklist. It is not a clean bill.
 
-Related: `remaining-errors.md` (ACIA punch list), `module-ux` revert notes.
+Related: `remaining-errors.md` (ACIA punch list), `acia-host-drivers.md` (RomWBW / CPM-IDE vs this tree), `module-ux` revert notes.
 
 ## Verdict
 
@@ -21,7 +21,7 @@ Ship it as a **text console**. Do **not** trust it as an XMODEM pipe, especially
 | 5 | Trailing `acia.tx` INT pulse never runs | Parentheses: `not (acia_config & mask)`. |
 | 6 | Dual VGA cursor. BS at column 0 wipes the first cell | WMF is master. Sync overlay after WMF ops. Skip BS-space-BS at column 0. |
 
-Until 1–3 have a live transfer check, treat XMODEM as a console filter, not a proven pipe.
+Until 1–3 have a live transfer check, treat XMODEM as a console filter, not a proven pipe. Next after text RC commit: live XMODEM send/receive.
 
 ## Current tree (staged, 2026-09-12)
 
@@ -177,10 +177,10 @@ Do not delete the ASCII table. House policy.
 | Trailing `DIRA[25]` pulse | `acia_rc2014.spin` ~209 | **Fixed.** `not (config & mask)`. |
 | `term.start` “clears screen” + 250 ms wait | `terminal_ftdi.spin` ~54 | Wait is real. Clear is not. |
 | `wmf.newLine` comment “cursor home” | `wmf_terminal_vga.spin` ~668 | **Fixed.** Comment now says column 0 and optional scroll. |
-| `i2c` “Added self-demo PUB Main” | `i2c.spin` ~16 | No `PUB Main` in the file. |
+| `i2c` “Added self-demo PUB Main” | `ddc_i2c.spin` header | **Fixed.** Header no longer claims `PUB Main`. |
 | `PORT_VJET` | `ux_module.spin` ~20 | Reserved, unused. Keep as a marker. |
-| `ASCII_GT` | `ux_module.spin` ~57 | Leftover from the `>` graphics hook. |
-| Empty `CON '' Visual differentiation` | `ux_module.spin` ~176 | Noise. |
+| `ASCII_GT` | `ux_module.spin` | Removed with the graphics hook. |
+| `CON '' Visual differentiation` | `ux_module.spin` | Keep. Human section break, not dead code. |
 | PST/WMF/PS2 APIs unused by product | `strIn`, `decIn`, `drawFrame`, `keyState` | Library weight, not a runtime bug. |
 
 `kbd.gotKey` skipping `$DE` (caps lock) **is** used as the `kbdToZ80` loop test. That one is live.

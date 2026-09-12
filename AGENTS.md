@@ -92,7 +92,7 @@ Each skill lives at `.agents/skills/<name>/SKILL.md`. The directory name is the 
 
 | Skill | When |
 |-------|------|
-| `tool-propeller` | Build/use OpenSpin + PropLoader (`proploader`) for P1 CLI compile and FTDI upload |
+| `tool-propeller` | Build/use OpenSpin + PropLoader (`proploader`) for P1 CLI compile and FTDI upload. Copy compile/load/console from `tools/README.md`. |
 
 ### Product and libraries
 

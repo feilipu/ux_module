@@ -9,6 +9,10 @@
 '' Spin still pulses DIRA[25] (RIE/TIE). It does not RMW acia_status.
 '' No XON/XOFF. PUMP_LIMIT, readZ80 ftdiNeed, hostXmodem.
 ''
+'' Practical 6850: FIFOs stand in for the UART. Clock divide, word select,
+'' and Break are not driven. PE, FE, CTS, and DCD stay 0. OVRN is not set
+'' on a full TDR write. IRQ is composed on a status read.
+''
 '' Copyright (c) 2021 Phillip Stevens
 ''
 '' I/O Address line mapping (Production):
@@ -55,10 +59,10 @@
 
 CON
 
-  DATA_BASE   =   8                   'DATA bus is Pin P8 to Pin P15
-  DATA_PINS   =   %1111_1111          '8 bit data bus
+  DATA_BASE   =   8                                     'DATA bus is Pin P8 to Pin P15
+  DATA_PINS   =   %1111_1111                            '8 bit data bus
 
-  INT_PIN_NUM   = 25                  'Pins used for output - open collector - behind diodes
+  INT_PIN_NUM   = 25                                    'Pins used for output - open collector - behind diodes
   WAIT_PIN_NUM  = 24
   RESET_PIN_NUM = 5
 
@@ -71,11 +75,11 @@ CON
   M1_PIN      =   |< 4
 
   A0_PIN      =   |< 3
-  A5_A1_PINS  =   |< 2                'NOR Gated, so will be logic high for Addr Pins 0 including /IORQ
+  A5_A1_PINS  =   |< 2                                  'NOR Gated, so will be logic high for Addr Pins 0 including /IORQ
   A6_PIN      =   |< 1
   A7_PIN      =   |< 0
 
-  BUFFER_LENGTH   = 512               'Recommended as 64 or higher, but can be 2, 4, 8, 16, 32, 64, 128, 256 or 512.
+  BUFFER_LENGTH   = 512                                 'Recommended as 64 or higher, but can be 2, 4, 8, 16, 32, 64, 128, 256 or 512.
   BUFFER_MASK     = BUFFER_LENGTH - 1
 
   MAX_STRING  =   255
@@ -98,28 +102,28 @@ CON
 
   ' ACIA Control Register
 
-  CR_RIE      = |< 7                ' Receiving Interrupt Enabled (Z80 view)
+  CR_RIE      = |< 7                                    ' Receiving Interrupt Enabled (Z80 view)
 
-  CR_TIX_MASK = |< 6 | |< 5         ' Mask just the Tx Interrupt relevant bits (CR6,CR5)
+  CR_TIX_MASK = |< 6 | |< 5                             ' Mask just the Tx Interrupt relevant bits (CR6,CR5)
 
-  CR_TID_BRK  = |< 6 | |< 5         ' _RTS low,  Transmitting Interrupt Disabled, BRK on Tx
-  CR_TID_RTS1 = |< 6                ' _RTS high, Transmitting Interrupt Disabled
-  CR_TIE_RTS0 = |< 5                ' _RTS low,  Transmitting Interrupt Enabled
-  CR_TID_RTS0 = 0                   ' _RTS low,  Transmitting Interrupt Disabled
+  CR_TID_BRK  = |< 6 | |< 5                             ' _RTS low,  Transmitting Interrupt Disabled, BRK on Tx
+  CR_TID_RTS1 = |< 6                                    ' _RTS high, Transmitting Interrupt Disabled
+  CR_TIE_RTS0 = |< 5                                    ' _RTS low,  Transmitting Interrupt Enabled
+  CR_TID_RTS0 = 0                                       ' _RTS low,  Transmitting Interrupt Disabled
 
-  CR_8O1      = |< 4 | |< 3 | |< 2  ' 8 Bits  Odd Parity 1 Stop Bit
-  CR_8E1      = |< 4 | |< 3         ' 8 Bits Even Parity 1 Stop Bit
-  CR_8N1      = |< 4 | |< 2         ' 8 Bits   No Parity 1 Stop Bit
-  CR_8N2      = |< 4                ' 8 Bits   No Parity 2 Stop Bits
-  CR_7O1      = |< 3 | |< 2         ' 7 Bits  Odd Parity 1 Stop Bit
-  CR_7E1      = |< 3                ' 7 Bits Even Parity 1 Stop Bit
-  CR_7O2      = |< 2                ' 7 Bits  Odd Parity 2 Stop Bits
-  CR_7E2      = 0                   ' 7 Bits Even Parity 2 Stop Bits
+  CR_8O1      = |< 4 | |< 3 | |< 2                      ' 8 Bits  Odd Parity 1 Stop Bit
+  CR_8E1      = |< 4 | |< 3                             ' 8 Bits Even Parity 1 Stop Bit
+  CR_8N1      = |< 4 | |< 2                             ' 8 Bits   No Parity 1 Stop Bit
+  CR_8N2      = |< 4                                    ' 8 Bits   No Parity 2 Stop Bits
+  CR_7O1      = |< 3 | |< 2                             ' 7 Bits  Odd Parity 1 Stop Bit
+  CR_7E1      = |< 3                                    ' 7 Bits Even Parity 1 Stop Bit
+  CR_7O2      = |< 2                                    ' 7 Bits  Odd Parity 2 Stop Bits
+  CR_7E2      = 0                                       ' 7 Bits Even Parity 2 Stop Bits
 
-  CR_RESET    = |< 1 | |< 0         ' Master Reset (issue before any other Control word)
-  CR_DIV_64   = |< 1                ' Divide the Clock by 64 (default value)
-  CR_DIV_16   = |< 0                ' Divide the Clock by 16
-  CR_DIV_01   = 0                   ' Divide the Clock by 1
+  CR_RESET    = |< 1 | |< 0                             ' Master Reset (issue before any other Control word)
+  CR_DIV_64   = |< 1                                    ' Divide the Clock by 64 (default value)
+  CR_DIV_16   = |< 0                                    ' Divide the Clock by 16
+  CR_DIV_01   = 0                                       ' Divide the Clock by 1
 
   ' ACIA Status Register
 
@@ -135,22 +139,22 @@ CON
 
 VAR
 
-  long  cog                         'cog flag/id
+  long  cog                                             'cog flag/id
 
                                     '11 contiguous longs
-  long  rx_head                     '#0   index into rx_buffer
-  long  rx_tail                     '#4
-  long  tx_head                     '#8
-  long  tx_tail                     '#12
-  long  acia_base                   '#16  ACIA base address (allowing for multiple instances)
-  long  acia_config                 '#20  ACIA configuration byte stored shifted by DATA_BASE
-  long  acia_status                 '#24  ACIA status byte stored shifted by DATA_BASE
-  long  buffer_ptr                  '#28
-  long  tdre_hold                   '#32  Spin 0/1; PASM keeps TDRE clear while nonzero
-  long  req_master                  '#36  CTRL+ALT+DEL: full 6850 reset including tdre_hold
-  long  req_parse_idle              '#40  CR_RESET: Cog 0 must set PARSE_IDLE
-  byte  rx_buffer[BUFFER_LENGTH]    '#44
-  byte  tx_buffer[BUFFER_LENGTH]    '#44 + BUFFER_LENGTH
+  long  rx_head                                         '#0   index into rx_buffer
+  long  rx_tail                                         '#4
+  long  tx_head                                         '#8
+  long  tx_tail                                         '#12
+  long  acia_base                                       '#16  ACIA base address (allowing for multiple instances)
+  long  acia_config                                     '#20  ACIA configuration byte stored shifted by DATA_BASE
+  long  acia_status                                     '#24  ACIA status byte stored shifted by DATA_BASE
+  long  buffer_ptr                                      '#28
+  long  tdre_hold                                       '#32  Spin 0/1; PASM keeps TDRE clear while nonzero
+  long  req_master                                      '#36  CTRL+ALT+DEL: full 6850 reset including tdre_hold
+  long  req_parse_idle                                  '#40  CR_RESET: Cog 0 must set PARSE_IDLE
+  byte  rx_buffer[BUFFER_LENGTH]                        '#44
+  byte  tx_buffer[BUFFER_LENGTH]                        '#44 + BUFFER_LENGTH
 
 
 PUB start(base) : okay
@@ -158,11 +162,11 @@ PUB start(base) : okay
       okay - returns false if no cog is available.}}
 
   stop
-  longfill(@rx_head, 0, 4)                                ' These are indexes to bytes in the buffer, not pointers
+  longfill(@rx_head, 0, 4)                              ' These are indexes to bytes in the buffer, not pointers
   acia_base := base
   acia_config := constant (( CR_TID_RTS0 | CR_8N1 | CR_DIV_64 ) << DATA_BASE )
-  acia_status := constant ( SR_TDRE << DATA_BASE )        ' Initially ready to receive bytes from the Z80
-  buffer_ptr := @rx_buffer                                ' Record the origin address of the Rx and Tx buffers
+  acia_status := constant ( SR_TDRE << DATA_BASE )      ' Initially ready to receive bytes from the Z80
+  buffer_ptr := @rx_buffer                              ' Record the origin address of the Rx and Tx buffers
   tdre_hold := 0
   req_master := 0
   req_parse_idle := 0
@@ -179,7 +183,7 @@ PUB stop
 
 PUB txString( pStringPtr )
 {{Print a zero-terminated string to terminal.
- pStrPtr - Pointer to null terminated string to print.}}
+ pStringPtr - Pointer to null terminated string to print.}}
 
   repeat strsize( pStringPtr)
     tx(byte[pStringPtr++])
@@ -240,7 +244,8 @@ PUB rx : rxbyte
 
 
 PUB rxCount : count
-{{Get count of characters in receive buffer. Manages receive flow control.
+{{Get count of characters in receive buffer. Does not change FIFO indexes.
+  Pulses /INT when TIE is set, the FIFO is not full, and tdre_hold is 0.
   Returns: number of characters waiting in receive buffer.}}
 
   count := rx_head - rx_tail
@@ -352,7 +357,7 @@ wait
                                                         ' including /M1 and /WAIT pin
 
                         waitpne outa,port_active_mask
-                        waitpeq outa,port_active_mask wr' wait until we see our addresses (including /IORQ within A5_A1_PINS)
+                        waitpeq outa,port_active_mask wr ' wait until we see our addresses (including /IORQ within A5_A1_PINS)
                                                         ' use wr effect to set /WAIT low on match (/INT gets hit as a side effect)
 
                         andn    outa,bus_int            ' reset /INT pin (modified as a side effect of the waitpeq outa wr effect)
@@ -389,7 +394,7 @@ receive_command
                         xor     t2,acia_config_rts1 wz
                         mov     cog_rts_hold,#0
             if_z        mov     cog_rts_hold,#1         ' exact CR_TID_RTS1: do not consume RDR
-                        xor     bus,acia_config_reset wz' master reset if we've received the RESET command
+                        xor     bus,acia_config_reset wz ' master reset if we've received the RESET command
             if_nz       jmp     #wait
 
                         mov     t2,#1                   ' flag first so Spin tx/rx abort before indexes move
@@ -404,7 +409,7 @@ receive_command
                         add     t1,#4
                         wrlong  t2,t1                   ' tx_tail
                         mov     last_rdr,#0
-                        wrlong  acia_status_initial,acia_status_addr  ' TDRE, RDRF clear
+                        wrlong  acia_status_initial,acia_status_addr ' TDRE, RDRF clear
                         jmp     #wait                   ' keep tdre_hold
 
 transmit_status
@@ -514,7 +519,7 @@ do_master_reset                                         ' panic / wedged rise. K
                         or      outa,bus_wait
                         mov     t2,#1                   ' parser idle; Spin tx/rx abort
                         wrlong  t2,req_parse_idle_addr
-                        wrlong  acia_config_reset,acia_config_addr  ' $03 so TIE is off
+                        wrlong  acia_config_reset,acia_config_addr ' $03 so TIE is off
                         mov     cog_rts_hold,#0
                         mov     t1,par
                         mov     t2,#0

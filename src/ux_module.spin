@@ -15,21 +15,21 @@ CON
 CON
 
   ' import some constants from the ACIA Emulation
-  PORT_ROMWBW   = acia#PORT_40  ' Alternate ACIA base port, when used together with SIO/2 Module on 0x80
-  PORT_DEFAULT  = acia#PORT_80  ' Default ACIA base port
-  PORT_VJET     = acia#PORT_C0  ' reserved Z80 graphics port; not decoded yet
+  PORT_ROMWBW   = acia#PORT_40                          ' Alternate ACIA base port, when used together with SIO/2 Module on 0x80
+  PORT_DEFAULT  = acia#PORT_80                          ' Default ACIA base port
+  PORT_VJET     = acia#PORT_C0                          ' reserved Z80 graphics port; not decoded yet
 
 
 CON
 
   ' set these constants based on the Propeller VGA hardware
-  VGA_BASE_PIN  = 16  ' VGA pins 16-23
+  VGA_BASE_PIN  = 16                                    ' VGA pins 16-23
 
   ' set these constants based on the Propeller PS/2 hardware
-  KBD_DATA_PIN  = 27  ' KEYBOARD data pin
-  KBD_CLK_PIN   = 26  ' KEYBOARD clock pin
+  KBD_DATA_PIN  = 27                                    ' KEYBOARD data pin
+  KBD_CLK_PIN   = 26                                    ' KEYBOARD clock pin
 
-  ' I2C DDC pins live in i2c.spin (P29 SCL, P28 SDA). Boot EEPROM is the swapped pair.
+  ' DDC I2C pins live in ddc_i2c.spin (P29 SCL, P28 SDA). Boot EEPROM is the swapped pair.
 
   ' import some constants from the Propeller Window Manager
   VGACOLS       = wmf#VGACOLS
@@ -40,64 +40,64 @@ CON
 
   ' ASCII control codes
 
-  ASCII_NULL    = $00 ' null character
+  ASCII_NULL    = $00                                   ' null character
 
-  ASCII_BELL    = $07 ' bell
-  ASCII_BS      = $08 ' backspace
-  ASCII_TAB     = $09 ' horizontal tab
-  ASCII_LF      = $0A ' line feed
-  ASCII_VT      = $0B ' vertical tab
-  ASCII_FF      = $0C ' form feed (new page)
-  ASCII_CR      = $0D ' carriage return
+  ASCII_BELL    = $07                                   ' bell
+  ASCII_BS      = $08                                   ' backspace
+  ASCII_TAB     = $09                                   ' horizontal tab
+  ASCII_LF      = $0A                                   ' line feed
+  ASCII_VT      = $0B                                   ' vertical tab
+  ASCII_FF      = $0C                                   ' form feed (new page)
+  ASCII_CR      = $0D                                   ' carriage return
 
-  ASCII_ESC     = $1B ' escape
+  ASCII_ESC     = $1B                                   ' escape
 
-  ASCII_SPACE   = $20 ' space
-  ASCII_HASH    = $23 ' #
-  ASCII_COMMA   = $2C ' ,
-  ASCII_PERIOD  = $2E ' .
+  ASCII_SPACE   = $20                                   ' space
+  ASCII_HASH    = $23                                   ' #
+  ASCII_COMMA   = $2C                                   ' ,
+  ASCII_PERIOD  = $2E                                   ' .
 
-  ASCII_SEMI    = $3B ' ;
+  ASCII_SEMI    = $3B                                   ' ;
 
-  ASCII_0       = $30 ' 0
-  ASCII_9       = $39 ' 9
+  ASCII_0       = $30                                   ' 0
+  ASCII_9       = $39                                   ' 9
 
-  ASCII_LB      = $5B ' [
-  ASCII_RB      = $5D ' ]
+  ASCII_LB      = $5B                                   ' [
+  ASCII_RB      = $5D                                   ' ]
 
-  ASCII_DEL     = $7F ' delete
+  ASCII_DEL     = $7F                                   ' delete
 
 CON
 
   ' XMODEM control codes
 
-  XMODEM_SOH    = $01 ' Start of Header (128-byte packet)
-  XMODEM_STX    = $02 ' Start of Header (1024-byte packet)
-  XMODEM_EOT    = $04 ' End of Transmission (passed through as data)
-  XMODEM_ACK    = $06 ' Acknowledge
-  XMODEM_NAK    = $15 ' Negative acknowledge
-  XMODEM_ETB    = $17 ' End of Transmission Block
-  XMODEM_CAN    = $18 ' Cancel
-  XMODEM_C      = $43 ' receiver CRC request
+  XMODEM_SOH    = $01                                   ' Start of Header (128-byte packet)
+  XMODEM_STX    = $02                                   ' Start of Header (1024-byte packet)
+  XMODEM_EOT    = $04                                   ' End of Transmission (passed through as data)
+  XMODEM_ACK    = $06                                   ' Acknowledge
+  XMODEM_NAK    = $15                                   ' Negative acknowledge
+  XMODEM_ETB    = $17                                   ' End of Transmission Block
+  XMODEM_CAN    = $18                                   ' Cancel
+  XMODEM_C      = $43                                   ' receiver CRC request
 
   ' Non-blocking Z80 output parser (readZ80). Up to PUMP_LIMIT bytes per call.
-  PARSE_IDLE      = 0   ' normal stream
-  PARSE_ESC       = 1   ' saw ESC, waiting for next byte
-  PARSE_CSI       = 2   ' ESC [ ... collecting n
-  PARSE_CSI_M     = 3   ' ESC [ n ; ... collecting m
-  PARSE_XMODEM_N  = 4   ' SOH/STX, waiting packet number
-  PARSE_XMODEM_M  = 5   ' waiting complemented packet number
-  PARSE_XMODEM    = 6   ' data bytes (z80Remain)
-  PARSE_XMODEM_CS = 7   ' opaque trailers (z80XmTrail: 1 checksum, 2 CRC)
+  PARSE_IDLE      = 0                                   ' normal stream
+  PARSE_ESC       = 1                                   ' saw ESC, waiting for next byte
+  PARSE_CSI       = 2                                   ' ESC [ ... collecting n
+  PARSE_CSI_M     = 3                                   ' ESC [ n ; ... collecting m
+  PARSE_XMODEM_N  = 4                                   ' SOH/STX, waiting packet number
+  PARSE_XMODEM_M  = 5                                   ' waiting complemented packet number
+  PARSE_XMODEM    = 6                                   ' data bytes (z80Remain)
+  PARSE_XMODEM_CS = 7                                   ' opaque trailers (z80XmTrail: 1 checksum, 2 CRC)
 
-  HOST_XM_OFF     = 0   ' no host→Z80 XMODEM session
-  HOST_XM_GAP     = 1   ' between packets: SOH/STX/EOT/ETB/CAN only
+  HOST_XM_OFF     = 0                                   ' no host→Z80 XMODEM session
+  HOST_XM_GAP     = 1                                   ' between packets: SOH/STX/EOT/ETB/CAN only
   HOST_XM_BLK     = 2
   HOST_XM_NBLK    = 3
   HOST_XM_DATA    = 4
   HOST_XM_TRAIL   = 5
 
-  PUMP_LIMIT      = 16  ' max bytes each of kbd / FTDI / ACIA drain per main-loop pass
+  PUMP_LIMIT      = 16                                  ' max bytes each of kbd / FTDI / ACIA drain per main-loop pass
 
 
 VAR
@@ -106,7 +106,7 @@ VAR
 ' DECLARED VARIABLES, ARRAYS, ETC.
 ' -----------------------------------------------------------------------------
 
-  byte  gScreenRows, gScreenCols                      ' convenient globals to store number of screen columns and rows
+  byte  gScreenRows, gScreenCols                        ' convenient globals to store number of screen columns and rows
 
   ' these data structures contains two cursors in the format [x,y,mode]
   ' these are passed to the VGA driver, so it can render them over the text in the display
@@ -114,23 +114,23 @@ VAR
   ' to show where the text cursor and mouse cursor is
   ' The data structure is 6 contiguous bytes which we pass to the VGA driver ultimately
 
-  byte  gTextCursX, gTextCursY, gTextCursMode         ' text cursor 0 [x0,y0,mode0]
-  byte  gMouseCursX, gMouseCursY, gMouseCursMode      ' mouse cursor 1 [x1,y1,mode1] (unused but required for VGA driver)
+  byte  gTextCursX, gTextCursY, gTextCursMode           ' text cursor 0 [x0,y0,mode0]
+  byte  gMouseCursX, gMouseCursY, gMouseCursMode        ' mouse cursor 1 [x1,y1,mode1] (unused but required for VGA driver)
 
-  long  gScreenBufferPtr                              ' holds the address of the video buffer passed back from the VGA driver
+  long  gScreenBufferPtr                                ' holds the address of the video buffer passed back from the VGA driver
 
-  byte  z80Parse                                      ' PARSE_* state for readZ80
-  byte  z80XmSess                                     ' Z80→host session (SOH/STX until idle EOT/ETB/CAN)
-  byte  z80XmCrc                                      ' 1: CRC-16 trailers (2), 0: checksum (1)
-  byte  z80XmTrail                                    ' trailer bytes still opaque
-  byte  hostXm                                        ' HOST_XM_* host→Z80 packet machine
-  byte  hostXmCrc                                     ' 1: CRC-16 trailers for host packets
+  byte  z80Parse                                        ' PARSE_* state for readZ80
+  byte  z80XmSess                                       ' Z80→host session (SOH/STX until idle EOT/ETB/CAN)
+  byte  z80XmCrc                                        ' 1: CRC-16 trailers (2), 0: checksum (1)
+  byte  z80XmTrail                                      ' trailer bytes still opaque
+  byte  hostXm                                          ' HOST_XM_* host→Z80 packet machine
+  byte  hostXmCrc                                       ' 1: CRC-16 trailers for host packets
   byte  hostXmTrail
-  long  hostXmLen                                     ' 128 or 1024
+  long  hostXmLen                                       ' 128 or 1024
   long  hostXmRemain
-  long  z80N, z80M                                    ' CSI n and m (ESC [ n ; m H)
-  long  z80Remain                                     ' XMODEM data bytes still to copy to FTDI
-  long  z80XmLen                                      ' 128 (SOH) or 1024 (STX)
+  long  z80N, z80M                                      ' CSI n and m (ESC [ n ; m H)
+  long  z80Remain                                       ' XMODEM data bytes still to copy to FTDI
+  long  z80XmLen                                        ' 128 (SOH) or 1024 (STX)
 
 
 OBJ
@@ -138,7 +138,7 @@ OBJ
       term            : "terminal_ftdi"
       kbd             : "keyboard_ps2"
       wmf             : "wmf_terminal_vga"
-      i2c             : "i2c"
+      i2c             : "ddc_i2c"
       acia            : "acia_rc2014"
 
 
@@ -150,10 +150,10 @@ PUB main
   term.newLine
 
   'start the ACIA interface
-  acia.start (PORT_DEFAULT) 'default for RC2014 ROM
+  acia.start (PORT_DEFAULT)                             'default for RC2014 ROM
 ' acia.start (PORT_ROMWBW)  'optional for RomWBW, when used together with SIO/2 Module on 0x80
 
-  waitcnt (clkfreq / 100 + cnt)                     ' 10 ms for the ACIA cog
+  waitcnt (clkfreq / 100 + cnt)                         ' 10 ms for the ACIA cog
   screenInit
   startDdc
   kbd.start (KBD_DATA_PIN, KBD_CLK_PIN)
@@ -162,7 +162,7 @@ PUB main
   ' MAIN COG EVENT LOOP — one writer for acia.tx (no extra pump cog).
   ' Skip the keyboard while Z80→host or host→Z80 XMODEM is in progress.
   repeat
-    if acia.takeParseIdle                             ' Z80 CR_RESET: abandon ESC/CSI/XMODEM
+    if acia.takeParseIdle                               ' Z80 CR_RESET: abandon ESC/CSI/XMODEM
       z80Parse := PARSE_IDLE
       z80XmSess := 0
       hostXm := HOST_XM_OFF
@@ -219,7 +219,7 @@ PUB screenInit | retVal
 
 
 PRI startDdc
-{{Start the I2C cog after VGA. Read EDID, then DDC/CI brightness. Report on FTDI and VGA.
+{{Start the DDC I2C cog after VGA. Read EDID, then DDC/CI brightness. Report on FTDI and VGA.
   Does not change VGA timing. Cog 0 waits up to 500 ms per request. Boot path only.}}
 
   if not i2c.startCog
@@ -315,7 +315,7 @@ PRI ftdiNeed(char) : n
       ASCII_LF:
         n := 0
       ASCII_CR:
-        n := 2                                        ' term.newLine sends CR then LF
+        n := 2                                          ' term.newLine sends CR then LF
 
 
 PRI inXmodem : truefalse
@@ -335,16 +335,16 @@ PRI takeZ80Byte(char)
 
   case z80Parse
 
-    PARSE_ESC:                                      ' byte after ESC
+    PARSE_ESC:                                          ' byte after ESC
       term.tx (char)
-      if ( char == ASCII_LB )                       ' CSI Control Sequence Introducer
+      if ( char == ASCII_LB )                           ' CSI Control Sequence Introducer
         z80N := 0
         z80Parse := PARSE_CSI
       else
-        echoPrintable (char)                        ' printable non-CSI after ESC
+        echoPrintable (char)                            ' printable non-CSI after ESC
         z80Parse := PARSE_IDLE
 
-    PARSE_CSI:                                      ' ESC [ n ...
+    PARSE_CSI:                                          ' ESC [ n ...
       term.tx (char)
       if ( char => "0" AND char =< "9" )
         z80N := z80N*10 + char - ASCII_0
@@ -355,42 +355,43 @@ PRI takeZ80Byte(char)
         applyCsi (char)
         z80Parse := PARSE_IDLE
 
-    PARSE_CSI_M:                                    ' ESC [ n ; m ...
+    PARSE_CSI_M:                                        ' ESC [ n ; m ...
       term.tx (char)
       if ( char => "0" AND char =< "9" )
         z80M := z80M*10 + char - ASCII_0
       else
-        if ( char == "H" )                          ' cursor to row n, column m
+        if ( char == "H" )                              ' cursor to row n, column m
           applyCsiH
         z80Parse := PARSE_IDLE
 
-    PARSE_XMODEM_N:                                 ' packet number
+    PARSE_XMODEM_N:                                     ' packet number
       term.tx (char)
       z80N := char
       z80Parse := PARSE_XMODEM_M
 
-    PARSE_XMODEM_M:                                 ' complemented packet number
+    PARSE_XMODEM_M:                                     ' complemented packet number
       term.tx (char)
       z80M := char
       if ( z80N == $FF - z80M )
-        z80Remain := z80XmLen                       ' 128 or 1024 data; trailers follow
+        z80Remain := z80XmLen                           ' 128 or 1024 data; trailers follow
         z80Parse := PARSE_XMODEM
       else
-        z80Parse := PARSE_IDLE                      ' bad header; n/~n already on FTDI, no payload yet
+        z80XmSess := 0                                  ' bad header; do not keep the keyboard muted
+        z80Parse := PARSE_IDLE                          ' n/~n already on FTDI, no payload yet
 
-    PARSE_XMODEM:                                   ' payload to FTDI only (not VGA)
+    PARSE_XMODEM:                                       ' payload to FTDI only (not VGA)
       term.tx (char)
       z80Remain := z80Remain - 1
       if ( z80Remain == 0 )
         z80Parse := PARSE_XMODEM_CS
 
-    PARSE_XMODEM_CS:                                ' checksum or CRC bytes; never delimiters
+    PARSE_XMODEM_CS:                                    ' checksum or CRC bytes; never delimiters
       term.tx (char)
       z80XmTrail := z80XmTrail - 1
       if ( z80XmTrail == 0 )
         z80Parse := PARSE_IDLE
 
-    other:                                          ' PARSE_IDLE
+    other:                                              ' PARSE_IDLE
       takeZ80Idle (char)
 
 
@@ -399,7 +400,7 @@ PRI takeZ80Idle(char)
 
   case char
 
-    XMODEM_SOH:                                     ' XMODEM-128 Start of Header
+    XMODEM_SOH:                                         ' XMODEM-128 Start of Header
       term.tx (char)
       z80XmLen := 128
       if z80XmCrc
@@ -409,7 +410,7 @@ PRI takeZ80Idle(char)
       z80XmSess := 1
       z80Parse := PARSE_XMODEM_N
 
-    XMODEM_STX:                                     ' XMODEM-1K Start of Header (CRC-16)
+    XMODEM_STX:                                         ' XMODEM-1K Start of Header (CRC-16)
       term.tx (char)
       z80XmLen := 1024
       z80XmCrc := 1
@@ -421,7 +422,7 @@ PRI takeZ80Idle(char)
       term.tx (char)
       z80XmSess := 0
 
-    ASCII_BS, ASCII_DEL:                            ' backspace (edit), delete
+    ASCII_BS, ASCII_DEL:                                ' backspace (edit), delete
       if wmf.getColScreen > 0
         term.tx (ASCII_BS)
         term.tx (ASCII_SPACE)
@@ -431,23 +432,23 @@ PRI takeZ80Idle(char)
         textOut (wmf#BS)
       syncCurs
 
-    ASCII_TAB:                                      ' horizontal tab; WMF owns glyph cursor
+    ASCII_TAB:                                          ' horizontal tab; WMF owns glyph cursor
       term.tx (char)
       wmf.outScreen (wmf#TB)
       syncCurs
 
-    ASCII_LF:                                       ' eat linefeed from Z80 (CP/M CR+LF)
+    ASCII_LF:                                           ' eat linefeed from Z80 (CP/M CR+LF)
 
-    ASCII_CR:                                       ' carriage return
-      term.newLine                                  ' CR+LF for PST / typical hosts
+    ASCII_CR:                                           ' carriage return
+      term.newLine                                      ' CR+LF for PST / typical hosts
       textOut (wmf#NL)
       syncCurs
 
-    ASCII_ESC:                                      ' escape; next byte decides CSI vs literal
+    ASCII_ESC:                                          ' escape; next byte decides CSI vs literal
       term.tx (char)
       z80Parse := PARSE_ESC
 
-    other:                                          ' all other cases
+    other:                                              ' all other cases
       term.tx (char)
       echoPrintable (char)
 
@@ -455,7 +456,7 @@ PRI takeZ80Idle(char)
 PRI echoPrintable(char)
 {{Write a printable byte through WMF, then copy the overlay from WMF.}}
 
-  if ( char => $20 )                                ' only printable characters to the screen
+  if ( char => $20 )                                    ' only printable characters to the screen
     textOut (char)
     syncCurs
 
@@ -517,31 +518,31 @@ PRI applyCsi(char)
 
   case char
 
-    "A":                                            ' cursor up
+    "A":                                                ' cursor up
       setCursXY (gTextCursX, gTextCursY - z80N)
 
-    "B":                                            ' cursor down
+    "B":                                                ' cursor down
       setCursXY (gTextCursX, gTextCursY + z80N)
 
-    "C":                                            ' cursor right
+    "C":                                                ' cursor right
       setCursXY (gTextCursX + z80N, gTextCursY)
 
-    "D":                                            ' cursor left
+    "D":                                                ' cursor left
       setCursXY (gTextCursX - z80N, gTextCursY)
 
-    "E":                                            ' cursor next line n start
+    "E":                                                ' cursor next line n start
       setCursXY (0, gTextCursY + z80N)
 
-    "F":                                            ' cursor previous line n start
+    "F":                                                ' cursor previous line n start
       setCursXY (0, gTextCursY - z80N)
 
-    "G":                                            ' cursor to column n
+    "G":                                                ' cursor to column n
       setCursXY (z80N - 1, gTextCursY)
 
-    "H":                                            ' cursor to row n, column 1
+    "H":                                                ' cursor to row n, column 1
       setCursXY (0, z80N - 1)
 
-    "J":                                            ' clear screen
+    "J":                                                ' clear screen
       if ( z80N == 0 )
         bytefill ( gScreenBufferPtr + gTextCursY*gScreenCols + gTextCursX, ASCII_SPACE, gScreenRows*gScreenCols - gTextCursY*gScreenCols - gTextCursX )
       elseif ( z80N == 1 )
@@ -550,7 +551,7 @@ PRI applyCsi(char)
         textOut ( wmf#CS )
       syncCurs
 
-    "K":                                            ' clear line
+    "K":                                                ' clear line
       if ( z80N == 0 )
         bytefill ( gScreenBufferPtr + gTextCursY*gScreenCols + gTextCursX, ASCII_SPACE, gScreenCols - gTextCursX)
       elseif ( z80N == 1 )
@@ -562,7 +563,7 @@ PRI applyCsi(char)
         textOut (gTextCursX)
       syncCurs
 
-    "m":                                            ' set graphics rendition parameters
+    "m":                                                ' set graphics rendition parameters
       if ( z80N == 0 )
         wmf.setLineColor ( gTextCursY, wmf#CTHEME_DEFAULT_FG, wmf#CTHEME_DEFAULT_BG )
       elseif ( z80N == 7 )
@@ -579,10 +580,10 @@ PUB kbdToZ80 | char, n
 
       case char
         kbd#KBD_ASCII_UP, kbd#KBD_ASCII_DOWN, kbd#KBD_ASCII_RIGHT, kbd#KBD_ASCII_LEFT, kbd#KBD_ASCII_HOME:
-          if acia.txSpace < 3                       ' CSI is ESC [ x — need three FIFO slots
+          if acia.txSpace < 3                           ' CSI is ESC [ x — need three FIFO slots
             quit
         other:
-          if not acia.txCheck                       ' one slot for a normal key
+          if not acia.txCheck                           ' one slot for a normal key
             quit
 
       char := kbd.getKey
@@ -620,7 +621,7 @@ PUB kbdToZ80 | char, n
         kbd#KBD_ASCII_CTRL | kbd#KBD_ASCII_ALT | kbd#KBD_ASCII_DEL:
           panicReset
 
-        other:                                      ' all other input
+        other:                                          ' all other input
           acia.tx (char)
 
 
@@ -658,7 +659,7 @@ PRI takeHostXm(b)
       if hostXmTrail == 0
         hostXm := HOST_XM_GAP
 
-    other:                                          ' OFF or GAP
+    other:                                              ' OFF or GAP
       if b == XMODEM_SOH
         hostXmBegin (128)
       elseif b == XMODEM_STX
@@ -690,17 +691,17 @@ PRI panicReset
 
   outa[ acia#RESET_PIN_NUM ]~
   dira[ acia#RESET_PIN_NUM ]~~
-  waitcnt (clkfreq / 1000 + cnt)                    ' 1 ms; C12 is 200 pF and does not stretch
-  acia.masterReset                                  ' FIFOs, last_rdr, tdre_hold, config $03, status
-  acia.tdreHold                                     ' keep TDR closed until readZ80 sees FTDI room
+  waitcnt (clkfreq / 1000 + cnt)                        ' 1 ms; C12 is 200 pF and does not stretch
+  acia.masterReset                                      ' FIFOs, last_rdr, tdre_hold, config $03, status
+  acia.tdreHold                                         ' keep TDR closed until readZ80 sees FTDI room
   z80Parse := PARSE_IDLE
   z80XmSess := 0
   hostXm := HOST_XM_OFF
   textOut (wmf#CS)
   syncCurs
-  if term.txSpace => 4                              ' ESC [ 2 J
+  if term.txSpace => 4                                  ' ESC [ 2 J
     term.clear
-  dira[ acia#RESET_PIN_NUM ]~                       ' release Z80 after local state is quiet
+  dira[ acia#RESET_PIN_NUM ]~                           ' release Z80 after local state is quiet
 
 
 DAT

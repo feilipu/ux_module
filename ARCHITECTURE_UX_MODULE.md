@@ -27,7 +27,7 @@ ux_module.spin
 ├── terminal_ftdi.spin      Full-duplex UART on P31/P30 (Prop Plug pins)
 ├── keyboard_ps2.spin       PS/2 decode on P27 data / P26 clock
 ├── acia_rc2014.spin        6850 register and bus timing emulator
-├── i2c.spin                DDC EDID / DDC/CI Spin cog (P29 SCL / P28 SDA, swapped)
+├── ddc_i2c.spin            DDC EDID / DDC/CI Spin cog (P29 SCL / P28 SDA, swapped)
 └── wmf_terminal_vga.spin   Screen buffer, colours, terminal print helpers
     └── hires_text_vga.spin Dual-cog VGA text engine (Parallax / Chip Gracey)
 ```
@@ -44,7 +44,7 @@ Compile and upload with `ux_module.spin` as the top object. Use `-L src` only. V
 | /WAIT, /INT | P24, P25 (open-collector via diodes) |
 | PS/2 | P26 clock, P27 data |
 | I2C EEPROM (bootloader) | P28 SDA, P29 SCL |
-| VGA DDC (after boot) | P29 SCL, P28 SDA (`i2c.spin`). Swapped so EDID does not ACK the bootloader. |
+| VGA DDC (after boot) | P29 SCL, P28 SDA (`ddc_i2c.spin`). Swapped so EDID does not ACK the bootloader. |
 | FTDI | P30 TX, P31 RX |
 
 The 74HC4078 NOR combines `/IORQ` with A5–A1 so one Propeller pin can detect the ACIA I/O page. Detail: skill `hw-ux-pcb` and comments in `acia_rc2014.spin`.
@@ -56,7 +56,7 @@ Typical production start order in `ux_module.main`:
 1. FTDI terminal cog (`terminal_ftdi.start`)
 2. ACIA cog (`acia.start`)
 3. Two VGA text cogs (`wmf.init` → `hires_text_vga.start`)
-4. I2C DDC cog (`i2c.startCog`) after VGA so the monitor is alive
+4. DDC I2C cog (`i2c.startCog` in `ddc_i2c.spin`) after VGA so the monitor is alive
 5. PS/2 cog (`kbd.start`)
 6. 1 ms Z80 `/RESET` pulse (no FIFO flush)
 7. Cog 0 remains in the main Spin loop (`kbdToZ80`, `termToZ80`, `readZ80`)
@@ -89,11 +89,11 @@ A real MC68B50 places data in 150 ns or less. This cog is slower, so P24 stretch
 
 Carry hits bit 25 (`/INT`). The next instruction clears that bit. Do not drop `wr`. Loop rules live in `.agents/skills/lang-pasm/references/acia-wait.md`.
 
-Status and control bits follow the Motorola 6850 model (`docs/MC6850.pdf`). Default base is `0x80`. RomWBW setups may use `0x40` when an SIO owns `0x80`.
+Status and control bits follow the Motorola 6850 model (`docs/MC6850.pdf`) at a practical level. FIFOs stand in for the UART. Clock divide, word select, and Break are not driven. PE, FE, CTS, and DCD stay 0. Default base is `0x80`. RomWBW setups may use `0x40` when an SIO owns `0x80`.
 
-FIFOs are 512 bytes each. Z80 receive is the Propeller `tx_*` FIFO (`RDRF`). Z80 transmit is the Propeller `rx_*` FIFO (`TDRE`). Spin `tx` and `rx` move bytes. The PASM cog writes `acia_status`.
+FIFOs are 512 bytes each. Z80 receive is the Propeller `tx_*` FIFO (`RDRF`). Z80 transmit is the Propeller `rx_*` FIFO (`TDRE`). Spin `tx` and `rx` move bytes. `sync_irq` writes `acia_status` on a status read.
 
-The PASM cog owns `/INT` as a level, held low while RIE or TIE match the flags. `/RTS` is the CR5/CR6 field. Master reset `$03` sets `req_parse_idle` then zeros both FIFOs. It does not clear `tdre_hold`. CTRL+ALT+DEL holds P5 for 1 ms, runs `do_master_reset` (including `tdre_hold` and config `$03`), then `tdreHold` until FTDI has room. An empty or `/RTS`-high RDR read presents the last byte and does not move `tx_tail`. A full TDR write is dropped and does not set `OVRN`. Spin `tdreHold` writes Hub `tdre_hold` so PASM keeps `TDRE` clear. `sync_irq` is the only writer of `acia_status`. Detail and revert notes: `.agents/skills/module-ux`.
+PASM holds `/INT` low while RIE or TIE match the flags. Spin also pulses `DIRA[25]` when RIE or TIE, so a key is seen while PASM is in `waitpeq`. `/RTS` is the CR5/CR6 field. Master reset `$03` sets `req_parse_idle` then zeros both FIFOs. It does not clear `tdre_hold`. CTRL+ALT+DEL holds P5 for 1 ms, runs `masterReset` (including `tdre_hold` and config `$03`), then `tdreHold` until FTDI has room. An empty or `/RTS`-high RDR read presents the last byte and does not move `tx_tail`. A full TDR write is dropped and does not set `OVRN`. Spin `tdreHold` writes Hub `tdre_hold` so PASM keeps `TDRE` clear. Detail and revert notes: `.agents/skills/module-ux`. RomWBW and CPM-IDE ACIA clients: `.agents/skills/module-ux/references/acia-host-drivers.md`.
 
 ## FTDI UART cog
 
@@ -115,6 +115,7 @@ Cursors are six bytes: text X/Y/mode and mouse X/Y/mode. The UX Module uses the 
 
 | Doc | Use |
 |-----|-----|
+| `tools/README.md` | Copy compile, `ux-load.sh`, and `ux-screen.sh` |
 | `docs/P8X32A-Web-PropellerManual-v1.2.pdf` | Spin and PASM language |
 | `docs/Propeller Quick Reference v1.7.pdf` | Opcode and Spin cheat sheet |
 | `pcb/P8X32A-Propeller-Datasheet-v1.4.0_0.pdf` | Hub, video, counters, electrical |

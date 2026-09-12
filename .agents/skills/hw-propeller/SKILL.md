@@ -83,7 +83,7 @@ System clock ≈ 7.3728 MHz × 16 ≈ 117.9648 MHz. Timing constants in drivers 
 3. Else load 32 KB image from I2C EEPROM on P28/P29
 4. Cog 0 runs Spin interpreter on the loaded image
 
-UX EEPROM pins are **swapped vs the usual Propeller diagram** so only the EEPROM is visible at boot. See `hw-ux-pcb` and `src/i2c.spin`.
+UX EEPROM pins are **swapped vs the usual Propeller diagram** so only the EEPROM is visible at boot. See `hw-ux-pcb` and `src/ddc_i2c.spin`.
 
 ## Propeller 2 features that do not exist here
 

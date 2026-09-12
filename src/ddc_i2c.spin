@@ -1,139 +1,52 @@
 {{
- i2cDriver. Provide bus-level and chip-level methods for I2C bus communication.
- Erlend Fj. 2015, 2016
------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+ ddc_i2c. DDC / EDID first, then the April 2021 generic I2C driver.
 
- Supports standard 7 bit chip addressing, and both 8bit, 16bit, and 32bit register addressing. Use of 32bit is rare.
- Assumes the caller uses the chip address 7 bit format, onto which a r/w bit is added by the code before being transmitted.
- Signalling 'Open Collector Style' is achieved by setting pins OUTA := 0 permanent, and then manipulate on DIRA to either
- float the output, i.e. let PU resistor pull up to '1' -or- unfloat the output (which was set to 0) to bring it down to '0'
-
- Revisions:
- - Changed DAT assignment of scl and sda pins
- - Added BusInitialized flag
- - Added object instance identifier
- - Added isBusy
- - Added self-demo PUB Main
- - UX Module: Spin DDC cog (EDID 0x50, DDC/CI 0x37) on swapped VGA pins
-
------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+ The DDC cog uses init, callChip, start, stop, writeBus, and readBus.
+ Pins are SCL_PIN and SDA_PIN from the generic CON (P29 SCL, P28 SDA).
+ It does not change VGA timing.
 }}
-{
- Acknowledgements: I have mainly built upon the work of Jon "JonnyMac" McPhalen
 
-=======================================================================================================================================================================
+'====================================================================================================
+' UX MODULE DDC / EDID
+'====================================================================================================
 
-
-      Propeller
-   +-------------+
-   |             +-------+  3.3V  +------------------------------------------------------// -----------------------------------+
-   |             |  |  |                 |                              |                                 |                |   |
-   |             |  |  |               +-----------+                  +-----------+                     +-----------+      |   |
-   |             |  |  |               | V+        |                  | V+        |                     | V+        |      |   |
-   |   master    |  |  +               |           |                  |           |                     |           |      +   |
-   |             |  | 4k7              | Chip/slave|                  | Chip/slave|                     | Chip/slave|     4k7  |
-   |             |  +  +  Pull-up      |           |                  |           |                     |           |      +   |
-   |             | 4k7 |               |SDA SCL GND|                  |SDA SCL GND|                     |SDA SCL GND|      |   +
-   |             |  +  |               +-----------+                  +-----------+                     +-----------+      |  4k7
-   |             |  |  |                 |   |   |                      |   |   |                         |   |   |        |   +
-   |             |  |  |                 |   |   |                      |   |   |                         |   |   |        |   |
-   |             |  |  |                 |   |   |                      |   |   |                         |   |   |        |   |
-   |      PINsda +-----------------------------------------------------------------------// -------------------------------+   |
-   |             |     |  I2C Bus            |   |                          |   |                             |   |            |
-   |      PINscl +-----------------------------------------------------------------------// -----------------------------------+
-   |             |                               |                              |                                 |
-   |         GND +-----------------------------------------------------------------------// ----------------------+
-   |             |
-   +-------------+
-
- About I2C
- ---------
- Both the SCL and the SDA line needs to be pulled up by p-u resistors. Value not critical for such slow speeds that Spin can do, but should be in the order of 1k-47k.
- With long lines have p-u resistors at each node to reduce noise or interference.
-
- REF:
- http://www.8051projects.net/wiki/I2C_TWI_Tutorial
- http://i2c.info/i2c-bus-specification
-
-=======================================================================================================================================================================
-}
+' DDC Spin cog. Pins swapped vs the boot EEPROM so EDID does not ACK at boot.
+' Reads EDID at 0x50 and DDC/CI at 0x37. Does not change VGA timing.
 
 CON
 
-          mSec = 117965                                             ' ticks in 1ms = 7,372,800 * 16 xin * pll / 1_000
-          uSec = 118                                                ' ticks in 1us = 7,372,800 * 16 xin * pll / 1_000_000
 
-CON
-
-          ACK = 0                                                   'signals ready for more
-          NAK = 1                                                   'signals not ready for more
-
-CON
-
-          SCL_PIN = 29                                              'This is reversed from standard pinout, to ensure that only the EEPROM
-          SDA_PIN = 28                                              'appears on the I2C bus during boot process. Ensures no address conflicts.
-
-          EDID_ADDR   = $50                                            ' DDC EDID EEPROM (7-bit)
-          DDC_ADDR    = $37                                            ' DDC/CI display (7-bit); many HDMI adaptors have none
-          DDC_HOST    = $51                                            ' host source address in DDC/CI packets
-          VCP_BRIGHT  = $10                                            ' VESA VCP: luminance (does not set resolution)
+          EDID_ADDR   = $50                             ' DDC EDID EEPROM (7-bit)
+          DDC_ADDR    = $37                             ' DDC/CI display (7-bit); many HDMI adaptors have none
+          DDC_HOST    = $51                             ' host source address in DDC/CI packets
+          VCP_BRIGHT  = $10                             ' VESA VCP: luminance (does not set resolution)
 
           CMD_NONE    = 0
-          CMD_EDID    = 1                                              ' read 128-byte base EDID
-          CMD_GETVCP  = 2                                              ' DDC/CI Get VCP
-          CMD_SETVCP  = 3                                              ' DDC/CI Set VCP
+          CMD_EDID    = 1                               ' read 128-byte base EDID
+          CMD_GETVCP  = 2                               ' DDC/CI Get VCP
+          CMD_SETVCP  = 3                               ' DDC/CI Set VCP
 
 VAR
 
-  long  cog                         ' 0 = stopped; else cog id + 1
-  long  stack[80]                   ' Spin cog stack. I2C cog writer of DIRA on P28/P29.
-  long  cmd                         ' Cog 0 posts CMD_*; I2C cog writes 0 when done
-  long  vcpCode                     ' VCP feature for Get/Set
-  long  vcpValue                    ' Set VCP payload
-  long  opOk                        ' 0 fail, 1 ok (I2C cog writer)
-  long  edidOk                      ' 1 after a valid checksummed EDID
-  long  ddcOk                       ' 1 after a valid Get VCP reply
-  long  hActive                     ' preferred DTD width (pixels)
-  long  vActive                     ' preferred DTD height (pixels)
-  long  vcpCur                      ' last Get VCP current value
-  long  vcpMax                      ' last Get VCP maximum
-  byte  edid[128]                   ' base EDID block
-  byte  mfg[4]                      ' 3-letter PNP id + NUL
-  byte  monName[14]                 ' monitor name ($FC) + NUL
-
-DAT
-          PINscl              LONG    0                             'Use DAT variable to make the assignment stick for later calls to the object, and optionally
-          PINsda              LONG    0                             'assign to default pin numbers. Use init( ) to change at runtime. Best for many chips same one bus.
-                                                                    'and assign to default pin numbers Use init( ) to change at runtime
-
-          BusInitialized      LONG    FALSE                         'If this is not desired, change from defining PINmosi etc. as DAT to VAR, and
-                                                                    'assign value to them in init( ) by means of 'PINmosi:= _PINmosi' etc. instead.
-                                                                    'Best when many busses.
-
-          ThisObjectInstance  LONG    1                             'Change to separate object loads for different physical buses
-
-          fit
+  long  cog                                             ' 0 = stopped; else cog id + 1
+  long  stack[80]                                       ' Spin cog stack. I2C cog writer of DIRA on P28/P29.
+  long  cmd                                             ' Cog 0 posts CMD_*; I2C cog writes 0 when done
+  long  vcpCode                                         ' VCP feature for Get/Set
+  long  vcpValue                                        ' Set VCP payload
+  long  opOk                                            ' 0 fail, 1 ok (I2C cog writer)
+  long  edidOk                                          ' 1 after a valid checksummed EDID
+  long  ddcOk                                           ' 1 after a valid Get VCP reply
+  long  hActive                                         ' preferred DTD width (pixels)
+  long  vActive                                         ' preferred DTD height (pixels)
+  long  vcpCur                                          ' last Get VCP current value
+  long  vcpMax                                          ' last Get VCP maximum
+  byte  edid[128]                                       ' base EDID block
+  byte  mfg[4]                                          ' 3-letter PNP id + NUL
+  byte  monName[14]                                     ' monitor name ($FC) + NUL
 
 
-PUB init(_PINscl, _PINsda)
-
-'INITIATION METHOD
-'=================================================================================================================================================
-
-   LONG[@PINscl]:= _PINscl                                          'Copy pin into DAT where it will survive
-   LONG[@PINsda]:= _PINsda                                          'into later calls to this object
-
-   DIRA[PINscl] := 0                                                'Float output
-   OUTA[PINscl] := 0                                                'and set to 0
-   DIRA[PINsda] := 0                                                'to simulate open collector i/o (i.e. pull-up resistors required)
-   reset                                                            'Do bus reset to clear any chips' activity
-   LONG[@BusInitialized]:= TRUE                                     'Keep tally of initialization
-
-
-PUB isInitialized
-
-   RETURN BusInitialized
-
+'DDC COG API  (Cog 0 posts cmd. The DDC cog writes Hub results.)
+'====================================================================================================
 
 PUB startCog : okay
 {{Float the DDC pins (P29 SCL, P28 SDA) and run bit-bang I2C in its own Spin cog.
@@ -225,8 +138,261 @@ PUB edidPtr : p
   p := @edid
 
 
+'DDC COG WORKERS
+'====================================================================================================
+
+PRI worker
+{{I2C cog. Owns DIRA on P28/P29. Cog 0 only posts cmd.}}
+
+  outa[PINscl] := 0
+  outa[PINsda] := 0
+  dira[PINscl] := 0
+  dira[PINsda] := 0
+  repeat
+    case cmd
+      CMD_EDID:
+        opOk := doEdid
+        cmd := CMD_NONE
+      CMD_GETVCP:
+        opOk := doGetVcp
+        cmd := CMD_NONE
+      CMD_SETVCP:
+        opOk := doSetVcp
+        cmd := CMD_NONE
+      other:
+        waitcnt(clkfreq / 1000 + cnt)
+
+
+PRI doEdid : ok | i, sum
+{{Read 128-byte base EDID at 0x50. Parse mfg, name, preferred timing.}}
+
+  edidOk := 0
+  hActive := 0
+  vActive := 0
+  bytefill(@mfg, 0, 4)
+  bytefill(@monName, 0, 14)
+  bytefill(@edid, 0, 128)
+  ok := 0
+  if callChip(EDID_ADDR << 1) <> ACK
+    return
+  writeBus(0)
+  start
+  if writeBus(EDID_ADDR << 1 | 1) <> ACK
+    stop
+    return
+  repeat i from 0 to 126
+    edid[i] := readBus(ACK)
+  edid[127] := readBus(NAK)
+  stop
+  if edid[0] <> 0 or edid[1] <> $FF or edid[7] <> 0
+    return
+  sum := 0
+  repeat i from 0 to 127
+    sum += edid[i]
+  if (sum & $FF) <> 0
+    return
+  parseEdid
+  edidOk := 1
+  ok := 1
+
+
+PRI parseEdid | b0, b1, i, base, n
+{{Fill mfg, monName, hActive, vActive from a valid base block.}}
+
+  b0 := edid[8]
+  b1 := edid[9]
+  mfg[0] := ((b0 >> 2) & $1F) + "A" - 1
+  mfg[1] := (((b0 & 3) << 3) | (b1 >> 5)) + "A" - 1
+  mfg[2] := (b1 & $1F) + "A" - 1
+  mfg[3] := 0
+  repeat i from 0 to 3
+    base := 54 + i * 18
+    if edid[base] == 0 and edid[base+1] == 0 and edid[base+3] == $FC
+      n := 0
+      repeat while n < 13
+        if edid[base+5+n] == $0A
+          quit
+        monName[n] := edid[base+5+n]
+        n++
+      monName[n] := 0
+    elseif (edid[base] <> 0 or edid[base+1] <> 0) and hActive == 0
+      hActive := edid[base+2] | ((edid[base+4] & $F0) << 4)
+      vActive := edid[base+5] | ((edid[base+7] & $F0) << 4)
+
+
+PRI doGetVcp : ok | pkt[6], reply[11], i, x
+{{DDC/CI Get VCP Feature. vcpCode in, vcpCur/vcpMax out.}}
+
+  ddcOk := 0
+  vcpCur := 0
+  vcpMax := 0
+  ok := 0
+  pkt[0] := DDC_HOST
+  pkt[1] := $82
+  pkt[2] := $01
+  pkt[3] := vcpCode
+  x := DDC_ADDR << 1
+  repeat i from 0 to 3
+    x ^= pkt[i]
+  pkt[4] := x
+  if callChip(DDC_ADDR << 1) <> ACK
+    return
+  repeat i from 0 to 4
+    writeBus(pkt[i])
+  stop
+  waitcnt(clkfreq / 20 + cnt)                           ' 50 ms before the reply
+  start
+  if writeBus((DDC_ADDR << 1) | 1) <> ACK
+    stop
+    return
+  repeat i from 0 to 9
+    reply[i] := readBus(ACK)
+  reply[10] := readBus(NAK)
+  stop
+  if reply[2] <> $02 or reply[3] <> 0 or reply[4] <> vcpCode
+    return
+  vcpMax := (reply[6] << 8) | reply[7]
+  vcpCur := (reply[8] << 8) | reply[9]
+  ddcOk := 1
+  ok := 1
+
+
+PRI doSetVcp : ok | pkt[8], i, x
+{{DDC/CI Set VCP Feature. vcpCode and vcpValue in.}}
+
+  ok := 0
+  pkt[0] := DDC_HOST
+  pkt[1] := $84
+  pkt[2] := $03
+  pkt[3] := vcpCode
+  pkt[4] := (vcpValue >> 8) & $FF
+  pkt[5] := vcpValue & $FF
+  x := DDC_ADDR << 1
+  repeat i from 0 to 5
+    x ^= pkt[i]
+  pkt[6] := x
+  if callChip(DDC_ADDR << 1) <> ACK
+    return
+  repeat i from 0 to 6
+    writeBus(pkt[i])
+  stop
+  waitcnt(clkfreq / 20 + cnt)
+  ok := 1
+
+
+'====================================================================================================
+' GENERIC I2C DRIVER  (tree of 2021-04, Erlend Fj. 2015, 2016)
+'====================================================================================================
+
+{{
+ i2cDriver. Provide bus-level and chip-level methods for I2C bus communication.
+ Erlend Fj. 2015, 2016
+-----------------------------------------------------------------------------------------------------------------------------------------------------------------------
+
+ Supports standard 7 bit chip addressing, and both 8bit, 16bit, and 32bit register addressing. Use of 32bit is rare.
+ Assumes the caller uses the chip address 7 bit format, onto which a r/w bit is added by the code before being transmitted.
+ Signalling 'Open Collector Style' is achieved by setting pins OUTA := 0 permanent, and then manipulate on DIRA to either
+ float the output, i.e. let PU resistor pull up to '1' -or- unfloat the output (which was set to 0) to bring it down to '0'
+
+ Revisions:
+ - Changed DAT assignment of scl and sda pins
+ - Added BusInitialized flag
+ - Added object instance identifier
+ - Added isBusy
+ - Added self-demo PUB Main
+
+-----------------------------------------------------------------------------------------------------------------------------------------------------------------------
+}}
+{
+ Acknowledgements: I have mainly built upon the work of Jon "JonnyMac" McPhalen
+
+=======================================================================================================================================================================
+
+
+      Propeller
+   +-------------+
+   |             +-------+  3.3V  +------------------------------------------------------// -----------------------------------+
+   |             |  |  |                 |                              |                                 |                |   |
+   |             |  |  |               +-----------+                  +-----------+                     +-----------+      |   |
+   |             |  |  |               | V+        |                  | V+        |                     | V+        |      |   |
+   |   master    |  |  +               |           |                  |           |                     |           |      +   |
+   |             |  | 4k7              | Chip/slave|                  | Chip/slave|                     | Chip/slave|     4k7  |
+   |             |  +  +  Pull-up      |           |                  |           |                     |           |      +   |
+   |             | 4k7 |               |SDA SCL GND|                  |SDA SCL GND|                     |SDA SCL GND|      |   +
+   |             |  +  |               +-----------+                  +-----------+                     +-----------+      |  4k7
+   |             |  |  |                 |   |   |                      |   |   |                         |   |   |        |   +
+   |             |  |  |                 |   |   |                      |   |   |                         |   |   |        |   |
+   |             |  |  |                 |   |   |                      |   |   |                         |   |   |        |   |
+   |      PINsda +-----------------------------------------------------------------------// -------------------------------+   |
+   |             |     |  I2C Bus            |   |                          |   |                             |   |            |
+   |      PINscl +-----------------------------------------------------------------------// -----------------------------------+
+   |             |                               |                              |                                 |
+   |         GND +-----------------------------------------------------------------------// ----------------------+
+   |             |
+   +-------------+
+
+ About I2C
+ ---------
+ Both the SCL and the SDA line needs to be pulled up by p-u resistors. Value not critical for such slow speeds that Spin can do, but should be in the order of 1k-47k.
+ With long lines have p-u resistors at each node to reduce noise or interference.
+
+ REF:
+ http://www.8051projects.net/wiki/I2C_TWI_Tutorial
+ http://i2c.info/i2c-bus-specification
+
+=======================================================================================================================================================================
+}
+
+CON
+
+          mSec = 117965                                             ' ticks in 1ms = 7,372,800 * 16 xin * pll / 1_000
+          uSec = 118                                                ' ticks in 1us = 7,372,800 * 16 xin * pll / 1_000_000
+
+CON
+
+          ACK = 0                                                   'signals ready for more
+          NAK = 1                                                   'signals not ready for more
+
+CON
+
+          SCL_PIN = 29                                              'This is reversed from standard pinout, to ensure that only the EEPROM
+          SDA_PIN = 28                                              'appears on the I2C bus during boot process. Ensures no address conflicts.
+
+DAT
+          PINscl              LONG    0                             'Use DAT variable to make the assignment stick for later calls to the object, and optionally
+          PINsda              LONG    0                             'assign to default pin numbers. Use init( ) to change at runtime. Best for many chips same one bus.
+                                                                    'and assign to default pin numbers Use init( ) to change at runtime
+
+          BusInitialized      LONG    FALSE                         'If this is not desired, change from defining PINmosi etc. as DAT to VAR, and
+                                                                    'assign value to them in init( ) by means of 'PINmosi:= _PINmosi' etc. instead.
+                                                                    'Best when many busses.
+
+          ThisObjectInstance  LONG    1                             'Change to separate object loads for different physical buses
+
+          fit
+
+
+PUB init(_PINscl, _PINsda)
+
+'INITIATION METHOD
+'=================================================================================================================================================
+
+   LONG[@PINscl]:= _PINscl                                          'Copy pin into DAT where it will survive
+   LONG[@PINsda]:= _PINsda                                          'into later calls to this object
+
+   DIRA[PINscl] := 0                                                'Float output
+   OUTA[PINscl] := 0                                                'and set to 0
+   DIRA[PINsda] := 0                                                'to simulate open collector i/o (i.e. pull-up resistors required)
+   reset                                                            'Do bus reset to clear any chips' activity
+   LONG[@BusInitialized]:= TRUE                                     'Keep tally of initialization
+
+
+PUB isInitialized
+
+   RETURN BusInitialized
+
+
 'CHIP LEVEL METHODS    - calls BUS LEVEL METHODS below, encapsulates the details of the workings of the bus
-'DDC uses callChip / start / stop / writeBus / readBus. The A8/A16 helpers stay for other chips.
 '=================================================================================================================================================
 'Write
 
@@ -514,146 +680,6 @@ PUB stop                                                            'Send stop s
   DIRA[PINscl] := 0                                                 'float SCL and
   WAITPEQ(|<PINscl,|<PINscl,0)                                      'wait for SCL to be released
   DIRA[PINsda] := 0                                                 'and leave SDA floating
-
-
-PRI worker
-{{I2C cog. Owns DIRA on P28/P29. Cog 0 only posts cmd.}}
-
-  outa[PINscl] := 0
-  outa[PINsda] := 0
-  dira[PINscl] := 0
-  dira[PINsda] := 0
-  repeat
-    case cmd
-      CMD_EDID:
-        opOk := doEdid
-        cmd := CMD_NONE
-      CMD_GETVCP:
-        opOk := doGetVcp
-        cmd := CMD_NONE
-      CMD_SETVCP:
-        opOk := doSetVcp
-        cmd := CMD_NONE
-      other:
-        waitcnt(clkfreq / 1000 + cnt)
-
-
-PRI doEdid : ok | i, sum
-{{Read 128-byte base EDID at 0x50. Parse mfg, name, preferred timing.}}
-
-  edidOk := 0
-  hActive := 0
-  vActive := 0
-  bytefill(@mfg, 0, 4)
-  bytefill(@monName, 0, 14)
-  bytefill(@edid, 0, 128)
-  ok := 0
-  if callChip(EDID_ADDR << 1) <> ACK
-    return
-  writeBus(0)
-  start
-  if writeBus(EDID_ADDR << 1 | 1) <> ACK
-    stop
-    return
-  repeat i from 0 to 126
-    edid[i] := readBus(ACK)
-  edid[127] := readBus(NAK)
-  stop
-  if edid[0] <> 0 or edid[1] <> $FF or edid[7] <> 0
-    return
-  sum := 0
-  repeat i from 0 to 127
-    sum += edid[i]
-  if (sum & $FF) <> 0
-    return
-  parseEdid
-  edidOk := 1
-  ok := 1
-
-
-PRI parseEdid | b0, b1, i, base, n
-{{Fill mfg, monName, hActive, vActive from a valid base block.}}
-
-  b0 := edid[8]
-  b1 := edid[9]
-  mfg[0] := ((b0 >> 2) & $1F) + "A" - 1
-  mfg[1] := (((b0 & 3) << 3) | (b1 >> 5)) + "A" - 1
-  mfg[2] := (b1 & $1F) + "A" - 1
-  mfg[3] := 0
-  repeat i from 0 to 3
-    base := 54 + i * 18
-    if edid[base] == 0 and edid[base+1] == 0 and edid[base+3] == $FC
-      n := 0
-      repeat while n < 13
-        if edid[base+5+n] == $0A
-          quit
-        monName[n] := edid[base+5+n]
-        n++
-      monName[n] := 0
-    elseif (edid[base] <> 0 or edid[base+1] <> 0) and hActive == 0
-      hActive := edid[base+2] | ((edid[base+4] & $F0) << 4)
-      vActive := edid[base+5] | ((edid[base+7] & $F0) << 4)
-
-
-PRI doGetVcp : ok | pkt[6], reply[11], i, x
-{{DDC/CI Get VCP Feature. vcpCode in, vcpCur/vcpMax out.}}
-
-  ddcOk := 0
-  vcpCur := 0
-  vcpMax := 0
-  ok := 0
-  pkt[0] := DDC_HOST
-  pkt[1] := $82
-  pkt[2] := $01
-  pkt[3] := vcpCode
-  x := DDC_ADDR << 1
-  repeat i from 0 to 3
-    x ^= pkt[i]
-  pkt[4] := x
-  if callChip(DDC_ADDR << 1) <> ACK
-    return
-  repeat i from 0 to 4
-    writeBus(pkt[i])
-  stop
-  waitcnt(clkfreq / 20 + cnt)                     ' 50 ms before the reply
-  start
-  if writeBus((DDC_ADDR << 1) | 1) <> ACK
-    stop
-    return
-  repeat i from 0 to 9
-    reply[i] := readBus(ACK)
-  reply[10] := readBus(NAK)
-  stop
-  if reply[2] <> $02 or reply[3] <> 0 or reply[4] <> vcpCode
-    return
-  vcpMax := (reply[6] << 8) | reply[7]
-  vcpCur := (reply[8] << 8) | reply[9]
-  ddcOk := 1
-  ok := 1
-
-
-PRI doSetVcp : ok | pkt[8], i, x
-{{DDC/CI Set VCP Feature. vcpCode and vcpValue in.}}
-
-  ok := 0
-  pkt[0] := DDC_HOST
-  pkt[1] := $84
-  pkt[2] := $03
-  pkt[3] := vcpCode
-  pkt[4] := (vcpValue >> 8) & $FF
-  pkt[5] := vcpValue & $FF
-  x := DDC_ADDR << 1
-  repeat i from 0 to 5
-    x ^= pkt[i]
-  pkt[6] := x
-  if callChip(DDC_ADDR << 1) <> ACK
-    return
-  repeat i from 0 to 6
-    writeBus(pkt[i])
-  stop
-  waitcnt(clkfreq / 20 + cnt)
-  ok := 1
-
 
 DAT
 

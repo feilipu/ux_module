@@ -1,0 +1,23 @@
+# UX Module console. GNU screen config for tools/ux-screen.sh.
+# RX/TX only. XMODEM needs 8-bit data and no XON/XOFF.
+# lsx / lrx come from PATH (Homebrew lrzsz is typical on macOS).
+startup_message off
+vbell off
+defflow off
+flow off
+c1 off
+# Unbind software flow so C-a s / C-a q cannot inject DC3/DC1.
+# C-a q stays dead. C-a s is XMODEM send (below).
+bind q
+bind ^q
+# TEMP: Mac Delete is RUBOUT ($7F). Current CPM-IDE ROM echoes the
+# erased character. Map Delete to BS ($08) until that ROM is updated,
+# then REMOVE this bindkey so $7F reaches the Z80 again.
+bindkey ^? stuff ^H
+# Prefill XMODEM send/receive. Type the file path and Enter.
+# C-a s  (or C-a C-s)  send host -> 8085, 128-byte. Add -k for 1K.
+# C-a r  (or C-a C-r)  receive 8085 -> host
+bind s colon "exec !! lsx -b "
+bind ^s colon "exec !! lsx -b "
+bind r colon "exec !! lrx -b "
+bind ^r colon "exec !! lrx -b "
