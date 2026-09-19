@@ -10,11 +10,11 @@ C8,100p,C0805,"CAPACITOR, European symbol",*
 C9,100p,C0805,"CAPACITOR, European symbol",*
 C10,100p,C0805,"CAPACITOR, European symbol",*
 C11,100p,C0805,"CAPACITOR, European symbol",*
-C12,200p,C0805,"CAPACITOR, European symbol",*
-C13,200p,C0805,"CAPACITOR, European symbol",*
+C12,220p,C0805,"CAPACITOR, European symbol",*
+C13,220p,C0805,"CAPACITOR, European symbol",*
 C14,100p,C0805,"CAPACITOR, European symbol",*
 C15,100p,C0805,"CAPACITOR, European symbol",*
-C16,200p,C0805,"CAPACITOR, European symbol",*
+C16,220p,C0805,"CAPACITOR, European symbol",*
 C17,100u,CPOL-RADIAL-100UF-25V,Capacitor Polarized,*
 D1,1N4148DO35-7,DO35-7,DIODE,*
 D2,1N4148DO35-7,DO35-7,DIODE,*
