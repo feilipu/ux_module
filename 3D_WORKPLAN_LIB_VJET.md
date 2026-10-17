@@ -667,7 +667,7 @@ Do the rows in order. A later row waits for the exit text of the row above.
 
 Status on 17 Oct 2026. Steps 1 and 2 are done. The locked picture is the framebuffer in the Stripes section. Step 3 is next.
 
-The product image leaves 13516 bytes free. The framebuffer variables are 23776 bytes. Those variables do not fit in the free Hub. Step 3 has to shrink the store or share the text buffers before the bring-up can link the framebuffer objects. Do not replace the EEPROM image until that bring-up locks.
+`ux_module_vjet.spin` compiles to 19552 bytes. 2200 bytes remain free. The framebuffer variables are 23776 bytes. The bring-up already uses its Hub for the text console, the ACIA, and the beam-chase lists. The known-good buffers do not fit in that image. Two bitmap buffers and two palette tables are 20480 bytes before the lists. Step 3 cannot link `vjet_fb` unchanged. Do not replace the EEPROM image until a bring-up picture locks.
 
 ## Risks
 
