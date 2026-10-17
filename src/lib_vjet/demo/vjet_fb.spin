@@ -1,6 +1,15 @@
-'' Framebuffer triangle demo. Same scene as vjet_test.
+'' Framebuffer demo. Same picture as demo/vjet_test.spin.
+'' The solution is VJET_vUXM_vga_fb and VJET_vUXM_rendering_fb.
 '' The VGA cog scans a finished bitmap. A late frame repeats.
 '' No ACIA cog. No FTDI cog. Load this only when the bench is free.
+''
+'' Each frame draws 13 triangles and 1 text shape.
+'' The background triangle is flat and stores 36 bytes.
+'' The other 12 store 48 bytes when the three scanlines differ.
+'' The text shape stores 20 bytes. The string stays in DAT.
+''
+'' That frame stores up to 632 bytes. Each list is 1200 bytes.
+'' blend stays 0. Every span is solid.
 CON
 
   _clkmode      = XTAL1 + PLL16X
@@ -22,7 +31,7 @@ font : "hexfont.spin"
 VAR
 
 long framecount, vga_status, dlist_ptr, boot
-long go, front, done, stripe0, stripe1, stripe2, fixup
+long go, front, done, stripe0, stripe1, stripe2, fixup, blend
 long dlist1[DLIST_SIZE], dlist2[DLIST_SIZE]
 long pix0[render#FB_LONGS]
 long pix1[render#FB_LONGS]
@@ -37,7 +46,7 @@ PUB main
   longfill(@pix1, 0, render#FB_LONGS)
   longfill(@pal0, 0, render#PAL_LONGS)
   longfill(@pal1, 0, render#PAL_LONGS)
-  longfill(@go, 0, 7)
+  longfill(@go, 0, 8)
 
   vga.start(16 / 8, @pix0, @pal0, @go, @vga_status)
 

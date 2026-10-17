@@ -97,10 +97,11 @@ openspin -L src -e -o build/ux_module.eeprom src/ux_module.spin
 
 Useful flags: `-L`/`-I` object search path, `-b` binary, `-e` eeprom file, `-v` verbose, `-u` unused-method elimination.
 
-lib_vjet demos use their own top objects, for example:
+The two lib_vjet demos use their own top objects:
 
 ```bash
-openspin -L src -L src/lib_vjet -b -o build/vjet_test.binary src/lib_vjet/vjet_test.spin
+openspin -L src -L src/lib_vjet -b -o build/vjet_test.binary src/lib_vjet/demo/vjet_test.spin
+openspin -L src -L src/lib_vjet -b -o build/vjet_fb.binary src/lib_vjet/demo/vjet_fb.spin
 ```
 
 ## Load (FT232 Prop Plug only)

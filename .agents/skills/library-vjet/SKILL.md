@@ -16,10 +16,16 @@ Human architecture note: `ARCHITECTURE_LIB_VJET.md`. Author mark in sources: IRQ
 | File | Role |
 |------|------|
 | `VJET_v01_displaylist.spin` | Spin display-list builder (API) |
-| `VJET_vUXM_rendering.spin` | PASM render cog(s); fills scanline buffer |
-| `VJET_vUXM_vga.spin` | PASM VGA output cog; consumes scanlines |
+| `VJET_vUXM_rendering.spin` | PASM render cog(s); beam-chase scanlines |
+| `VJET_vUXM_vga.spin` | PASM VGA output cog; beam chase |
+| `VJET_vUXM_rendering_fb.spin` | PASM render cogs; framebuffer bitmap |
+| `VJET_vUXM_vga_fb.spin` | PASM VGA cog; scans the finished bitmap |
 | `hexfont.spin` | Bitmap font for `text*` shapes |
-| `vjet_test.spin` / `graphtest.spin` | Top-object demos |
+| `demo/vjet_test.spin` | Original demo. Beam chase. Spinning triangles. |
+| `demo/vjet_fb.spin` | Framebuffer demo. The same picture. |
+| `vjet_fb_cube.spin` | Stage 2 cube harness. Not a demo. |
+| `vjet_fb_probe.spin` | Stripe and glass check. Not a demo. |
+| `graphtest.spin` | Graph drawing sample. Not one of the two demos. |
 
 ## Pipeline
 
@@ -39,7 +45,7 @@ Spin app
 
 Resolution in UXM rendering: **WIDTH=256**, **NUM_LINES=240**, **LINE_BUFFERS=8**. VGA driver doubles lines (tileCounter) for display.
 
-`vjet_test.spin` starts **3** render cogs + **1** VGA cog. That alone needs four cogs plus Spin. It cannot run beside the full UX text stack without stopping other drivers (`module-ux` cog budget).
+`demo/vjet_test.spin` starts **3** render cogs + **1** VGA cog. That alone needs four cogs plus Spin. It cannot run beside the full UX text stack without stopping other drivers (`module-ux` cog budget).
 
 `ux_module.spin` does not link this library. Demos are their own tops. Do not start VECTORJET from product `main`.
 
@@ -69,11 +75,13 @@ WORD  start scanline
 WORD  end scanline
 ```
 
-| Type | Name | Body (after header) |
-|------|------|---------------------|
-| 1 | `SHP_TRAPSTACK` | 16-byte trap header + N×12-byte trapezoids |
-| 2 | `SHP_BOX` | left, right, colours, unused (words) |
-| 3 | `SHP_TEXT` | scale, font ptr, string ptr, colours, x |
+| Type | Name | Body after the 8-byte header | Stored |
+|------|------|------------------------------|--------|
+| 1 | `SHP_TRAPSTACK` | 16-byte edges + N×12-byte trapezoids | 36 flat, 48 general |
+| 2 | `SHP_BOX` | left, right, colours, unused | 16 |
+| 3 | `SHP_TEXT` | scale, font, string, colours, x, unused | 20 |
+
+A polygon is a trap stack. It stores 24 bytes plus 12 bytes for each trapezoid. A sloped line stores 36 bytes. A horizontal line stores 16 bytes. The builder skips the 8 current-edge bytes. The renderer writes them.
 
 Coordinates in the Spin API often use **16.16** fixed point (shift `<<16`). Colours are packed words consumed by the renderer/VGA path (two paint colours common in demos, e.g. `$ECEC`).
 
@@ -98,9 +106,15 @@ Demos flip `dlist_ptr` each frame and rebuild the inactive buffer. Render cogs r
 
 ## Framebuffer path
 
-`vjet_fb.spin` does not chase the beam. The VGA cog scans a finished 256×80 bitmap, two bits per pixel. Each group of 16 pixels has four colours. The cog shows each stored line six times. The renderer stores lines 0, 3, 6, and so on. Two buffers. A late frame repeats. The PLL, the porches, and `VCFG` stay on the 2021 line. PixelClocks for the visible pixels is 4. Visible FrameClocks stays 16.
+`demo/vjet_fb.spin` does not chase the beam. The VGA cog scans a finished 256×80 bitmap, two bits per pixel. Each group of 16 pixels has four colours. The cog shows each stored line six times. The renderer stores lines 0, 3, 6, and so on. Two buffers. A late frame repeats. The PLL, the porches, and `VCFG` stay on the 2021 line. PixelClocks for the visible pixels is 4. Visible FrameClocks stays 16.
 
-Bit 0 of a colour byte marks a stripe. The dark lines of that band show the colour $55 lower. Even stored lines are bright, bright, dark, dark, bright, bright. Odd stored lines use the inverse order. The user accepted this picture on 17 Oct 2026. It is the known-good image. The plan section "Frame buffer — 18 Oct 2026" in `3D_WORKPLAN_LIB_VJET.md` is the load note.
+Bit 0 of a colour byte marks a stripe. The dark lines of that band show the colour $55 lower. The flag is set only when the high byte is the low byte minus $55. Any other pair stays solid.
+
+Bit 1 of that byte asks for a 50 percent mix when the control long `blend` (after `fixup`) is set. A clear `blend` leaves the span solid. A solid span returns. It does not enter the mix. The mix averages red, green, and blue as separate pairs.
+
+Even stored lines are bright, bright, dark, dark, bright, bright. Odd stored lines use the inverse order. The user accepted this picture on 17 Oct 2026. It is the known-good image. The forward plan is `3D_WORKPLAN_LIB_VJET.md`. The repair record is `3D_PROCESS_LIB_VJET.md`.
+
+The accepted scene draws 13 triangles and one text shape. That list uses at most 632 bytes. Each list is 1200 bytes. A flat triangle is 36 bytes. A general triangle is 48 bytes. A box is 16 bytes and a text shape is 20 bytes.
 
 `VJET_vUXM_vga.spin` and `VJET_vUXM_rendering.spin` stay the beam-chase pair. Do not copy the framebuffer `VSCL` into those files.
 

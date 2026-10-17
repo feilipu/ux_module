@@ -36,10 +36,13 @@ proploader -P
 proploader -p /dev/cu.usbserial-XXXX -e -r build/ux_module.binary
 ```
 
-## VECTORJET demo (not the product top)
+## VECTORJET demos (not the product top)
+
+The two demos are in `src/lib_vjet/demo/`. `vjet_test.spin` is the beam-chase picture. `vjet_fb.spin` is the same picture on the framebuffer. The framebuffer solution is `VJET_vUXM_vga_fb.spin` and `VJET_vUXM_rendering_fb.spin`.
 
 ```sh
-openspin -L src -L src/lib_vjet -b -o build/vjet_test.binary src/lib_vjet/vjet_test.spin
+openspin -L src -L src/lib_vjet -b -o build/vjet_test.binary src/lib_vjet/demo/vjet_test.spin
+openspin -L src -L src/lib_vjet -b -o build/vjet_fb.binary src/lib_vjet/demo/vjet_fb.spin
 ```
 
 ## Console keys (`tools/ux-screen.sh`)

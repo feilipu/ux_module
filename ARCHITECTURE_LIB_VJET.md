@@ -8,7 +8,7 @@ Prose style: `.agents/skills/style-ste-writing`.
 
 VECTORJET builds a display list in Spin, renders scanlines with one or more PASM cogs, and outputs VGA with a dedicated PASM cog. The UXM-prefixed files are a specialisation for the RC2014 UX Module pinout and clock. Upstream credit in the sources: IRQsome Software, with VGA lineage from Kwabena W. Agyeman / Parallax-style video generators.
 
-The product top `ux_module.spin` does not link this library. Demos use their own top objects (`vjet_test.spin`, `graphtest.spin`). Compile those with `-L src -L src/lib_vjet`.
+The product top `ux_module.spin` does not link this library. The two demos are `src/lib_vjet/demo/vjet_test.spin` and `src/lib_vjet/demo/vjet_fb.spin`. Compile a demo with `-L src -L src/lib_vjet`.
 
 ## Files
 
@@ -18,11 +18,13 @@ The product top `ux_module.spin` does not link this library. Demos use their own
 | `VJET_vUXM_rendering.spin` | PASM renderer cog program |
 | `VJET_vUXM_vga.spin` | PASM VGA output cog |
 | `hexfont.spin` | Font blob for text shapes |
-| `vjet_test.spin` | Demo: spinning triangles + centred text. Beam-chase reference. |
-| `graphtest.spin` | Demo: graph-style drawing |
-| `vjet_fb.spin` | Known-good picture. Framebuffer. |
-| `VJET_vUXM_rendering_fb.spin` | PASM renderer for the framebuffer |
-| `VJET_vUXM_vga_fb.spin` | PASM VGA cog for the framebuffer |
+| `VJET_vUXM_rendering_fb.spin` | Framebuffer solution. PASM render cogs. |
+| `VJET_vUXM_vga_fb.spin` | Framebuffer solution. PASM VGA cog. |
+| `demo/vjet_test.spin` | Original demo. Beam chase. Spinning triangles. |
+| `demo/vjet_fb.spin` | Framebuffer demo. The same picture. |
+| `vjet_fb_cube.spin` | Stage 2 cube harness. Not a demo. |
+| `vjet_fb_probe.spin` | Stripe and glass check. Not a demo. |
+| `graphtest.spin` | Graph drawing sample. Not one of the two demos. |
 
 ## Runtime pipeline
 
@@ -42,7 +44,7 @@ Application (Spin top object)
                                             pins P16–P23 (group 2)
 ```
 
-`vjet_test.spin` starts three render cogs and one VGA cog. It waits for vertical blank through `vga_status`, publishes the completed list, waits for vsync so the render cogs copy the pointer, then rebuilds the other list.
+`demo/vjet_test.spin` starts three render cogs and one VGA cog. It waits for vertical blank through `vga_status`, publishes the completed list, waits for vsync so the render cogs copy the pointer, then rebuilds the other list.
 
 ## Scanline handshake (tear / flicker)
 
@@ -69,15 +71,25 @@ Rendering constants in `VJET_vUXM_rendering.spin`:
 
 The VGA cog repeats each logical line (tile counter) so the analogue timing fills a taller raster. The Hub scan buffer is `linebuffers[(WIDTH*LINE_BUFFERS)/4]` longs (eight line slots).
 
-Display lists are ordinary Hub longs (for example `dlist1[900]`, `dlist2[900]`). Size is a demo choice, not a hardware limit.
+Display lists are Hub longs. The beam-chase demos use two lists of 900 longs. That size does not fit beside the UX text buffers. The framebuffer tops use two lists of 300 longs. Each of those lists is 1200 bytes.
 
 ## Framebuffer
 
-`vjet_fb.spin` is the known-good picture. The user accepted it on 17 Oct 2026. The VGA cog scans a finished 256 by 80 bitmap. Two bits select one of four colours in each group of 16 pixels. The renderer stores lines 0, 3, 6, and so on. The VGA cog shows each stored line six times.
+`demo/vjet_fb.spin` is the framebuffer demo. The user accepted that picture on 17 Oct 2026. The VGA cog scans a finished 256 by 80 bitmap. Two bits select one of four colours in each group of 16 pixels. The renderer stores lines 0, 3, 6, and so on. The VGA cog shows each stored line six times.
 
 Bit 0 of a colour byte marks a stripe. Dark lines of that band show the colour $55 lower. Even stored lines are bright, bright, dark, dark, bright, bright. Odd stored lines use the inverse order. The colours `$0055`, `$55AA`, and `$AAFF` stripe. Equal bytes stay solid.
 
-The program is 8044 bytes. The variables are 23776 bytes. The PLL, the porches, and `VCFG` stay on the 2021 line. PixelClocks is 4. FrameClocks is 16. Do not copy that `VSCL` into `VJET_vUXM_vga.spin`.
+The program on disk is 8044 bytes. The variables are 23776 bytes. The PLL, the porches, and `VCFG` stay on the 2021 line. PixelClocks is 4. FrameClocks is 16. Do not copy that `VSCL` into `VJET_vUXM_vga.spin`.
+
+Each frame draws 13 triangles and one text shape. The list uses at most 632 bytes. Each of the two lists is 1200 bytes. A flat triangle is 36 bytes and a general triangle is 48 bytes. A box is 16 bytes and a text shape is 20 bytes. The shape rules are in `3D_WORKPLAN_LIB_VJET.md`.
+
+The stripe test is general for a high byte that is the low byte minus $55. Any other pair stays solid. Later shapes overwrite earlier spans. There is no depth buffer.
+
+Bit 1 of the low colour byte asks for a 50 percent mix with the pixel already on the line. The mix runs only when the control long `blend` is set. That long follows `fixup`. A clear `blend` leaves every span solid.
+
+A solid span returns. It does not enter the mix. The mix reads and writes one byte at a time. It averages red, green, and blue as separate pairs.
+
+The repair record is `3D_PROCESS_LIB_VJET.md`. The forward plan is `3D_WORKPLAN_LIB_VJET.md`.
 
 ## Display list model
 
@@ -149,7 +161,7 @@ Recommended product split:
 
 The product top has no graphics hooks. `PORT_VJET` remains a reserved ACIA base. Serial tests use the text boot path.
 
-Hub cost: eight line slots are 2 KB. Two lists of 900 longs are about 7 KB. The text screen is 80×40 bytes plus colours. 32 KB Hub cannot keep a large text buffer and two fat lists at once. Reuse the text screen region for lists when you leave text mode.
+Hub cost for the beam chase is the scan buffer and the lists. Eight line slots are 2 KB. Two lists of 900 longs are about 7 KB. The framebuffer store is the larger cost. Two bitmaps and two palettes are 20480 bytes. The two 300-long lists are 2400 bytes.
 
 `PORT_VJET = acia#PORT_C0` is reserved for a later Z80 command port. There is no I/O protocol in-tree yet. A first protocol can be: command byte, then words that Spin copies into the back list, then a flip at vblank.
 
@@ -157,8 +169,8 @@ Hub cost: eight line slots are 2 KB. Two lists of 900 longs are about 7 KB. The 
 
 Useful work while keeping the architecture intact:
 
-1. When graphics work resumes, start a Spin draw cog (not Cog 0). Wait until bit 16 rises, publish the list pointer, then call `gl.start` on the idle list. See `vjet_test.spin`. The current picture and the line count are in the handoff section of `3D_WORKPLAN_LIB_VJET.md`.
-2. Grow Hub lists to two buffers of about 900 longs. Reuse the text screen region if needed.
+1. When graphics work resumes, start a Spin draw cog (not Cog 0). The accepted picture is the framebuffer demo `demo/vjet_fb.spin`. The bring-up path is in `3D_WORKPLAN_LIB_VJET.md`. The repair record is `3D_PROCESS_LIB_VJET.md`.
+2. Keep each framebuffer list at 300 longs until a measured scene needs more room. Two 900-long lists overflow the bring-up by 768 longs.
 3. Drive the back list from Z80 I/O at `PORT_VJET` (needs a command protocol)
 4. Tune render cog count against available cogs and fill rate
 5. Keep display-list field layouts documented in one place (builder comments ↔ renderer reads)
@@ -171,4 +183,4 @@ Useful work while keeping the architecture intact:
 | `pcb/P8X32A-Propeller-Datasheet-v1.4.0_0.pdf` §4.10 | Video generator, WAITVID |
 | `docs/Propeller Quick Reference v1.7.pdf` | PASM opcodes |
 | `ARCHITECTURE_UX_MODULE.md` | Board cog and pin budget |
-| Demo sources | `vjet_test.spin`, `graphtest.spin` |
+| Demo sources | `src/lib_vjet/demo/vjet_test.spin`, `src/lib_vjet/demo/vjet_fb.spin` |

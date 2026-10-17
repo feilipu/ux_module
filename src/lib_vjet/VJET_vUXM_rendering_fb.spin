@@ -59,8 +59,15 @@ CON
 '' WORD string pointer
 '' WORD colors
 '' WORD left x
-'' WORD unused                
- 
+'' WORD unused
+
+'' Stored size includes the 8-byte header.
+'' Flat triangle, one trapezoid: 36 bytes.
+'' General triangle, two trapezoids: 48 bytes.
+'' Box: 16 bytes. Text: 20 bytes.
+'' Polygon: 24 bytes plus 12 bytes for each trapezoid.
+'' Sloped line: 36 bytes. Horizontal line: 16 bytes.
+
 #1
 SHP_TRAPSTACK         ' Shape type 1 header - trapezoid stack (16 bytes)
 SHP_BOX               ' Shape type 2 header - box (8 bytes)
@@ -75,7 +82,7 @@ PUB start(cognum,totalcogs,scanbuffer,dlistPtrAdr,framePtr,palPtr,ctrlPtr,readyp
 '' Start one rendering cog. Call once per cog with cognum 0..totalcogs-1.
 '' Copies the DAT parameters then cognew. Wait so the hub image is taken
 '' before the next start() overwrites those longs.
-'' ctrlPtr is go, front, done, stripe0, stripe1, stripe2, fixup.
+'' ctrlPtr is go, front, done, stripe0, stripe1, stripe2, fixup, blend.
   longmove(@cognumber,@cognum,7)
   result := cognew(@Entry, readyptr)
   if result => 0
@@ -132,7 +139,6 @@ d1 if_z jmp #d0 'if not, repeat
 
 ''Main loop for renderer
 new_frame
-        neg prevline,#1
         tjz warm, #:arrive
 :block  rdlong d0, front_ptr
         cmp d0, filled wz
@@ -142,9 +148,8 @@ if_nz   jmp #:block
 if_nz   jmp #:block
 :arrive mov warm, #1
         rdlong d0, front_ptr wz
-        mov back, #1
-if_nz   mov back, #0
-        mov filled, back
+        mov filled, #1
+if_nz   mov filled, #0
         mov frame_ptr, frame_base
         mov pal_ptr, palette_base
 if_z    add frame_ptr, frameBytes
@@ -157,9 +162,9 @@ if_z    add pal_ptr, paletteBytes
 '' Cog 0 advances every off-screen top to Y 0, then releases the others.
 '' A second writer here replaces edges that another cog has already walked.
         tjnz cognumber,#:waitfix
-        '{
+'' Cog 0 walks every trap stack. A negative top moves to Y 0.
+'' Cog 0 then writes expect at fixup. Cogs 1 and 2 wait for that long.
 '' fixup shapes clipped by top edge of screen (negative ystart)
-        mov init_share,cognumber ' we only handle every Nth fixup
         mov dlist_next,dlist_base
         jmp #:nextshape        
         
@@ -173,10 +178,6 @@ if_z    add pal_ptr, paletteBytes
         cmps poly_top,#0 wc,wz ' negative start?
 if_ae   jmp #:nextshape
         sar poly_top,#16 'continue sign extend
-        sub init_share,#1 wc ' should this cog handle this line?
-if_nc   jmp #:nextshape
-        mov init_share,#0
-           
         sub dlist_ptr,#2
         mov poly_syncptr,dlist_ptr
         add dlist_ptr,#1
@@ -237,7 +238,6 @@ if_nc   jmp #:traplp
         add d0,#24
         wrlong expect,d0
         jmp #setup_line
-        '}
 
 :waitfix mov d0,ctrl_base
         add d0,#24
@@ -258,13 +258,11 @@ setup_line
         add currentscanline_haxx,#1
         shl currentscanline_haxx,#16
         
-        mov coloroffset,#2 ' low colour byte. Bit 0 of that byte marks a stripe.
-
         mov pixel_ptr,display_base
 
 
         mov pixel_iter,#WIDTH/4
-:loop   wrlong black,pixel_ptr
+:loop   wrlong zero,pixel_ptr
         add pixel_ptr,#4
         djnz pixel_iter,#:loop
 
@@ -329,10 +327,10 @@ if_c    add dlist_ptr,#3*4
 if_c    jmp #:traplp
 :trapfound
 
-        add dlist_ptr,coloroffset ' 2 or 3
+        add dlist_ptr,#2 ' 2 or 3
         rdbyte poly_color,dlist_ptr
         call #apply_stripe
-        sub dlist_ptr,coloroffset
+        sub dlist_ptr,#2
         add dlist_ptr,#2+2
         rdlong slope_left,dlist_ptr
         add dlist_ptr,#4
@@ -359,20 +357,10 @@ if_e    neg d0,#1
  
 :nextshape
         tjnz dlist_next,#:shapeloop
-        '}        
-        
-        'uncomment to enable diagonal line that aids in debugging
-        {          
-        mov d0,currentscanline
-        and d0,#255
-        add d0,display_base
-        wrbyte white,d0
-        '} 
 
 ''scanline rendering is finished. Pack it, then take the next stripe line.
 :scanline_finished
         call #pack_line
-        mov prevline,currentscanline
         add currentscanline, total_cogs
         cmp currentscanline,#Last_Scanline wc,wz
 if_be   jmp #setup_line
@@ -406,10 +394,10 @@ if_ne   jmp #:nextshape_sync
         shl poly_left,#16
         rdword poly_right,dlist_ptr
         shl poly_right,#16        
-        add dlist_ptr,coloroffset ' 2 or 3
+        add dlist_ptr,#2 ' 2 or 3
         rdbyte poly_color,dlist_ptr
         call #apply_stripe
-        'sub dlist_ptr,coloroffset '' no further dlist reads, don't need to fix ptr
+        'sub dlist_ptr,#2 '' no further dlist reads, don't need to fix ptr
 
         call #draw_span
         jmp #:nextshape_sync
@@ -433,10 +421,10 @@ if_ne   jmp #:nextshape_sync
 
         shr text_y,text_scale 
                     
-        add dlist_ptr,coloroffset ' 2 or 3
+        add dlist_ptr,#2 ' 2 or 3
         rdbyte poly_color,dlist_ptr
         call #apply_stripe
-        sub dlist_ptr,coloroffset
+        sub dlist_ptr,#2
         add dlist_ptr,#2+2
 
        
@@ -520,34 +508,17 @@ draw_span
 
         mov span_length,span_right
         cmps span_length,span_left wc,wz,wr
-if_be   jmp draw_span_ret ' return if span length/width =< 0   
+if_be   jmp draw_span_ret ' return if span length/width =< 0
 
-
-        ' debug draw
-        {
+'' Solid span. Bit 1 set jumps to the mix before this fill.
+'' Six pixels or fewer use one byte write. A longer span writes longs.
+'' The return is above the mix. A short solid span must not fall into it.
         add span_left,display_base
-        wrbyte red,span_left
-        add span_right,display_base
-        sub span_right,#1
-        wrbyte green,span_right
+        test poly_color,#2 wz
+if_nz   jmp #blend_span
 
-        add span_left,#1
-        cmpsub span_length,#2
-
-        tjz span_length,draw_span_ret
-:aaaaaaa
-        wrbyte span_color,span_left
-        add span_left,#1
-        djnz span_length,#:aaaaaaa
-        jmp draw_span_ret
-        '}
-
-        '{
-        ' draw span
-        add span_left,display_base
-        
-        ' super edge case: super short span
-        cmp span_length,#6 wc,wz ' optimal threshold here seems to be 6, oddly enough (6 is the minimum for correct execution)
+'' A span of 6 pixels or fewer uses the byte loop. The long fill needs more than 6.
+        cmp span_length,#6 wc,wz
 if_be  jmp #:shortspan
 
         ' prepare color
@@ -608,10 +579,31 @@ if_z    jmp draw_span_ret
         wrbyte poly_color,span_left
         add span_left,#1
         djnz span_length,#:sspnlp
-        '}
-  
+
 draw_span_ret
               ret
+
+'' Bit 1 selects this path. The count is the pixel width.
+'' A count of 0 must not reach here. djnz of 0 walks Hub.
+'' Mask both bytes with $FC. Average bits 7:6, 5:4, and 3:2.
+'' $54 keeps the shifted bit of each pair. Add the two terms.
+'' The add keeps a carry inside the pair. C still holds bit 0.
+blend_span
+        test poly_color,#1 wc
+        and poly_color,#$FC
+:blp    rdbyte d0,span_left
+        and d0,#$FC
+        mov span_right,d0
+        xor span_right,poly_color
+        shr span_right,#1
+        and span_right,#$54
+        and d0,poly_color
+        add d0,span_right
+        muxc d0,#1
+        wrbyte d0,span_left
+        add span_left,#1
+        djnz span_length,#:blp
+        jmp #draw_span_ret
 
 '' Pack lines 0, 3, 6 ... 237. 80 stored lines. 16 groups of 16 pixels.
 '' Each group has four colours. A fifth colour uses the nearest of those four.
@@ -667,23 +659,33 @@ pack_group
 pack_group_ret
         ret
 
-'' Low colour byte stays in bits 7:2. Bit 0 set means the dark line is $55 lower.
+'' poly_color is the low byte. The next list byte is the high byte.
+'' Clear bits 1:0. If the high byte is that value minus $55, set bit 0.
+'' Bit 0 marks the dark line. A low byte below $55 leaves the flag clear.
 '' The VGA cog ORs $03, so bits 1:0 are not a visible colour.
+'' If blend is set and the source bit 1 is set, set bit 1 for the mix.
 apply_stripe
+        mov span_color,poly_color
         mov d0,dlist_ptr
         add d0,#1
         rdbyte d1,d0
-        mov d0,poly_color
+        mov d0,span_color
         and poly_color,#$FC
         sub d0,#85 wc
-if_c    jmp #apply_stripe_ret
+if_c    jmp #:bit1
         cmp d0,d1 wz
 if_z    or poly_color,#1
+:bit1   mov d0,ctrl_base
+        add d0,#28
+        rdlong d0,d0 wz
+if_nz   test span_color,#2 wc
+if_nz_and_c or poly_color,#2
 apply_stripe_ret
         ret
 
 '' Match pixbyte to pal0..pal3. A new colour fills the next free slot.
 '' When all four slots are full, idx is the nearest slot.
+'' The compare drops bits 1:0. movd stores the byte. movs stores black.
 find_color
         movs :rd,#pal0
         mov idx,#0
@@ -722,29 +724,17 @@ find_color_ret
         ret
         
 '' See: https://forums.parallax.com/discussion/160804/slightly-faster-integer-multiplication-in-pasm
-newmult       ' setup
-              mov       vRes, #0      ' Primary accumulator (and final result)
-              abs       v1,v1  wc
-              muxnc     zero,#1 nr,wz ' C to Z
-              mov       tmp1, v1      ' Both my secondary accumulator,
-              shl       tmp1, #16     ' and the lower 16 bits of v1.
-              'mov       tmp2, v2      ' This is the upper 16 bits of v2,
-              'shr       tmp2, #16     ' which will sum into my 2nd accumulator.
-              mov       tmp2,#0 'haxx
-              mov       muli, #16        ' Instead of 4 instructions 32x, do 6 instructions 16x.          
-:loop         ' v1_hi_lo * v2_lo
-              shr       v2, #1 wc     ' get the low bit of v2          
-        if_c  add       vRes, v1      ' (conditionally) sum v1 into my 1st accumulator
-              shl       v1, #1        ' bit align v1 for the next pass 
-              ' v1_lo * v2_hi
-              shl       tmp1, #1 wc   ' get the high bit of v1_lo, *AND* shift my 2nd accumulator
-       ' if_c  add       tmp1, tmp2    ' (conditionally) add v2_hi into the 2nd accumulator
-              ' repeat 16x
-              djnz      muli, #:loop     ' I can't think of a way to early exit this
-              ' finalize
-              shl       tmp1, #16     ' align my 2nd accumulator
-              add       vRes, tmp1    ' and add its contribution
-              negz      vRes,vRes          
+'' 16 by 16 multiply. The high half of v2 is 0, so only the low product is kept.
+newmult
+              mov       vRes,#0
+              abs       v1,v1 wc
+              muxnc     zero,#1 nr,wz
+              mov       muli,#16
+:loop         shr       v2,#1 wc
+        if_c  add       vRes,v1
+              shl       v1,#1
+              djnz      muli,#:loop
+              negz      vRes,vRes
 newmult_ret   ret
            
 
@@ -755,32 +745,17 @@ newmult_ret   ret
 opc_bit0 long 1<<26
 opc_bit1 long 2<<26
 
-{
-junkcolor long $05_05
-junkslope long $0001_8431
-junkslope2 long $0000_8431 
-}
-
-coloroffset long 2 ' low colour byte. Bit 0 marks a stripe.
-
-white long $FF * $01010101
-black long 0 ' bit 0 clear. VGA ORs $03 at display.
-red   long $CC * $01010101
-green long $4C * $01010101
-
 zero long 0
 
 frameBytes long FB_BYTES
 paletteBytes long PAL_BYTES
 
-tmp1 res 1
-tmp2 res 1
 muli res 1
 v1 res 1
 v2 res 1
 vRes res 1
 
-init_share res 1
+init_share res 1 '' pack_line counts 16 groups here. Do not remove this long.
 
 init_lines res 1
 text_y 'alias
@@ -799,8 +774,7 @@ dlist_ptr  res 1
 dlist_next res 1               
 
 currentscanline res      1 ''logical line this cog is packing
-currentscanline_haxx res 1 ' speed hack  
-prevline       res       1
+currentscanline_haxx res 1 ' speed hack
 display_base res         1
 
 
@@ -832,7 +806,6 @@ pal_ptr       res 1
 expect        res 1
 warm          res 1
 filled        res 1
-back          res 1
 src           res 1
 dst           res 1
 pixbyte       res 1

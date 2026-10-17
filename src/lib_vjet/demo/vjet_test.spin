@@ -1,3 +1,6 @@
+'' Original beam-chase demo. Spinning triangles and one text shape.
+'' The solution pair is VJET_vUXM_vga and VJET_vUXM_rendering.
+'' The framebuffer demo of this picture is demo/vjet_fb.spin.
 CON
 
   _clkmode      = XTAL1 + PLL16X

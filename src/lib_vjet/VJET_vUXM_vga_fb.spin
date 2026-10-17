@@ -8,7 +8,8 @@
 '' 256 source pixels fill the same 1024 PLL clocks.
 '' The cog never waits on a render cog. It swaps buffers at the back porch.
 ''
-'' ctrl layout, one long each: go, front, done, stripe0, stripe1, stripe2.
+'' ctrl is eight longs: go, front, done, stripe0, stripe1, stripe2, fixup, blend.
+'' This cog writes front and reads done. The renderer owns fixup and blend.
 '' pix1 follows pix0. pal1 follows pal0. The byte stride is FB_BYTES and PAL_BYTES.
 
 CON
@@ -28,7 +29,7 @@ PUB start(pinGroup, framePtr, palPtr, ctrlPtr, statusLong) | pixelClock
 '' Start the framebuffer VGA cog.
 '' framePtr is the first bitmap. The second bitmap is framePtr + FB_BYTES.
 '' palPtr is the first palette table. The second is palPtr + PAL_BYTES.
-'' ctrlPtr is the six-long control block. This cog writes front and reads done.
+'' ctrlPtr is the eight-long control block. This cog writes front and reads done.
 
   stop
   if(chipver == 1)

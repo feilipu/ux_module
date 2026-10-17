@@ -216,7 +216,7 @@ The only (at this stage) special PASM functions written for the UX Module are in
 
 `ddc_i2c.spin` also runs a Spin cog after boot. It talks to the monitor on the VGA DDC pins (swapped vs the boot EEPROM). It reads EDID at `0x50` and, if the display answers, DDC/CI at `0x37`. It does not change VGA timing.
 
-VECTORJET (`src/lib_vjet`) is not linked from the product top. Boot is text VGA only. Compile VECTORJET demos with their own tops.
+VECTORJET (`src/lib_vjet`) is not linked from the product top. Boot is text VGA only. The two demos are `src/lib_vjet/demo/vjet_test.spin` and `src/lib_vjet/demo/vjet_fb.spin`.
 
 ```
 ux_module

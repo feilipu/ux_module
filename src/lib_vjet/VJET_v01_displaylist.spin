@@ -1,6 +1,15 @@
 '' VECTORJET v1.0
 '' (C)2020 IRQsome Software
 '' Display list helper
+''
+'' Each shape starts with an 8-byte header.
+'' The header holds the link, the sync byte, the type, and two scanlines.
+'' A flat triangle stores 36 bytes. A general triangle stores 48 bytes.
+'' A box stores 16 bytes. A text shape stores 20 bytes.
+''
+'' A polygon stores 24 bytes plus 12 bytes for each trapezoid.
+'' A sloped line stores 36 bytes. A horizontal line stores 16 bytes.
+'' The renderer writes the 8 current-edge bytes. This builder skips them.
 
 
 #1
@@ -98,7 +107,7 @@ PUB line(x1,y1,x2,y2,colors) : ihead | tmp '' TODO: Add dedicated line shape typ
   word[ihead]:=(y2.word[1]+1) ' end line
   ihead+=2
   if y2.word[1] == y1.word[1] ' horizontal line
-    if (spaceleft -= constant(3*2)) < 0
+    if (spaceleft -= constant(4*2)) < 0
       abort 13
     byte[tmp]:=(SHP_BOX)
 
@@ -114,10 +123,10 @@ PUB line(x1,y1,x2,y2,colors) : ihead | tmp '' TODO: Add dedicated line shape typ
     word[ihead]:=(colors)
     ihead+=4 ' 2 + 2 unused
   else
-    if (spaceleft -= constant(2*4 + 4*4 + 2*2 + 4)) < 0
+    if (spaceleft -= constant(2*4 + 2*4 + 2*2 + 2*4)) < 0
       abort 14
     byte[tmp]:=(SHP_TRAPSTACK)
-    ihead+= constant(2*4) ' scratch
+    ihead+= constant(2*4) ' current edges. The renderer writes these.
     tmp := slopeCalc(x2,x1,y2,y1)
     if x1 =< x2
       long[ihead]:=(x1)
@@ -161,8 +170,9 @@ PUB box(x1,y1,x2,y2,colors) : ihead
   if y2<(topclip~>16) or y1=>(bottomclip~>16) or x2<(leftclip~>16) or x1=>(rightclip~>16)
     return
 
+  '' Stored size is 16 bytes, including the link word and the unused word.
   putlink
-  if (spaceleft -= constant(1+1+2+2+2+2+2)) < 0
+  if (spaceleft -= constant(1+1+2+2+2+2+2+2)) < 0
     abort 11
   ihead:=head
   byte[ihead++]:=(-1) ' init sync to -1
@@ -211,6 +221,7 @@ PUB triangle(x1,y1,x2,y2,x3,y3,colors) : ihead | tmp,tmp2,tmp3
   if y3<topclip OR y1=>bottomclip OR (y2.word[1] == y1.word[1] AND y2.word[1] == y3.word[1])
     return 'reject offscreen/degenerate triangle
 
+  '' Flat top or flat bottom stores 36 bytes. Three scanlines store 48.
   putlink
   if (spaceleft -= constant(1+1+2+2 + 2*4)) < 0
     abort 7
@@ -221,7 +232,7 @@ PUB triangle(x1,y1,x2,y2,x3,y3,colors) : ihead | tmp,tmp2,tmp3
   ihead+=2
   word[ihead]:=(y3.word[1]+1) ' end line
   ihead+=2
-  ihead+=(constant(2*4)) ' scratch
+  ihead+=(constant(2*4)) ' current edges. The renderer writes these.
   'head:=ihead
 
   if y2.word[1] == y3.word[1] ' bottom flat?
@@ -401,7 +412,7 @@ PUB polygon(polyptr,vcount,colors,ccw) : ihead | tmp,lefti,righti,ybottom,ytop,t
   ihead+=2
   word[ihead]:=(ybottom+1) ' end line
   ihead+=2
-  ihead+=(constant(2*4)) 'scratch
+  ihead+=(constant(2*4)) ' current edges. The renderer writes these.
 
   '' initialize top edges - slopes will be added on later
   topptr:=ihead
@@ -527,8 +538,9 @@ PUB text(x,y,xscale,yscale,str,font,colors) : ihead |ystop
 
   if ystop > topclip~>16 AND y < bottomclip~>16
 
+    '' Stored size is 20 bytes. The string itself stays outside the list.
     putlink
-    if (spaceleft -= constant(1+1+2+2+ 1+1+ 2+2+2+2)) < 0
+    if (spaceleft -= constant(1+1+2+2+ 1+1+ 2+2+2+2+2)) < 0
       abort 16
     ihead:=head
     byte[ihead++]:=(-1) ' init sync to -1
