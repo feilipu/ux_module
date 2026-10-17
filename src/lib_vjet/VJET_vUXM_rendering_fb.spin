@@ -11,7 +11,7 @@ CON
 
   WIDTH = 256
   NUM_LINES = 240
-  STORED_LINES = 80
+  STORED_LINES = 80 '' Demo arrays use this count. Do not shrink it for the bring-up.
   SCRATCH_LONGS = 3 * WIDTH / 4 '' One private 256-byte line per cog.
 
   FB_W = WIDTH
@@ -22,6 +22,10 @@ CON
   PAL_BYTES = PAL_LONGS * 4
 
   Last_Scanline = NUM_LINES-1 ''final scanline for a frame
+
+  '' cmp d,#s wc,wz. Bits 31:18 plus the 9-bit source. OpenSpin opcode $21.
+  CMP_MASK = ($3FFF << 18) | $1FF
+  CMP_MARK = ($210F << 18) | $03400000 | Last_Scanline
 
   Sfield = 0
   DField = 9
@@ -77,6 +81,31 @@ SHP_TEXT              ' Shape type 3 header - text (12 bytes)
 VAR
   long rendcog[8]
   long rendcount
+  long scanAt
+
+PUB set_lines(n) : ok | inst, i, lim, nlong
+'' Select a shorter store before start. The default scans 240 logical lines.
+'' The scan stops at logical line n * 3 - 1. Line n of the buffer stays clear.
+'' The second buffer begins (n + 1) * 64 bytes after the first.
+'' The first call finds the compare. A later call uses that index.
+
+  lim := ((n * 3) - 1) & $1FF
+  if scanAt == 0
+    nlong := (@cog_image_end - @Entry) >> 2
+    repeat i from 0 to nlong - 1
+      inst := long[@Entry][i]
+      if (inst & CMP_MASK) == CMP_MARK
+        scanAt := i + 1
+        quit
+    if scanAt == 0
+      return 0
+  i := scanAt - 1
+  inst := long[@Entry][i]
+  long[@Entry][i] := (inst & !$1FF) | lim
+  frameBytes := (n + 1) << 6
+  paletteBytes := (n + 1) << 6
+  return 1
+
 
 PUB start(cognum,totalcogs,scanbuffer,dlistPtrAdr,framePtr,palPtr,ctrlPtr,readyptr)
 '' Start one rendering cog. Call once per cog with cognum 0..totalcogs-1.
@@ -749,6 +778,7 @@ zero long 0
 
 frameBytes long FB_BYTES
 paletteBytes long PAL_BYTES
+cog_image_end
 
 muli res 1
 v1 res 1

@@ -135,7 +135,13 @@ tools/ux-screen.sh
 3. Preserve non-blocking main loop behaviour; long work belongs in other cogs.
 4. New shared Hub structures need a stated single writer. Only Cog 0 calls `acia.tx`. `req_master` is Spin→PASM. `req_parse_idle` is PASM→Spin.
 5. Do not add XON/XOFF on the FTDI path.
-6. Prose: `style-ste-writing`.
+6. The FTDI frame is 115200 8N2. `terminal_ftdi.spin` already shifts 11 bits (one mark, one start, eight data, one stop). Host tools set `CSTOPB` and leave `CRTSCTS` clear. Do not change `txbits` to 10.
+
+   `CR_8N1` in `acia_rc2014.spin` is the 6850 control image. Word select is not driven. Keep that image.
+7. The final graphics build keeps the PS/2 keyboard. Text mode has one free cog. Graphics mode has no free cog. The keyboard shares the FTDI cog. `keyboard_ps2` is 332 longs and waits on the clock. `terminal_ftdi` is 107 longs and moves a pin every 1024 clocks.
+
+   A polled driver can share the cog. It is not in the tree. The bring-up still calls `kbd.stop`. The `gfxMode` branch does not call `kbdToZ80`. Do not load a merged driver until that driver exists.
+8. Prose: `style-ste-writing`.
 
 ## Related
 

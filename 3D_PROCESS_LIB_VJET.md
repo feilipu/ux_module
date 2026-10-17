@@ -146,3 +146,11 @@ The repaired probe showed the triangles in motion. Black under a semi-transparen
 The accepted picture now lives in `src/lib_vjet/demo/vjet_fb.spin`, beside `demo/vjet_test.spin`. Those two files are the demos. The framebuffer cogs stay the solution.
 
 The accepted scene draws 13 triangles and one text shape. The probe draws one box and nine triangles. A full accepted frame stores up to 632 bytes. The probe stores 340 bytes. Those sizes are in `3D_WORKPLAN_LIB_VJET.md`.
+
+## Line slice — 18 Oct 2026
+
+The short framebuffer bring-up is on the board. Ten content lines fill the top band. The black line fills the rest. The prompt loop from the long graphics session ended after a hardware reset. Control-Option-G still toggles.
+
+The bitmap holds the pixels. The list holds the commands. The list stays allocated. The 80-line pair is 20480 bytes. The bring-up cannot keep that pair.
+
+The next trial returns to the eight-line slice. The earlier beam-chase tears used the wide fan and a second Spin cog. This trial keeps three render cogs and the short scene. The original renderer used two cogs. Do not change the 2021 handshake, the PLL, or `visibleScale`.

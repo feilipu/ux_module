@@ -57,8 +57,9 @@ def die(msg: str, code: int = 1) -> None:
 def raw_serial(fd: int) -> None:
     iflag, oflag, cflag, lflag, ispeed, ospeed, cc = termios.tcgetattr(fd)
     iflag = oflag = lflag = 0
-    cflag &= ~(termios.CSIZE | termios.PARENB | termios.CSTOPB | termios.CRTSCTS)
-    cflag |= termios.CS8 | termios.CREAD | termios.CLOCAL
+    # 8N2. CSTOPB is the second stop bit. CRTSCTS stays clear.
+    cflag &= ~(termios.CSIZE | termios.PARENB | termios.CRTSCTS)
+    cflag |= termios.CS8 | termios.CSTOPB | termios.CREAD | termios.CLOCAL
     cflag &= ~termios.HUPCL
     cc[termios.VMIN] = 0
     cc[termios.VTIME] = 0
@@ -137,7 +138,7 @@ def main() -> int:
         dtr_on = modem_line(fd, termios.TIOCM_DTR)
         dtr_release(fd)
         dtr_now = modem_line(fd, termios.TIOCM_DTR)
-        print(f'port  {port}  115200 8N1')
+        print(f'port  {port}  115200 8N2')
         print(f'dtr   open={"on" if dtr_on else "off"}  now={"on" if dtr_now else "off"}  (/RES when on)')
 
         payload = b''

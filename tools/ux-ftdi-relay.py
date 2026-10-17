@@ -29,8 +29,10 @@ def die(msg, code=1):
 def raw_tty(fd, baud=termios.B115200, hupcl=False):
     iflag, oflag, cflag, lflag, ispeed, ospeed, cc = termios.tcgetattr(fd)
     iflag = oflag = lflag = 0
-    cflag &= ~(termios.CSIZE | termios.PARENB | termios.CSTOPB | termios.CRTSCTS)
-    cflag |= termios.CS8 | termios.CREAD | termios.CLOCAL
+    # 8N2. The UX FTDI frame uses two stop bits. CSTOPB is that bit.
+    # CRTSCTS stays clear. The header does not wire CTS or RTS.
+    cflag &= ~(termios.CSIZE | termios.PARENB | termios.CRTSCTS)
+    cflag |= termios.CS8 | termios.CSTOPB | termios.CREAD | termios.CLOCAL
     if hupcl:
         cflag |= termios.HUPCL
     else:

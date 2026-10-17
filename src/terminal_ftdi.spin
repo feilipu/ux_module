@@ -56,7 +56,7 @@ PUB start(baudrate) : okay
 Waits 1/4 second for connection, then clears screen.
   Parameters:
     baudrate - bits per second.  Make sure it matches the Parallax Serial Terminal's
-               Baud Rate field.
+               Baud Rate field. The frame is 8N2.
   Returns    : True (non-zero) if cog started, or False (0) if no cog is available.}}
 
   okay := startRxTx(31, 30, 0, baudrate)
@@ -73,7 +73,7 @@ PUB startRxTx(rxpin, txpin, mode, baudrate) : okay
                bit 1 - inverts tx.
                bit 2 - open drain/source tx.
                bit 3 - ignore tx echo on rx.
-    baudrate - bits per second.
+    baudrate - bits per second. The frame is 8N2.
   Returns    : True (non-zero) if cog started, or False (0) if no cog is available.}}
 
   stop
@@ -403,7 +403,7 @@ receive                 jmpret  rxcode,txcode         'run a chunk of transmit c
                         test    rxmask,ina      wc
         if_z_eq_c       jmp     #receive
 
-                        mov     rxbits,#9             'ready to receive byte
+                        mov     rxbits,#9             '8 data bits and 1 stop. 2nd stop is idle
                         mov     rxcnt,bitticks
                         shr     rxcnt,#1
                         add     rxcnt,cnt
@@ -462,10 +462,10 @@ transmit                jmpret  txcode,rxcode         'run a chunk of receive co
                         and     t3,#BUFFER_MASK
                         wrlong  t3,t1
 
-                        or      txdata,#$100          'ready byte to transmit
-                        shl     txdata,#2
+                        or      txdata,#$100          'stop bit above the 8 data bits
+                        shl     txdata,#2             'leading mark, then the start bit
                         or      txdata,#1
-                        mov     txbits,#11
+                        mov     txbits,#11            '8N2: mark, start, 8 data, stop
                         mov     txcnt,cnt
 
 :bit                    test    rxtxmode,#%100  wz    'output bit on tx pin

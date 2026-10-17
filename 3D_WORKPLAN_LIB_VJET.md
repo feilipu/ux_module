@@ -28,6 +28,8 @@ Use these names only. Clock, pins, and the ACIA model stay as in `ARCHITECTURE_U
 
 The test machine is CP/M-IDE v3.0 on the RC2014 8085, with the Compact Flash module and the ACIA console. The shell prints `RC2014 - CP/M IDE Shell v3.0`. The UX Module is that ACIA. The console pair is 0x80 and 0x81. The CF card uses other ports. The line is 115200 8N2.
 
+The UX FTDI console uses that same frame. Host tools set two stop bits. The FTDI relay leaves `CRTSCTS` clear.
+
 The BIOS console is interrupt driven. `acia_interrupt` in `8085-cf-acia/cpm22bios.asm` reads status, reads data, and writes control. A graphics session holds `/INT` inactive before the register meaning changes. The interrupt then stays out of the pair.
 
 Host programs for this test are 8085. Before you write them, read the z88dk skill `cpu-8085` and `target-rc2014` for subtype `acia85`. The skill file is `/Users/phillip/Container/ubuntu-data/z88dk/.agents/skills/cpu-8085/SKILL.md`.
@@ -49,9 +51,21 @@ Cog count in each mode:
 | Mode | Cogs in use | Free cog |
 |------|-------------|----------|
 | Text | Cog 0, FTDI, ACIA, PS/2, two text VGA, DDC | 1 |
-| Graphics | Cog 0, FTDI, ACIA, PS/2, one framebuffer VGA, two render, one draw | 0 |
+| Graphics | Cog 0, FTDI, ACIA, one framebuffer VGA, three render cogs, one draw | 0 |
 
-Graphics mode has no spare cog. A second bus cog is not free. DDC stops because the draw cog needs that cog.
+The PS/2 cog stops in this bring-up. Three render cogs publish the frame. Cog 0 of the renderer waits for the other two stripes, then writes `done`. Two cogs never write `done`.
+
+The final build keeps the PS/2 keyboard. Graphics has no free cog. The keyboard must share the FTDI cog.
+
+`keyboard_ps2.spin` is 332 cog longs. `terminal_ftdi.spin` is 107 cog longs. The limit is 496 longs. A straight sum leaves 57 longs.
+
+The keyboard driver waits until the clock falls. A command to the keyboard holds that clock low for about 122 µs. One bit at 115200 is 8.68 µs. A blocking wait drops UART bits.
+
+A polled driver can share the cog. It samples the PS/2 pins once each UART bit. A PS/2 half-clock is about 30 µs, so the poll sees the edge. That driver is not in the tree. Do not load a guess.
+
+The FTDI cog already sends 8N2. Transmit uses 11 bit times. One mark, one start, eight data, and one stop. The next byte adds one more mark. Host tools set `CSTOPB`.
+
+Cog 0 keeps the ACIA pump. DDC stops. A second bus cog is not free.
 
 Hub is 32 KB. OpenSpin 1.00.81 measured these images.
 
@@ -60,22 +74,28 @@ Hub is 32 KB. OpenSpin 1.00.81 measured these images.
 | `ux_module.spin` | 12780 | 13516 | Text only. |
 | `demo/vjet_test.spin` | 6140 | — | Stored beam-chase demo. Current compile is 6156. |
 | `vjet_ftdi.spin` | 8660 | — | Beam chase plus ACIA and FTDI. Clean. |
-| `demo/vjet_fb.spin` | 8044 | about 944 | Accepted file `build/vjet_fb.binary`. Variables are 23776. |
-| `vjet_fb_probe.spin` | 6696 | — | Stripe and glass check. On EEPROM. Not a demo. |
-| `vjet_fb_cube.spin` | 7520 | — | Stage 2 harness. Not loaded. |
-| `ux_module_vjet.spin` | 19552 | 2200 | Beam-chase bring-up. Not the picture path. |
+| `demo/vjet_fb.spin` | 8044 | about 944 | Accepted file `build/vjet_fb.binary`. Current source compiles to 8216. |
+| `vjet_fb_probe.spin` | 6696 | — | Stripe and glass check. Was on EEPROM. Not a demo. |
+| `vjet_fb_cube.spin` | 7520 | — | Stage 2 harness. Current source compiles to 7676. Not loaded. |
+| `ux_module_vjet.spin` | 20408 | 1148 | Framebuffer bring-up. Ten content lines. |
 
-Two bitmap buffers and two palette tables are 20480 bytes before the lists. The known-good variables are 23776 bytes. The bring-up has 2200 bytes free. Step 3 cannot link the framebuffer demo unchanged. The current `demo/vjet_fb.spin` source compiles to 8060 bytes. The probe source compiles to 6696 bytes.
+The accepted bitmap does not fit in the bring-up. Two bitmaps and two palettes at 80 lines are 20480 bytes. The bring-up keeps 10 content lines and one black line. Each content line needs 256 bytes.
+
+1148 bytes remain above the initial stack pointer. The reserved stack is 256 longs. The current `demo/vjet_fb.spin` source compiles to 8216 bytes. The stored accepted file stays 8044 bytes.
 
 `wmf.stop` frees a cog. It does not free the text buffer. The text buffer is 3200 bytes. That alias does not close the gap. The ACIA and FTDI buffers stay live.
 
 The 74HC4078 decodes `/IORQ` with A5–A1. The live windows are 0x00, 0x40, 0x80, and 0xC0. The product path keeps the match on `PORT_80`. `PORT_VJET` stays unused.
 
+On 18 Oct 2026 the full bitmap is the costly store. The list and the bitmap both stay. The VGA cog scans the bitmap. The next bring-up uses the eight-line slice from `VJET_vUXM_rendering.spin`.
+
+Three render cogs write that slice ahead of the scan. The original renderer used two cogs. Three cogs must stay ahead. The accepted framebuffer demo is unchanged.
+
 Cog 0 is the only `acia.tx` writer. Do not draw on Cog 0 while the ACIA stays live.
 
 One shape header is 8 bytes. A flat triangle is 36 bytes. A general triangle is 48 bytes. A box is 16 bytes. A text shape is 20 bytes. The scene counts are in Capabilities.
 
-Two 300-long lists are 2400 bytes. Two 900-long lists overflow by 768 longs. The framebuffer tops use the 300-long lists.
+Two 300-long lists are 2400 bytes. Two 900-long lists overflow by 768 longs. The framebuffer demos use the 300-long lists. The bring-up lists are 64 longs each. The short scene fits in that list. Two 300-long lists do not fit beside the ten stored lines.
 
 ## Known-good mechanisms
 
@@ -139,29 +159,32 @@ EEPROM holds the probe loaded before this comment pass. The list check now count
 
 Goal: one binary runs the product console, enters graphics mode, shows a framebuffer scene, keeps the ACIA link, and returns to text.
 
-The bring-up file is `src/ux_module_vjet.spin`. It still links the beam-chase objects. Product `src/ux_module.spin` stays text only.
+The bring-up file is `src/ux_module_vjet.spin`. It links the framebuffer objects. Product `src/ux_module.spin` stays text only.
 
 Promote the switch into `src/ux_module.spin` only after the checks below pass. Boot still starts text mode.
 
-The Hub limit is the bitmap store. The accepted frame uses at most 632 bytes, and each list is 1200 bytes. Two bitmaps and two palettes are 20480 bytes. The bring-up has 2200 bytes free and a 2048-byte scan buffer. Replacing that scan buffer leaves too little for those bitmaps.
+The Hub limit is the bitmap store. The accepted frame uses at most 632 bytes. The bring-up scene is one box, two triangles, and the text " GFX". That list uses at most 132 bytes. Each bring-up list is 256 bytes.
 
-Step 3 needs its own bitmap size. That picture differs from `demo/vjet_fb.spin`. Accept it on the monitor before it replaces the accepted scene. Leave `STORED_LINES` in the accepted renderer unchanged.
+Step 3 uses its own bitmap. Ten content lines fill the top of the picture. The VGA cog still scans 480 lines. Lines after the tenth show a black line in the buffer.
 
-One stored line needs 256 bytes for the two bitmaps and the two palettes. The scratch lines need 768 bytes. The reclaimed bytes hold about 13 stored lines. Compile the bring-up before any load. An object swap can change that fit.
+The last bright line of an even band reads the next palette. At the black line that read stays on the black line. The odd bands then stay black.
+
+That picture differs from `demo/vjet_fb.spin`. Accept it on the monitor before it replaces the accepted scene. Leave `STORED_LINES` in the accepted renderer unchanged.
 
 ### Switch order
 
 1. Set a mode flag so Cog 0 stops `wmf` calls.
 2. Call `wmf.stop`.
 3. Call `i2c.stopCog`.
-4. Wait a short blank so the text driver has left the pins. Start at 250 ms. Shorten it only after a lock.
-5. Start the framebuffer VGA cog on pin group 2 (`16/8`).
-6. Start two render cogs. Pass the same buffers and the same control block.
-7. Publish a cleared list, then set the render-ready flag.
-8. Start the draw cog.
-9. On the way back, clear the ready flag, stop the draw cog, stop both render cogs, and stop the framebuffer VGA cog.
-10. Call `wmf.init`, then `i2c.startCog`. A cleared text screen is acceptable.
-11. On a failed `cognew`, stop every graphics cog that `start` already launched. Then run step 10.
+4. Call `kbd.stop` in this bring-up only. Graphics has no free cog. The final build keeps the keyboard on the FTDI cog.
+5. Wait a short blank so the text driver has left the pins. Start at 250 ms. Shorten it only after a lock.
+6. Start the framebuffer VGA cog on pin group 2 (`16/8`).
+7. Start three render cogs. Pass the same buffers and the same control block.
+8. Start the draw cog. It posts the first list and increments `go`.
+9. Set the render-ready flag after `go` is 1. The render cogs wait on that flag.
+10. On the way back, clear the ready flag, stop the draw cog, stop the three render cogs, and stop the framebuffer VGA cog.
+11. Call `wmf.init`, then `i2c.startCog`, then `kbd.start`. A cleared text screen is acceptable.
+12. On a failed `cognew`, stop every graphics cog that `start` already launched. Then run step 11.
 
 Cog 0 does steps 1 to 3 and the return path. The draw cog does not call `acia.tx`. The ACIA cog stays up across the switch. Do not pulse the bus `/RESET` as part of the video switch.
 
@@ -169,13 +192,13 @@ Cog 0 does steps 1 to 3 and the return path. The draw cog does not call `acia.tx
 
 Use Ctrl+Alt+G. The same chord returns to text. A held key switches once. Do not use the first `>`.
 
-The bench has no PS/2 keyboard. Control-G (`$07`) on the FTDI relay is the same toggle. One BEL toggles. The framebuffer demo has no ACIA and no FTDI, so BEL does nothing there.
+The bench keyboard sends Ctrl+Alt+G. On a Mac that chord is Control-Option-G. Control-G (`$07`) on the FTDI relay is the same toggle. One BEL toggles. The framebuffer demo has no ACIA and no FTDI, so BEL does nothing there.
 
 The chord uses the same guard as Enter graphics. If `z80XmSess` or `hostXm` is set, stay in text mode. Handle the chord and Ctrl+Alt+Del before the `txCheck` leave in `kbdToZ80`.
 
-The return chord, Ctrl+Alt+Del, Enter text, and a backplane `/RESET` all stop the draw cog, both render cogs, and the framebuffer VGA cog. Then they call `wmf.init` and `i2c.startCog`.
+The return chord, Ctrl+Alt+Del, Enter text, and a backplane `/RESET` all stop the draw cog, the three render cogs, and the framebuffer VGA cog. Then they call `wmf.init`, `i2c.startCog`, and `kbd.start`.
 
-In graphics mode, `readZ80` still drains the ACIA receive FIFO and still writes FTDI. The text VGA cog is already stopped. `kbdToZ80` and `termToZ80` stay.
+In graphics mode, `readZ80` still drains the ACIA receive FIFO and still writes FTDI. The text VGA cog is already stopped. `termToZ80` stays. This bring-up does not call `kbdToZ80` while `gfxMode` is set. The final build calls `kbdToZ80` in that branch.
 
 ### Stage 1 checks
 
@@ -385,7 +408,7 @@ Do the rows in order. A later row waits for the exit text of the row above.
 |------|------|------|
 | 1 | Measure the product binary and the free Hub. | A written size note. |
 | 2 | Load the accepted framebuffer on the target monitor. | 720×480 at 60 Hz. The stripe picture accepted. |
-| 3 | Bring-up top. Text boot, chord into the framebuffer, draw cog, two render cogs. | 60 s stable scene. FTDI still moves. |
+| 3 | Bring-up top. Text boot, Control-G into the framebuffer, draw cog, three render cogs. | 60 s stable scene. FTDI still moves. |
 | 4 | Return path and Ctrl+Alt+Del back to text. Ten switches. | Text console works after each return. |
 | 5 | Promote the switch into the product top. Boot remains text. | Same checks on `ux_module.spin`. |
 | 6 | Measure list bytes and `/WAIT`. | Numbers recorded in this file. |
@@ -397,7 +420,7 @@ Do the rows in order. A later row waits for the exit text of the row above.
 
 Status on 17 Oct 2026. Steps 1 and 2 are done. The two demos are `demo/vjet_test.spin` and `demo/vjet_fb.spin`.
 
-`vjet_fb_probe.spin` is on EEPROM. It checks the stripe rule, the crossings, and the depth order. Steps 3 to 5 stay open.
+The bring-up compiles to 20408 bytes. It keeps 10 content lines. EEPROM on the bench holds that image. The serial banner was `UX Module Initialised`, then the 8085 prompt. The monitor check for step 3 is still open. Steps 4 and 5 stay open.
 
 The cube harness is the start of stage 2. The bring-up store budget stays in Stage 1. The accepted variables are 23776 bytes. The command bytes are not frozen. The ACIA cog is unchanged.
 

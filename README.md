@@ -17,7 +17,7 @@ It is designed to operate as an MC68B50 ACIA device (the standard RC2014 Serial 
 <td style="border: 1px solid #cccccc; padding: 6px;"><a href="https://raw.githubusercontent.com/feilipu/ux_module/main/docs/RC2014_UX_MODULE_PRODUCTION_BOARD.JPG" target="_blank"><img src="https://raw.githubusercontent.com/feilipu/ux_module/main/docs/RC2014_UX_MODULE_PRODUCTION_BOARD.JPG"/></a></td>
 </tr>
 <tr>
-<th style="border: 1px solid #cccccc; padding: 6px;"><centre>User Experience Module for RC2014 - Production</center></th>
+<th style="border: 1px solid #cccccc; padding: 6px;"><center>User Experience Module for RC2014 - Production</center></th>
 </tr>
 </tbody>
 <tbody>
@@ -26,7 +26,7 @@ It is designed to operate as an MC68B50 ACIA device (the standard RC2014 Serial 
 <td style="border: 1px solid #cccccc; padding: 6px;"><a href="https://raw.githubusercontent.com/feilipu/ux_module/main/docs/RC2014_UX_MODULE_PREPRODUCTION.JPG" target="_blank"><img src="https://raw.githubusercontent.com/feilipu/ux_module/main/docs/RC2014_UX_MODULE_PREPRODUCTION.JPG"/></a></td>
 </tr>
 <tr>
-<th style="border: 1px solid #cccccc; padding: 6px;"><centre>User Experience Module for RC2014 - Pre-Production</center></th>
+<th style="border: 1px solid #cccccc; padding: 6px;"><center>User Experience Module for RC2014 - Pre-Production</center></th>
 </tr>
 </tbody>
 <tbody>
@@ -34,7 +34,7 @@ It is designed to operate as an MC68B50 ACIA device (the standard RC2014 Serial 
 <td style="border: 1px solid #cccccc; padding: 6px;"><a href="https://raw.githubusercontent.com/feilipu/ux_module/main/pcb/RC2014_UX_MODULE_SCH.png" target="_blank"><img src="https://raw.githubusercontent.com/feilipu/ux_module/main/pcb/RC2014_UX_MODULE_SCH.png"/></a></td>
 </tr>
 <tr>
-<th style="border: 1px solid #cccccc; padding: 6px;"><centre>User Experience Module for RC2014 - Production Schematic</center></th>
+<th style="border: 1px solid #cccccc; padding: 6px;"><center>User Experience Module for RC2014 - Production Schematic</center></th>
 </tr>
 </tbody>
 </tbody>
@@ -43,7 +43,7 @@ It is designed to operate as an MC68B50 ACIA device (the standard RC2014 Serial 
 <td style="border: 1px solid #cccccc; padding: 6px;"><a href="https://raw.githubusercontent.com/feilipu/ux_module/main/pcb/RC2014_UX_MODULE_BRD.png" target="_blank"><img src="https://raw.githubusercontent.com/feilipu/ux_module/main/pcb/RC2014_UX_MODULE_BRD.png"/></a></td>
 </tr>
 <tr>
-<th style="border: 1px solid #cccccc; padding: 6px;"><centre>User Experience Module for RC2014 - Production Board Layout</center></th>
+<th style="border: 1px solid #cccccc; padding: 6px;"><center>User Experience Module for RC2014 - Production Board Layout</center></th>
 </tr>
 </tbody>
 </table>
@@ -81,17 +81,17 @@ RC2014 Z80 @ 7.372MHz
 0 MEM W/S, 1 I/O W/S, INT MODE 1, Z2 MMU
 512KB ROM, 512KB RAM
 
-ACIA0: IO=0x40 ACIA MODE=115200,8,N,1
 SIO0: IO=0x80 SIO MODE=115200,8,N,1
 SIO1: IO=0x82 SIO MODE=115200,8,N,1
+ACIA0: IO=0x40 ACIA MODE=115200,8,N,1
 MD: UNITS=2 ROMDISK=384KB RAMDISK=256KB
 PPIDE: IO=0x20 PPI NOT PRESENT
 
 Unit        Device      Type              Capacity/Mode
 ----------  ----------  ----------------  --------------------
-Char 0      ACIA0:      RS-232            115200,8,N,1
-Char 1      SIO0:       RS-232            115200,8,N,1
-Char 2      SIO1:       RS-232            115200,8,N,1
+Char 0      SIO0:       RS-232            115200,8,N,1
+Char 1      SIO1:       RS-232            115200,8,N,1
+Char 2      ACIA0:      RS-232            115200,8,N,1
 Disk 0      MD1:        RAM Disk          256KB,LBA
 Disk 1      MD0:        ROM Disk          384KB,LBA
 
@@ -101,7 +101,7 @@ RC2014 Boot Loader
 Boot [H=Help]:
 ```
 
-To ensure that the UX Module appears as the console port, the console port must be manually set to prefer the UX Module (ACIA) using the `BOOTCON` configuration. The key elements of the configuration file are noted below.
+RomWBW finds the SIO channels before the ACIA. One SIO/2 chip uses character units 0 and 1. The UX Module (ACIA) is then unit 2. Set `BOOTCON` to 2 so the console is the ACIA. The key lines of the configuration file are below.
 
 ```sh
 UARTENABLE  .SET    FALSE       ; UART: DISABLE 8250/16550-LIKE SERIAL DRIVER (UART.ASM)
@@ -133,7 +133,7 @@ Note that sockets are not included in the BOM, but can be used if desired. See t
 
 ### SMD
 
-Soldering the SMD devices is fairly straightforward. The resistors go on the front of the board. They are not polarised, but if you are concerned with neatness they can all be aligned so they face the same way. The capacitors go on the back of the board. The 3x 220pF capacitors are mounted behind the diodes, and this can be noted because of the through-hole on either side of the mounting location.
+Soldering the SMD devices is fairly straightforward. The resistors go on the front of the board. They are not polarised, but if you are concerned with neatness they can all be aligned so they face the same way. The capacitors go on the back of the board. The three 200 pF capacitors (C12, C13, C16) are mounted behind the diodes. A through-hole on either side of the pads marks that location.
 
 There are many techniques for soldering SMD. For a simple tutorial using a standard fine tipped soldering iron and a pair of tweezers, [please refer to this video](https://youtu.be/t7WQLCaeAjM).
 
@@ -163,7 +163,7 @@ The UX Module firmware is developed in Propeller SPIN, and in Propeller Assembly
 
 There are a number of alternative programming environments for the Parallax Propeller. The PropellerIDE was defined as the default option, and was developed to be cross-platform capable. However, other solutions supporting SPIN, PASM, and C or C++ are also available.
 
-The UX Module is developed using the PropellerIDE, and therefore support will only provided for issues with that platform.
+Use PropellerIDE for interactive edits. The command-line path below is for scripts and agents.
 
 The [PropellerIDE](https://developer.parallax.com/propelleride/) is available for Windows, OS X, Linux, and packaged for debian.
 
@@ -176,8 +176,8 @@ Use the CLI toolchain. PropellerIDE remains valid for interactive work. Both pat
 | [OpenSpin](https://github.com/parallaxinc/OpenSpin) (`openspin`) | Compile Spin and PASM to a `.binary` or `.eeprom` image | Build from source (for example `~/Projects/OpenSpin`) |
 | [PropLoader](https://github.com/parallaxinc/PropLoader) (`proploader`) | Load the image over FTDI FT232 (DTR reset) | Build from source (for example `~/Projects/PropLoader`) |
 | `tools/ux-load.sh` | EEPROM load + run on `/dev/cu.usbserial-*` | This repository |
-| `tools/ux-screen.sh` | 115200 FTDI console. Holds DTR off | This repository |
-| `rc-screen` (`tools/rc-screen.sh`) | 115200 ACIA console on USB CDC or FTDI. Direct GNU `screen` | `$HOME/bin` |
+| `tools/ux-screen.sh` | 115200 8N2 FTDI console. Holds DTR off | This repository |
+| `rc-screen` (`tools/rc-screen.sh`) | 115200 8N2 ACIA console on USB CDC or FTDI. Direct GNU `screen` | `$HOME/bin` |
 
 Copy this block. Quit GNU `screen` first (`C-a k`). The serial port must be free.
 
@@ -270,13 +270,13 @@ The keyboard is presumed to be a [USA standard](https://github.com/feilipu/ux_mo
 
 ### RC2014 Bus Tx/Rx Line Conflict
 
-When multiple serial Modules are used on one RC2014 Backplane, there is a potential for conflict on the Tx/Rx lines, Pin 35 and 36. Conflict on the the Bus Tx/Rx lines will prevent the RC2014 from booting correctly.
+When multiple serial Modules are used on one RC2014 Backplane, there is a potential for conflict on the Tx/Rx lines, Pin 35 and 36. A conflict on bus pins 35 (TX) and 36 (RX) stops the RC2014 boot.
 
 The UX Module is connected to the RC2014 Bus serial Tx and Rx lines. When using the UX Module with other serial Modules (such as the SIO/2 Module), it is necessary to disconnect one or other of the serial Modules. In practice the easiest way to do this is to straighten either the UX Module or SIO/2 Module Tx and Rx pins sufficiently so that they do not insert into the Bus connector.
 
 ## Errata Propeller /RESET Pin
 
-The Propeller MCU `/RESET` pin is driven by the serial interface `DTR` pin, which is normally held high when the port is ready. However sometimes both Linux (MacOS) and Windows toggle `DTR` when opening a new serial interface. This impacts our ability to use the serial interface to upload code to the RC2014.
+The Propeller MCU `/RESET` pin is driven by the serial interface `DTR` pin, which is normally held high when the port is ready. Linux, macOS, and Windows sometimes toggle `DTR` when they open a serial port. This impacts our ability to use the serial interface to upload code to the RC2014.
 
 There are several options proposed on the internet to avoid this issue (mainly driven by Arduino users wanting to have "long running" code). The solutions are written into [`tools/serial_tool.py`](tools/serial_tool.py), which is included to simplify uploading BASIC programs to the RC2014.
 

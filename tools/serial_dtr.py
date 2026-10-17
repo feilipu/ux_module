@@ -6,7 +6,7 @@ path = '/dev/ttyUSB0'
 baud = 115200
 
 # Open serial port
-ser = serial.Serial(path, baud)
+ser = serial.Serial(path, baud, stopbits=serial.STOPBITS_TWO)
 
 if(ser.isOpen() == False):
     print("Serial port open failed.\n");

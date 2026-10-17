@@ -1,7 +1,7 @@
 #!/bin/zsh
 # UX Module serial console via GNU screen.
 # SparkFun FTDI Basic (FT232, /dev/cu.usbserial-*) or 8086net CDC
-# (/dev/cu.usbmodem*). 115200 8N1, RX/TX only. No XON/XOFF (XMODEM).
+# (/dev/cu.usbmodem*). 115200 8N2, RX/TX only. No XON/XOFF (XMODEM).
 # CTS is NC. DTR on the Basic is /RES — do not assert it from screen.
 #
 # Prefer a single FT232. Pass a path or unique suffix if several nodes
@@ -209,10 +209,10 @@ if (( need_start )); then
     stop_ux_relay
     exit 1
   fi
-  print -u2 "UX Module  $dev  via $pty  115200 8N1 RX/TX  (C-a s send / C-a r receive XMODEM)"
+  print -u2 "UX Module  $dev  via $pty  115200 8N2 RX/TX  (C-a s send / C-a r receive XMODEM)"
   print -u2 "first open of $dev pulses DTR (/RES). Wait for UX Module Initialised."
 else
-  print -u2 "UX Module  $dev  via $pty  115200 8N1 RX/TX  (C-a s send / C-a r receive XMODEM)"
+  print -u2 "UX Module  $dev  via $pty  115200 8N2 RX/TX  (C-a s send / C-a r receive XMODEM)"
   print -u2 "relay pid $relpid already holds $dev  (DTR not pulsed)"
 fi
 print -u2 "if XMODEM leaves a dead window: C-a k, then run this script again"

@@ -1,8 +1,9 @@
 #!/bin/zsh
 # RC2014 ACIA console via GNU screen on USB CDC or FTDI.
 # Direct attach to /dev/cu.usbmodem* (CDC ACM) or /dev/cu.usbserial*
-# (FTDI). 115200 8N1. RTS/CTS on. No XON/XOFF (XMODEM). No FTDI
-# relay. No serial_probe. screen has no crtscts option. Set it on
+# (FTDI). 115200 8N2. RTS/CTS on. No XON/XOFF (XMODEM). No FTDI
+# relay. No serial_probe. screen has no crtscts option. Apple screen
+# clears the second stop bit on open. Set cstopb and crtscts on
 # the open node after screen starts.
 #
 # SparkFun FTDI on the UX Module has Propeller /RES on DTR. Use
@@ -197,7 +198,7 @@ prep_line() {
   local d="$1"
   # Pre-set the node. Apple screen still applies the baud argument on open
   # and clears crtscts. enable_hw_flow sets RTS/CTS again after open.
-  stty -f "$d" "$baud" raw cs8 -cstopb -parenb -echo -ixon -ixoff clocal cread crtscts 2>/dev/null \
+  stty -f "$d" "$baud" raw cs8 cstopb -parenb -echo -ixon -ixoff clocal cread crtscts 2>/dev/null \
     || die "stty failed on $d (busy or missing)"
 }
 
@@ -291,7 +292,7 @@ PY
 enable_hw_flow() {
   local d="$1" msg _
   for _ in {1..10}; do
-    stty -f "$d" crtscts -ixon -ixoff 2>/dev/null || true
+    stty -f "$d" crtscts cstopb -ixon -ixoff 2>/dev/null || true
     hw_flow_on "$d" && return 0
     sleep 0.05
   done
@@ -449,7 +450,7 @@ start_or_attach() {
   assert_free_device "$dev"
   prep_line "$dev"
   remember_dev "$dev"
-  print -u2 "RC2014  $dev  $(port_kind "$dev")  $baud 8N1 crtscts  session $sock"
+  print -u2 "RC2014  $dev  $(port_kind "$dev")  $baud 8N2 crtscts  session $sock"
   print -u2 "XMODEM: C-a s send / C-a r receive, or ${me:t} --send FILE"
   # Baud must be a screen argument. Without it Apple 4.00.03 resets the
   # node to 9600 and CP/M 115200 reads as 8-bit garbage. CDC DTR is not

@@ -24,12 +24,25 @@ VAR
   long cogNumber
 
 
+PUB set_lines(n) : ok
+'' Select a shorter store before start. The default is FB_H.
+'' Line n is black and stays in the buffer. The scan is still 480 lines.
+'' The second buffer begins (n + 1) * 64 bytes after the first.
+'' At line n the next palette read stays on line n.
+
+  lineLimit := n
+  frameBytes := (n + 1) << 6
+  paletteBytes := (n + 1) << 6
+  return 1
+
+
 PUB start(pinGroup, framePtr, palPtr, ctrlPtr, statusLong) | pixelClock
 
 '' Start the framebuffer VGA cog.
-'' framePtr is the first bitmap. The second bitmap is framePtr + FB_BYTES.
-'' palPtr is the first palette table. The second is palPtr + PAL_BYTES.
+'' framePtr is the first bitmap. The second bitmap is framePtr + frameBytes.
+'' palPtr is the first palette table. The second is palPtr + paletteBytes.
 '' ctrlPtr is the eight-long control block. This cog writes front and reads done.
+'' set_lines selects a shorter store. The default scan is FB_H lines.
 
   stop
   if(chipver == 1)
@@ -85,11 +98,15 @@ initialization          mov     vcfg,           videoState
 loop                    mov     tilesCounter,   #0
 
 tilesDisplay            mov     d0,             tilesCounter
+                        cmp     d0,             lineLimit wc
+              if_nc     mov     d0,             lineLimit
                         shl     d0,             #6
                         mov     linePtr,        pixbase
                         add     linePtr,        d0
                         mov     palLine,        palbase
                         add     palLine,        d0
+                        mov     pfptr,          palLine
+              if_c      add     pfptr,          #64
 
                         mov     tileCounter,    #6
                         mov     ptr,            linePtr
@@ -227,13 +244,12 @@ ldpal                   mov     nextpal,        0-0
                         jmp     #afterline
 
 
-'' Last bright line of an even band. Load the next palette into nxt and drk.
+'' Last bright line of an even band. Load pfptr into nxt and drk.
+'' tilesDisplay leaves pfptr on the next line, or on this line at the tail.
 showpref                mov     vscl,           visibleWide
                         mov     palette,        src0
                         or      palette,        HVSyncColors
                         movs    :ldp,           #src1
-                        mov     pfptr,          palLine
-                        add     pfptr,          #64
                         movd    :prd,           #nxt0
                         movs    :cps,           #nxt0
                         movd    :cps,           #drk0
@@ -481,6 +497,7 @@ BPorchStatus            long    %101 << 16
 
 frameBytes              long    FB_BYTES
 paletteBytes            long    PAL_BYTES
+lineLimit               long    FB_H
 
 directionState          long    0
 videoState              long    0
@@ -530,7 +547,6 @@ src12                   res     1
 src13                   res     1
 src14                   res     1
 src15                   res     1
-src16                   res     1
 drk0                    res     1
 drk1                    res     1
 drk2                    res     1
@@ -547,7 +563,6 @@ drk12                   res     1
 drk13                   res     1
 drk14                   res     1
 drk15                   res     1
-drk16                   res     1
 nxt0                    res     1
 nxt1                    res     1
 nxt2                    res     1

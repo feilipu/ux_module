@@ -7,21 +7,21 @@
 ''***************************************
 ''
 '' Stage 1 bring-up top. Boot is the text console.
-'' Ctrl+Alt+G enters VECTORJET. The same chord returns to text.
-'' Control-G on the FTDI console does the same toggle.
-'' Cog 0 parks on waitcnt. A tight second Spin loop tears the picture.
-'' The draw cog uses the text buffer as its stack. Cog 0 has about 2KB free.
-'' Three render cogs. The PS/2 cog stops for that session.
-'' The ACIA cog and the FTDI cog stay up.
-'' Product upload remains src/ux_module.spin.
+'' Control-G on the FTDI link enters the framebuffer. The same byte returns to text.
+'' The store is shorter than the accepted demo. The accepted renderer keeps 80 lines.
+'' Three render cogs publish the frame. The PS/2 cog stops for that session.
+'' Cog 0 keeps the ACIA pump. The draw cog has its own stack.
+'' The ACIA cog and the FTDI cog stay up. Product upload remains src/ux_module.spin.
 
 CON
 
   _clkmode      = XTAL1 + PLL16X
   _xinfreq      = 7_372_800
 
-  DLIST_SIZE    = 300                                   ' longs in each display list
-  _STACK        = 256                                   ' Cog 0 stack, in longs. Cog 0 draws.
+  DLIST_SIZE    = 64                                    ' longs in each list. The short scene fits. 300 does not.
+  STORED        = 10                                    ' content lines. One extra line in the buffer stays black.
+  VIS_LINES     = STORED * 3                            ' logical lines in the band
+  _STACK        = 256                                   ' Cog 0 stack, in longs. Cog 0 does not draw.
 
 
 CON
@@ -155,9 +155,15 @@ VAR
   long  framecount
   long  vga_status                                      ' VECTORJET VGA phase. VGA cog writes it.
   long  dlist_ptr                                       ' Cog 0 writes it. Render cogs read it.
-  long  dlist1[DLIST_SIZE]                              ' demo handshake, list A
-  long  dlist2[DLIST_SIZE]                              ' demo handshake, list B
-  long  linebuffers[(render#WIDTH * render#LINE_BUFFERS) / 4]
+  long  dlist1[DLIST_SIZE]                              ' list A
+  long  dlist2[DLIST_SIZE]                              ' list B
+  long  go, front, done, stripe0, stripe1, stripe2, fixup, blend
+  long  pix0[(STORED + 1) * 16]
+  long  pix1[(STORED + 1) * 16]
+  long  pal0[(STORED + 1) * 16]
+  long  pal1[(STORED + 1) * 16]
+  long  scratch[render#SCRATCH_LONGS]
+  long  drawStack[128]
 
 
 OBJ
@@ -167,8 +173,8 @@ OBJ
       wmf             : "wmf_terminal_vga"
       i2c             : "ddc_i2c"
       acia            : "acia_rc2014"
-      vga             : "VJET_vUXM_vga"
-      render          : "VJET_vUXM_rendering"
+      vga             : "VJET_vUXM_vga_fb"
+      render          : "VJET_vUXM_rendering_fb"
       gl              : "VJET_v01_displaylist"
       font            : "hexfont"
 
@@ -209,13 +215,18 @@ PUB main | busHeld
       z80XmSess := 0
       hostXm := HOST_XM_OFF
     if not busHeld
-      if inXmodem or hostXmodem
+      if gfxMode
+        termToZ80
+        readZ80
+      elseif inXmodem or hostXmodem
         repeat while kbd.peekKey == gfxChord
           kbd.getKey
+        termToZ80
+        readZ80
       else
         kbdToZ80
-      termToZ80
-      readZ80
+        termToZ80
+        readZ80
 
 
 PRI pulseZ80Reset
@@ -842,8 +853,9 @@ PRI panicReset
 
 
 PRI enterGraphics
-{{Stop text VGA, DDC, and the PS/2 cog, then start VECTORJET.
-  Cog 0 waits. The draw cog builds the list. A tight Spin loop tears the picture.
+{{Stop text VGA, DDC, and the PS/2 cog, then start the framebuffer.
+  Graphics uses all eight cogs. The final build keeps the keyboard on the FTDI cog.
+  The shared driver is not here. Cog 0 returns to the ACIA pump.
   The ACIA cog and the FTDI cog stay up.}}
 
   if gfxMode or inXmodem or hostXmodem
@@ -857,12 +869,6 @@ PRI enterGraphics
     term.str (string("Graphics start failed"))
     term.newLine
     restoreText
-    return
-  repeat
-    waitcnt (clkfreq / 10 + cnt)                        ' Cog 0 stays off the Hub
-    if takeBell
-      quit
-  restoreText
 
 
 PRI leaveGraphics
@@ -884,8 +890,8 @@ PRI restoreText
 
 
 PRI stopVectorjet
-{{Stop the draw cog, the render cogs, and the VECTORJET VGA cog.
-  Do this before screenInit reuses the text buffer.}}
+{{Stop the draw cog, the render cogs, and the framebuffer VGA cog.
+  Do this before screenInit.}}
 
   gfxReady := 0
   if drawCog
@@ -894,86 +900,79 @@ PRI stopVectorjet
   vga.stop
 
 
-PRI startVectorjet : ok
-{{Start VGA, then one render cog, the draw cog, then the other two render cogs.
-  With the ACIA cog on cog 6, render lands on cogs 3, 5, and 7.
-  The empty list is published before ready.
-  gfxReady is a long. cognew stores a long-aligned parameter address.
-  On failure, stop every cog this call started.}}
+PRI startVectorjet : ok | t0
+{{Start the framebuffer VGA cog and three render cogs.
+  The draw cog posts the first list. Then Cog 0 sets the ready flag.
+  gfxReady is a long. On failure, stop every cog this call started.}}
 
   gfxReady := 0
   framecount := 0
   longfill (@dlist1, 0, DLIST_SIZE)
   longfill (@dlist2, 0, DLIST_SIZE)
-  dlist_ptr := @dlist2
-  if not vga.start (VGA_BASE_PIN / 8, @linebuffers, @vga_status)
+  longfill (@pix0, 0, (STORED + 1) * 16)
+  longfill (@pix1, 0, (STORED + 1) * 16)
+  longfill (@pal0, 0, (STORED + 1) * 16)
+  longfill (@pal1, 0, (STORED + 1) * 16)
+  longfill (@go, 0, 8)
+  dlist_ptr := @dlist1
+  if not vga.set_lines (STORED)
     return 0
-  if not render.start (0, 3, @linebuffers, @dlist_ptr, @vga_status, @gfxReady)
+  if not render.set_lines (STORED)
+    return 0
+  if not vga.start (VGA_BASE_PIN / 8, @pix0, @pal0, @go, @vga_status)
+    return 0
+  if not render.start (0, 3, @scratch, @dlist_ptr, @pix0, @pal0, @go, @gfxReady)
     vga.stop
     return 0
-  drawCog := cognew (drawLoop, gScreenBufferPtr) + 1
+  if not render.start (1, 3, @scratch, @dlist_ptr, @pix0, @pal0, @go, @gfxReady)
+    render.stop
+    vga.stop
+    return 0
+  if not render.start (2, 3, @scratch, @dlist_ptr, @pix0, @pal0, @go, @gfxReady)
+    render.stop
+    vga.stop
+    return 0
+  drawCog := cognew (drawLoop, @drawStack) + 1
   if not drawCog
     render.stop
     vga.stop
     return 0
-  if not render.start (1, 3, @linebuffers, @dlist_ptr, @vga_status, @gfxReady)
-    cogstop (drawCog~ - 1)
-    render.stop
-    vga.stop
-    return 0
-  if not render.start (2, 3, @linebuffers, @dlist_ptr, @vga_status, @gfxReady)
-    cogstop (drawCog~ - 1)
-    render.stop
-    vga.stop
+  t0 := cnt
+  repeat until (go == 1) or ((cnt - t0) > (clkfreq >> 1))
+  if go <> 1
     return 0
   gfxReady := 1
   return 1
 
 
 PRI drawLoop
-{{Demo draw loop. Publish at the front porch, then build the other list.
-  Stack is the text buffer. Text VGA is stopped.}}
+{{Build one list, publish it, then wait until the render cogs finish.
+  Stack is drawStack. Text VGA is stopped.}}
 
   repeat
-    vblank
-    if framecount & 1
-      dlist_ptr := @dlist1
+    if go & 1
       gl.start (@dlist2, constant(DLIST_SIZE * 4))
     else
-      dlist_ptr := @dlist2
       gl.start (@dlist1, constant(DLIST_SIZE * 4))
     \drawScene
     gl.done
+    if go & 1
+      dlist_ptr := @dlist2
+    else
+      dlist_ptr := @dlist1
+    go++
+    repeat until done == go
     framecount++
 
 
-PRI takeBell : hit | b
-{{Read queued FTDI bytes. Return true when one byte is Control-G.
-  Other queued bytes are discarded for this picture test.}}
+PRI drawScene | a
 
-  repeat while term.rxCount > 0
-    b := term.rx
-    if b == ASCII_BELL
-      return 1
-
-
-PRI drawScene
-
-  gl.set_clip (0, render#NUM_LINES << 16, 0, render#WIDTH << 16)
-  gl.triangle (constant((render#WIDTH / 2) << 16), constant(-render#NUM_LINES << 16), constant(-render#WIDTH << 16), constant(render#NUM_LINES << 16), constant((2 * render#WIDTH) << 16), constant(render#NUM_LINES << 16), $ECEC)
-  gl.triangle (208 << 16 + sin(framecount << 5) * 75, 90 << 16 + sin(2048 + framecount << 5) * 75, 208 << 16 + sin(2730 + framecount << 5) * 75, 90 << 16 + sin(4778 + framecount << 5) * 75, 208 << 16 + sin(5460 + framecount << 5) * 75, 90 << 16 + sin(7508 + framecount << 5) * 75, $0055)
-  gl.triangle (192 << 16 + sin(framecount << 5) * 80, 90 << 16 + sin(2048 + framecount << 5) * 80, 192 << 16 + sin(2730 + framecount << 5) * 80, 90 << 16 + sin(4778 + framecount << 5) * 80, 192 << 16 + sin(5460 + framecount << 5) * 80, 90 << 16 + sin(7508 + framecount << 5) * 80, $5555)
-  gl.triangle (176 << 16 + sin(framecount << 5) * 85, 90 << 16 + sin(2048 + framecount << 5) * 85, 176 << 16 + sin(2730 + framecount << 5) * 85, 90 << 16 + sin(4778 + framecount << 5) * 85, 176 << 16 + sin(5460 + framecount << 5) * 85, 90 << 16 + sin(7508 + framecount << 5) * 85, $55AA)
-  gl.triangle (160 << 16 + sin(framecount << 5) * 90, 90 << 16 + sin(2048 + framecount << 5) * 90, 160 << 16 + sin(2730 + framecount << 5) * 90, 90 << 16 + sin(4778 + framecount << 5) * 90, 160 << 16 + sin(5460 + framecount << 5) * 90, 90 << 16 + sin(7508 + framecount << 5) * 90, $AAAA)
-  gl.triangle (128 << 16 + sin(0 - framecount << 4) * 500, 90 << 16 + sin(2048 - framecount << 4) * 500, 128 << 16 + sin(0100 - framecount << 4) * 500, 90 << 16 + sin(2148 - framecount << 4) * 500, 128 << 16, 90 << 16, $C0C0)
-  gl.triangle (128 << 16 + sin(0100 - framecount << 4) * 500, 90 << 16 + sin(2148 - framecount << 4) * 500, 128 << 16 + sin(0200 - framecount << 4) * 500, 90 << 16 + sin(2248 - framecount << 4) * 500, 128 << 16, 90 << 16, $D0D0)
-  gl.triangle (128 << 16 + sin(0200 - framecount << 4) * 500, 90 << 16 + sin(2248 - framecount << 4) * 500, 128 << 16 + sin(0300 - framecount << 4) * 500, 90 << 16 + sin(2348 - framecount << 4) * 500, 128 << 16, 90 << 16, $F0F0)
-  gl.triangle (128 << 16 + sin(0300 - framecount << 4) * 500, 90 << 16 + sin(2348 - framecount << 4) * 500, 128 << 16 + sin(0400 - framecount << 4) * 500, 90 << 16 + sin(2448 - framecount << 4) * 500, 128 << 16, 90 << 16, $7474)
-  gl.triangle (128 << 16 + sin(0400 - framecount << 4) * 500, 90 << 16 + sin(2448 - framecount << 4) * 500, 128 << 16 + sin(0500 - framecount << 4) * 500, 90 << 16 + sin(2548 - framecount << 4) * 500, 128 << 16, 90 << 16, $3C3C)
-  gl.triangle (128 << 16 + sin(0500 - framecount << 4) * 500, 90 << 16 + sin(2548 - framecount << 4) * 500, 128 << 16 + sin(0600 - framecount << 4) * 500, 90 << 16 + sin(2648 - framecount << 4) * 500, 128 << 16, 90 << 16, $4848)
-  gl.triangle (144 << 16 + sin(framecount << 5) * 95, 90 << 16 + sin(2048 + framecount << 5) * 95, 144 << 16 + sin(2730 + framecount << 5) * 95, 90 << 16 + sin(4778 + framecount << 5) * 95, 144 << 16 + sin(5460 + framecount << 5) * 95, 90 << 16 + sin(7508 + framecount << 5) * 95, $AAFF)
-  gl.triangle (128 << 16 + sin(framecount << 5) * 100, 90 << 16 + sin(2048 + framecount << 5) * 100, 128 << 16 + sin(2730 + framecount << 5) * 100, 90 << 16 + sin(4778 + framecount << 5) * 100, 128 << 16 + sin(5460 + framecount << 5) * 100, 90 << 16 + sin(7508 + framecount << 5) * 100, $FFFF)
-  gl.text_centered (render#WIDTH >> 1, 192 + (sin(framecount << 6) ~> 12), 0, 2, string(" WOOO! SPINNING TRIANGLES!"), font.get, $FFFF)
+  gl.set_clip (0, VIS_LINES << 16, 0, render#WIDTH << 16)
+  gl.box (0, 0, render#WIDTH, VIS_LINES, $1818)
+  a := framecount << 5
+  gl.triangle (80 << 16 + sin(a) * 28, 12 << 16 + sin(a + 2048) * 6, 80 << 16 + sin(a + 2730) * 28, 12 << 16 + sin(a + 4778) * 6, 80 << 16 + sin(a + 5460) * 28, 12 << 16 + sin(a + 7508) * 6, $C0C0)
+  gl.triangle (160 << 16 + sin(a + $400) * 24, 12 << 16 + sin(a + 2048) * 6, 160 << 16 + sin(a + 2730) * 24, 12 << 16 + sin(a + 4778) * 6, 160 << 16 + sin(a + 5460) * 24, 12 << 16 + sin(a + 7508) * 6, $55AA)
+  gl.text_centered (render#WIDTH >> 1, 21, 0, 0, string(" GFX"), font.get, $FFFF)
 
 
 PRI sin(angle) : s
@@ -987,12 +986,6 @@ PRI sin(angle) : s
   s := word[s]
   if angle & $1000
     s := -s
-
-
-PRI vblank
-
-  repeat while vga_status & $01_00_00
-  repeat until vga_status & $01_00_00
 
 
 DAT

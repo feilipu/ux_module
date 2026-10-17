@@ -91,6 +91,18 @@ A solid span returns. It does not enter the mix. The mix reads and writes one by
 
 The repair record is `3D_PROCESS_LIB_VJET.md`. The forward plan is `3D_WORKPLAN_LIB_VJET.md`.
 
+## Line slice — 18 Oct 2026
+
+The framebuffer and the display list are two stores. The render cogs read the list and write the bitmap. The VGA cog scans the bitmap. Both stores stay for the whole program. The next frame overwrites the back list from the first byte.
+
+Two bitmaps and two palettes at 80 lines are 20480 bytes. The bring-up stores 10 content lines. That pair does not fit beside the text console. The VGA cog repeats each stored line six times. Those repeats use no extra Hub.
+
+The beam-chase path keeps eight line slots. The slice is 2048 bytes. Each slot is one byte per pixel. The render cogs fill the slot ahead of the scan. The VGA cog reads the slot for the line that is due. `LINE_BUFFERS` is 8.
+
+The demo source starts three render cogs. A trial on 16 Oct 2026 used two render cogs. That picture tore. The original renderer used two cogs. Three cogs on this slice must stay ahead of the scan.
+
+The next bring-up load uses that slice. `demo/vjet_fb.spin` stays the accepted picture. `STORED_LINES` stays 80.
+
 ## Display list model
 
 Each shape starts with an 8-byte header:
@@ -147,16 +159,18 @@ Pins P16–P23 have one owner. `hires_text_vga` (two cogs, 640×480 cells) and `
 | Mode | Video cogs | Other cogs that stay | Free |
 |------|------------|----------------------|------|
 | Text | 2 (`hires_text_vga`) + 1 I2C DDC | Spin, FTDI, ACIA, PS/2 (4) | 1 |
-| Graphics | 1 (`VJET_vUXM_vga`) + 2 render | Spin, FTDI, ACIA, PS/2 (4) | 1 (Spin draw) |
+| Graphics | 1 framebuffer VGA + 3 render | Spin, FTDI, ACIA. PS/2 stops in the bring-up. | 0 |
 
 The product firmware does not call `enterGraphics`. When graphics work resumes, stop the text pair and `i2c.stopCog` before VECTORJET VGA. Stop VECTORJET, then `wmf.init` and `i2c.startCog`. After `cogstop`, those cogs leave the pins. Then start the other driver.
+
+The final graphics build keeps the PS/2 keyboard. Graphics has no free cog. The keyboard shares the FTDI cog. Detail is in `ARCHITECTURE_UX_MODULE.md`. The shared driver is not in the tree. The bring-up still calls `kbd.stop`.
 
 Do **not** build the display list on Cog 0 if the ACIA pump must stay live. Cog 0 is the only `acia.tx` writer. `vjet_test` blocks Cog 0 in `Vblank` + `draw`. That starves keyboard, FTDI, and Z80 I/O.
 
 Recommended product split:
 
 1. **Text mode** — current `ux_module` path. Z80 console on VGA text.
-2. **Graphics mode** — stop text VGA. Start VECTORJET VGA + two render cogs. Start a **second Spin cog** that waits for blanking and builds lists. Cog 0 only pumps ACIA / keyboard / FTDI and writes a small mailbox (camera, mode, flip). That uses all eight cogs: 4 I/O + 1 draw + 1 VGA + 2 render.
+2. **Graphics mode** — stop text VGA and DDC. Start the framebuffer VGA cog and three render cogs. Start a second Spin cog for the display list. Cog 0 keeps the ACIA pump. Keep PS/2 on the FTDI cog. That uses all eight cogs.
 3. **Standalone demo** — `vjet_test` / `graphtest` as now (no ACIA). Three render cogs on Cog 0 as the draw loop.
 
 The product top has no graphics hooks. `PORT_VJET` remains a reserved ACIA base. Serial tests use the text boot path.
@@ -170,7 +184,7 @@ Hub cost for the beam chase is the scan buffer and the lists. Eight line slots a
 Useful work while keeping the architecture intact:
 
 1. When graphics work resumes, start a Spin draw cog (not Cog 0). The accepted picture is the framebuffer demo `demo/vjet_fb.spin`. The bring-up path is in `3D_WORKPLAN_LIB_VJET.md`. The repair record is `3D_PROCESS_LIB_VJET.md`.
-2. Keep each framebuffer list at 300 longs until a measured scene needs more room. Two 900-long lists overflow the bring-up by 768 longs.
+2. The framebuffer demos keep lists of 300 longs. The bring-up lists are 64 longs, because ten stored lines fill the Hub. Two 900-long lists overflow the bring-up by 768 longs.
 3. Drive the back list from Z80 I/O at `PORT_VJET` (needs a command protocol)
 4. Tune render cog count against available cogs and fill rate
 5. Keep display-list field layouts documented in one place (builder comments ↔ renderer reads)

@@ -58,6 +58,8 @@ If `lsx`/`lrx` exits and the window no longer takes keys, quit (`C-a k`) and run
 
 Do not pass baud flags to GNU `screen` on the PTY. Apple `screen` then treats that node as a modem and can raise DTR or send a break. `tools/ux-screen.sh` runs `stty -ixon` on the PTY. An XOFF byte from the 8085 then does not block host keys.
 
+The relay sets 115200 8N2 on the FTDI node. `CSTOPB` is the second stop bit. `CRTSCTS` stays clear. The Propeller cog already shifts 11 bits. A running relay keeps the old frame until the next start.
+
 `tools/ux-ftdi-relay.py` holds DTR off. macOS asserts DTR on open of `cu.usbserial-*`. That pin is Propeller `/RES`. The relay stays up after you quit `screen`. A later `ux-screen` does not reopen the FTDI. The GNU `screen` session name is `uxmod`. A second `ux-screen` reattaches that session. The first start after a USB plug or `ux-screen.sh --stop` still pulses `/RES`. `tools/ux-load.sh` stops the relay, then uses DTR for the download.
 
 Older pyserial helpers (Linux `/dev/ttyUSB0` in the source): `tools/serial_dtr.py` pulses DTR. `tools/serial_tool.py` writes stdin to the port and comments HUPCL options. Prefer `tools/ux-load.sh` and `tools/ux-screen.sh` on macOS.
@@ -92,6 +94,6 @@ rc-screen --send /path/to/file.com
 rc-screen --send --1k /path/to/file.com
 ```
 
-`--send` waits one second so CP/M is in receive first. The script starts `screen` with `115200,cs8,-ixon,-ixoff`. A missing baud flag makes Apple `screen` reset the node to 9600. `screen` cannot set RTS/CTS. After the node is open, `rc-screen` sets `crtscts` and leaves XON/XOFF off. `$HOME/bin/rc-screen` does that on the serial node it holds (115200 8N2). `C-a i` on that PTY does not show the board CTS line. The in-tree script opens the node itself (115200 8N1), then sets `crtscts`. `C-a i` then shows `(CTS)` when the board `/RTS` is on.
+`--send` waits one second so CP/M is in receive first. The script starts `screen` with `115200,cs8,-ixon,-ixoff`. A missing baud flag makes Apple `screen` reset the node to 9600. `screen` has no RTS/CTS flag. Apple `screen` clears the second stop bit when it opens the node. `$HOME/bin/rc-screen` holds the node at 115200 8N2 and sets `crtscts`. `C-a i` on that PTY does not show the board CTS line. The in-tree script opens the node itself, then sets `cstopb` and `crtscts`. `C-a i` then shows `(CTS)` when the board `/RTS` is on.
 
 If `ux-ftdi-relay` holds the same CDC node, quit session `uxmod` and run `ux-screen --stop` first. Do not run both scripts on one node.

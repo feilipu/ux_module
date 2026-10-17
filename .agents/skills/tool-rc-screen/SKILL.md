@@ -54,6 +54,8 @@ Start `screen` with `115200,cs8,-ixon,-ixoff`. Apple `screen` with no baud flag 
 
 `$HOME/bin/rc-screen` is the holder. It keeps the serial node at 115200 8N2, because Apple `screen` clears the second stop bit if it opens the node. AppleUSBFTDI also clears the termios `CRTSCTS` bit. On `/dev/cu.usbserial-*` the holder then sends the FT232 `SET_FLOW` vendor request (RTS/CTS). Screen attaches to the holder PTY. `C-a i` on that PTY does not show the board CTS line. The holder log `/tmp/rc-hold-$UID.log` prints `SET_FLOW` and the chip modem byte. `CTS 0` means the adapter will hold TX. Quit and start again after this change. An old holder does not pick it up.
 
+`tools/rc-screen.sh` also uses 115200 8N2. It sets `cstopb` again after `screen` opens the node. `crtscts` stays on for this console. Do not copy `crtscts` onto `ux-ftdi-relay`.
+
 ## Agent I/O
 
 The session stays up. Drive it with `rc-screen --stuff` and `rc-screen --hardcopy`. Do not wrap it in a Grok monitor. Do not call `screen -S` unless `SCREENDIR=$HOME/.screen-rc2014`.

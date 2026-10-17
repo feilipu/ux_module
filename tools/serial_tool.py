@@ -26,7 +26,7 @@ baud = 115200
 
 
 # Open serial port
-ser = serial.Serial(path, baud, dsrdtr=False)
+ser = serial.Serial(path, baud, stopbits=serial.STOPBITS_TWO, dsrdtr=False)
 
 # Optionally check characteristics of serial port
 # print(ser)

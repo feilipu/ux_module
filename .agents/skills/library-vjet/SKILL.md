@@ -49,11 +49,11 @@ Resolution in UXM rendering: **WIDTH=256**, **NUM_LINES=240**, **LINE_BUFFERS=8*
 
 `ux_module.spin` does not link this library. Demos are their own tops. Do not start VECTORJET from product `main`.
 
-One busy Spin cog during the picture. `vjet_test`, plus the ACIA cog, plus the FTDI cog, stays clean while Cog 0 builds the list. A second cog in a tight Spin loop tears that picture.
+The beam-chase picture stays clean with one Spin cog. A second cog in a tight Spin loop tears that picture. Do not draw that path on Cog 0. The free Hub there is about 2 KB.
 
-Cog 0 in the bring-up has about 2KB of free Hub. Drawing there overrun that space, the picture tore, then the signal stopped. Park Cog 0 on `waitcnt`. Run the draw loop on another cog. Use the text buffer as that stack while text VGA is stopped. The text buffer is 800 longs. Stop that cog before `screenInit`.
+The framebuffer bring-up is `src/ux_module_vjet.spin`. It stops text VGA, DDC, and the PS/2 cog. It starts one framebuffer VGA cog, three render cogs, and one draw cog. The draw cog uses `drawStack`. Cog 0 returns to the ACIA pump. Two render cogs never write `done`.
 
-The stage-1 bring-up keeps the ACIA cog and the FTDI cog. The PS/2 cog stops for that session. Three render cogs, as in `vjet_test`. Cog 0 does not pump the FIFOs during the picture.
+The final build keeps the keyboard. Graphics has no free cog, so the keyboard shares the FTDI cog. That driver is not in the tree.
 
 Handshake: front porch writes line 240. Vsync and the back porch write line 0. Render cogs wait for line 0. The variant that writes line 240 in every blanking phase tore at 720×480 at 60 Hz. The demo uses the 2021 handshake.
 
@@ -114,9 +114,13 @@ Bit 1 of that byte asks for a 50 percent mix when the control long `blend` (afte
 
 Even stored lines are bright, bright, dark, dark, bright, bright. Odd stored lines use the inverse order. The user accepted this picture on 17 Oct 2026. It is the known-good image. The forward plan is `3D_WORKPLAN_LIB_VJET.md`. The repair record is `3D_PROCESS_LIB_VJET.md`.
 
-The accepted scene draws 13 triangles and one text shape. That list uses at most 632 bytes. Each list is 1200 bytes. A flat triangle is 36 bytes. A general triangle is 48 bytes. A box is 16 bytes and a text shape is 20 bytes.
+The accepted scene draws 13 triangles and one text shape. That list uses at most 632 bytes. Each demo list is 1200 bytes. The bring-up lists are 64 longs. The bring-up scene is one box, two triangles, and the text " GFX". `set_lines` selects 10 content lines before the cogs start. The demo does not call `set_lines`. A flat triangle is 36 bytes. A general triangle is 48 bytes. A box is 16 bytes and a text shape is 20 bytes.
 
 `VJET_vUXM_vga.spin` and `VJET_vUXM_rendering.spin` stay the beam-chase pair. Do not copy the framebuffer `VSCL` into those files.
+
+The 80-line bitmap pair is 20480 bytes. The list stays allocated beside it. On 18 Oct 2026 the next bring-up returns to the eight-line slice. `LINE_BUFFERS` is 8. The slice is 2048 bytes.
+
+Three render cogs write that slice ahead of the scan. The original renderer used two cogs. Leave `STORED_LINES` at 80. Leave `demo/vjet_fb.spin` as the accepted picture.
 
 ## Agent rules
 
@@ -125,8 +129,10 @@ The accepted scene draws 13 triangles and one text shape. That list uses at most
 3. Preserve top-edge trap fixup and per-cog scanline striping (`currentscanline += total_cogs`).
 4. Treat UXM files as board-specialised; do not assume stock VECTORJET v1.0 timing.
 5. Keep the demo handshake. Vsync and the back porch publish line 0. A render cog restarts its frame when the VGA line is 0 and its own line is 16 or more.
-6. Stop text VGA (`wmf.stop`), the I2C DDC cog (`i2c.stopCog`), and the PS/2 cog before `VJET_vUXM_vga.start`. Stop VECTORJET VGA and `render.stop` before `wmf.init` and `i2c.startCog`. Never two VGA engines on P16–P23. The product top has no `enterGraphics` yet.
-7. Park Cog 0 on `waitcnt` during the picture. A tight Spin loop beside the draw cog tears the scene. Do not draw on Cog 0. Free Hub above the bring-up is about 2KB, and the scene overruns it. Give the draw cog the text buffer as its stack, and stop that cog before `screenInit`. Leave the ACIA cog running. Cog 0 does not pump `acia.tx` during the picture.
+6. Stop text VGA (`wmf.stop`) and the I2C DDC cog (`i2c.stopCog`) before `VJET_vUXM_vga.start`. Stop VECTORJET VGA and `render.stop` before `wmf.init` and `i2c.startCog`. Never two VGA engines on P16–P23. The product top has no `enterGraphics` yet.
+7. On the framebuffer bring-up, Cog 0 keeps the ACIA pump. The draw cog uses `drawStack`. Stop that cog before `screenInit`. Three render cogs stay. Graphics then has no free cog. This bring-up calls `kbd.stop` for that reason.
+
+   The `gfxMode` branch does not call `kbdToZ80`. The final build keeps the keyboard on the FTDI cog. It calls `kbdToZ80` in that branch. The shared driver is not in the tree. Do not load a guess. On the beam-chase path, a second tight Spin loop tears the picture.
 8. Prose: `style-ste-writing`.
 
 ## Related

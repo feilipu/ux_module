@@ -97,7 +97,27 @@ PASM holds `/INT` low while RIE or TIE match the flags. Spin also pulses `DIRA[2
 
 ## FTDI UART cog
 
-`terminal_ftdi.spin` keeps receive and transmit in **one** PASM cog with `JMPRET` coroutines (Parallax AN014 pattern on OBEX). Bit timing uses `CNT` deadlines. That saves a cog versus two separate UART cogs.
+`terminal_ftdi.spin` keeps receive and transmit in one PASM cog with `JMPRET` coroutines (Parallax AN014 pattern on OBEX). Bit timing uses `CNT` deadlines. That saves a cog versus two separate UART cogs.
+
+The line is 115200 8N2. The system clock is 117964800 Hz, so one bit is 1024 clocks. Transmit shifts 11 bits. Those bits are one mark, one start, eight data, and one stop. The next byte adds one more mark before its start bit. Two mark bits sit before that start.
+
+Receive samples eight data bits and one stop bit. The second stop bit is idle mark. The cog then waits for the next start bit.
+
+Host tools set two stop bits (`CSTOPB`). They leave `CRTSCTS` clear. The 6-pin header does not wire CTS or RTS. `tools/ux-ftdi-relay.py` owns the FTDI node. A running relay keeps its old termios until the next start.
+
+The initial ACIA control image is `CR_8N1`. Word select is not driven on the parallel bus. Keep that image. The FTDI frame is the 11-bit shift above.
+
+## PS/2 on the FTDI cog
+
+Text mode runs the keyboard on its own cog. One cog is free. Graphics mode uses all eight cogs, so the keyboard has no cog of its own.
+
+`keyboard_ps2.spin` uses 332 cog longs. `terminal_ftdi.spin` uses 107. The cog limit is 496 longs. A straight sum leaves 57 longs.
+
+The keyboard driver waits until the clock pin falls. A command to the keyboard holds that clock low for about 122 µs. One UART bit is 8.68 µs. That wait drops UART bits. The two objects need a new driver before they share a cog.
+
+A polled driver can share the cog. It samples the PS/2 pins once each UART bit. A PS/2 half-clock is about 30 µs, so the poll sees the edge. That driver is not in the tree. Do not load a guess.
+
+The bring-up still stops the keyboard cog. The final build keeps it. Cog 0 then calls `kbdToZ80` in graphics mode.
 
 ## VGA text path
 
@@ -110,6 +130,8 @@ Cursors are six bytes: text X/Y/mode and mouse X/Y/mode. The UX Module uses the 
 ## Relation to VECTORJET
 
 `src/lib_vjet` is not linked from the product top. Compile VECTORJET demos with their own top objects and `-L src -L src/lib_vjet`. Pins P16–P23 have one owner. See `ARCHITECTURE_LIB_VJET.md`.
+
+The framebuffer bring-up keeps the list and the bitmap. The 80-line bitmap pair is 20480 bytes. The next bring-up writes an eight-line slice ahead of the scan. The accepted framebuffer demo stays.
 
 ## External references
 
