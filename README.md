@@ -177,7 +177,7 @@ Use the CLI toolchain. PropellerIDE remains valid for interactive work. Both pat
 | [PropLoader](https://github.com/parallaxinc/PropLoader) (`proploader`) | Load the image over FTDI FT232 (DTR reset) | Build from source (for example `~/Projects/PropLoader`) |
 | `tools/ux-load.sh` | EEPROM load + run on `/dev/cu.usbserial-*` | This repository |
 | `tools/ux-screen.sh` | 115200 FTDI console. Holds DTR off | This repository |
-| `rc-screen` (`tools/rc-screen.sh`) | 115200 ACIA console on USB CDC. Direct GNU `screen` | `$HOME/bin` |
+| `rc-screen` (`tools/rc-screen.sh`) | 115200 ACIA console on USB CDC or FTDI. Direct GNU `screen` | `$HOME/bin` |
 
 Copy this block. Quit GNU `screen` first (`C-a k`). The serial port must be free.
 

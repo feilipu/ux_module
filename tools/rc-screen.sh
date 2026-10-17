@@ -1,15 +1,19 @@
 #!/bin/zsh
-# RC2014 ACIA console via GNU screen on USB CDC.
-# Direct attach to /dev/cu.usbmodem* (8086net / similar). 115200 8N1,
-# RX/TX only. No XON/XOFF (XMODEM). No FTDI relay. No serial_probe.
+# RC2014 ACIA console via GNU screen on USB CDC or FTDI.
+# Direct attach to /dev/cu.usbmodem* (CDC ACM) or /dev/cu.usbserial*
+# (FTDI). 115200 8N1. RTS/CTS on. No XON/XOFF (XMODEM). No FTDI
+# relay. No serial_probe. screen has no crtscts option. Set it on
+# the open node after screen starts.
 #
-# SparkFun FTDI (/dev/cu.usbserial-*) is Propeller /RES on DTR.
-# Use ux-screen for that port.
+# SparkFun FTDI on the UX Module has Propeller /RES on DTR. Use
+# ux-screen for that port so the relay holds DTR off. A Z80 RC2014
+# serial module on FTDI is a normal console. rc-screen opens it.
 #
 # Usage:
 #   rc-screen
 #   rc-screen /dev/cu.usbmodem01031
-#   rc-screen 01031
+#   rc-screen /dev/cu.usbserial-A50285BI
+#   rc-screen A50285BI
 #   rc-screen --list
 #   rc-screen --quit
 #   rc-screen --send FILE
@@ -61,15 +65,7 @@ die() {
   exit 1
 }
 
-list_cdc() {
-  setopt localoptions nullglob
-  local p
-  for p in /dev/cu.usbmodem*; do
-    [[ -e "$p" ]] && print -r -- "$p"
-  done
-}
-
-list_all() {
+list_ports() {
   setopt localoptions nullglob
   local p
   for p in /dev/cu.usbserial* /dev/cu.usbmodem*; do
@@ -77,11 +73,19 @@ list_all() {
   done
 }
 
+port_kind() {
+  case "$1" in
+    *usbmodem*) print CDC ;;
+    *usbserial*) print FTDI ;;
+    *) print serial ;;
+  esac
+}
+
 match_port() {
   local want="$1" p
   [[ -e "$want" ]] && { print -r -- "$want"; return 0 }
   [[ "$want" != */* ]] || return 1
-  list_all | while read -r p; do
+  list_ports | while read -r p; do
     [[ "$p" == *"$want"* ]] && print -r -- "$p"
   done
 }
@@ -114,10 +118,17 @@ pick_port() {
   local -a found matches
   local want="${1:-${RC_SCREEN_DEV:-}}" p n
 
-  found=("${(@f)$(list_cdc)}")
+  found=("${(@f)$(list_ports)}")
+  # An empty command substitution still leaves one blank array slot.
+  if (( ${#found} == 1 )) && [[ -z "${found[1]}" ]]; then
+    found=()
+  fi
 
   if [[ -n "$want" ]]; then
     matches=("${(@f)$(match_port "$want")}")
+    if (( ${#matches} == 1 )) && [[ -z "${matches[1]}" ]]; then
+      matches=()
+    fi
     if (( ${#matches} == 1 )); then
       print -r -- "${matches[1]}"
       return 0
@@ -131,13 +142,7 @@ pick_port() {
   fi
 
   if (( ${#found} == 0 )); then
-    print -u2 "rc-screen: no /dev/cu.usbmodem*"
-    local -a other
-    other=("${(@f)$(list_all)}")
-    if (( ${#other} )); then
-      print -u2 "other serial devices (FTDI uses ux-screen):"
-      print -u2 "  ${other[@]}"
-    fi
+    print -u2 "rc-screen: no /dev/cu.usbmodem* or /dev/cu.usbserial*"
     return 1
   fi
   if (( ${#found} == 1 )); then
@@ -145,10 +150,10 @@ pick_port() {
     return 0
   fi
 
-  print -u2 "rc-screen: ${#found} CDC devices; one per session:"
+  print -u2 "rc-screen: ${#found} serial devices; one per session:"
   n=1
   for p in "${found[@]}"; do
-    print -u2 "  $n) $p"
+    print -u2 "  $n) $p  ($(port_kind "$p"))"
     (( n++ ))
   done
   if [[ ! -t 0 ]]; then
@@ -176,23 +181,126 @@ relay_holds() {
 }
 
 assert_free_device() {
-  local d="$1" pid
+  local d="$1"
   if relay_holds "$d"; then
     die "$d is held by ux-ftdi-relay (session uxmod). Stop that path first:
   $screenbin -S uxmod -X quit
   ux-screen --stop"
   fi
   if [[ "$d" == *usbserial* ]]; then
-    print -u2 "rc-screen: $d is FTDI. DTR may pulse Propeller /RES."
-    print -u2 "prefer ux-screen for that port."
+    print -u2 "rc-screen: $d is FTDI. macOS asserts DTR on open."
+    print -u2 "use ux-screen if this is the SparkFun Propeller /RES port."
   fi
 }
 
 prep_line() {
   local d="$1"
-  # Pre-set the node. Apple screen still applies the baud argument on open.
-  stty -f "$d" "$baud" raw cs8 -cstopb -parenb -echo -ixon -ixoff clocal cread -crtscts 2>/dev/null \
+  # Pre-set the node. Apple screen still applies the baud argument on open
+  # and clears crtscts. enable_hw_flow sets RTS/CTS again after open.
+  stty -f "$d" "$baud" raw cs8 -cstopb -parenb -echo -ixon -ixoff clocal cread crtscts 2>/dev/null \
     || die "stty failed on $d (busy or missing)"
+}
+
+# screen line flags are baud, cs8, ixon, ixoff. crtscts is not one of them.
+# Set RTS/CTS on the open node. macOS stty uses -f. Keep XON/XOFF off.
+hw_flow_on() {
+  local d="$1"
+  stty -f "$d" -a 2>/dev/null | tr ' \t' '\n\n' | grep -qx crtscts
+}
+
+# AppleUSBFTDI clears termios CRTSCTS. SET_FLOW arms RTS/CTS in the FT232.
+ftdi_set_flow() {
+  python3 - "$1" << 'PY'
+import ctypes, os, sys
+def ftdi_rtscts(serial_path):
+    marker = "usbserial-"
+    if marker not in serial_path:
+        return "not-ftdi"
+    want = os.path.basename(serial_path).split(marker, 1)[1]
+    libpath = None
+    for cand in ("/opt/homebrew/lib/libusb-1.0.dylib", "/usr/local/lib/libusb-1.0.dylib"):
+        if os.path.exists(cand):
+            libpath = cand
+            break
+    if not libpath:
+        return "libusb missing"
+    u8 = ctypes.c_uint8
+    u16 = ctypes.c_uint16
+    vp = ctypes.c_void_p
+    class Desc(ctypes.Structure):
+        _fields_ = [
+            ("bLength", u8), ("bDescriptorType", u8), ("bcdUSB", u16),
+            ("bDeviceClass", u8), ("bDeviceSubClass", u8),
+            ("bDeviceProtocol", u8), ("bMaxPacketSize0", u8),
+            ("idVendor", u16), ("idProduct", u16), ("bcdDevice", u16),
+            ("iManufacturer", u8), ("iProduct", u8),
+            ("iSerialNumber", u8), ("bNumConfigurations", u8),
+        ]
+    lib = ctypes.CDLL(libpath)
+    lib.libusb_init.argtypes = [ctypes.POINTER(vp)]
+    lib.libusb_init.restype = ctypes.c_int
+    lib.libusb_exit.argtypes = [vp]
+    lib.libusb_get_device_list.argtypes = [vp, ctypes.POINTER(ctypes.POINTER(vp))]
+    lib.libusb_get_device_list.restype = ctypes.c_ssize_t
+    lib.libusb_free_device_list.argtypes = [ctypes.POINTER(vp), ctypes.c_int]
+    lib.libusb_get_device_descriptor.argtypes = [vp, ctypes.POINTER(Desc)]
+    lib.libusb_get_device_descriptor.restype = ctypes.c_int
+    lib.libusb_open.argtypes = [vp, ctypes.POINTER(vp)]
+    lib.libusb_open.restype = ctypes.c_int
+    lib.libusb_close.argtypes = [vp]
+    lib.libusb_get_string_descriptor_ascii.argtypes = [vp, u8, ctypes.c_char_p, ctypes.c_int]
+    lib.libusb_get_string_descriptor_ascii.restype = ctypes.c_int
+    lib.libusb_control_transfer.argtypes = [vp, u8, u8, u16, u16, ctypes.POINTER(u8), u16, ctypes.c_uint]
+    lib.libusb_control_transfer.restype = ctypes.c_int
+    ctx = vp()
+    if lib.libusb_init(ctypes.byref(ctx)):
+        return "libusb_init failed"
+    lst = ctypes.POINTER(vp)()
+    n = lib.libusb_get_device_list(ctx, ctypes.byref(lst))
+    msg = "no matching FTDI"
+    try:
+        for i in range(max(n, 0)):
+            dev = lst[i]
+            desc = Desc()
+            if lib.libusb_get_device_descriptor(dev, ctypes.byref(desc)) or desc.idVendor != 0x0403:
+                continue
+            handle = vp()
+            if lib.libusb_open(dev, ctypes.byref(handle)) or not handle:
+                continue
+            try:
+                raw = ctypes.create_string_buffer(64)
+                nr = lib.libusb_get_string_descriptor_ascii(handle, desc.iSerialNumber, raw, 64)
+                if (raw.value.decode() if nr > 0 else "") != want:
+                    continue
+                buf = (u8 * 2)()
+                sr = lib.libusb_control_transfer(handle, 0x40, 2, 0, 0x0100, None, 0, 1000)
+                lib.libusb_control_transfer(handle, 0xC0, 5, 0, 0, buf, 2, 1000)
+                msg = f"SET_FLOW {sr} modem {buf[0]:02x}{buf[1]:02x} CTS {int(bool(buf[0] & 0x10))}"
+                break
+            finally:
+                lib.libusb_close(handle)
+    finally:
+        if n >= 0:
+            lib.libusb_free_device_list(lst, 1)
+        lib.libusb_exit(ctx)
+    return msg
+print(ftdi_rtscts(sys.argv[1]))
+PY
+}
+
+enable_hw_flow() {
+  local d="$1" msg _
+  for _ in {1..10}; do
+    stty -f "$d" crtscts -ixon -ixoff 2>/dev/null || true
+    hw_flow_on "$d" && return 0
+    sleep 0.05
+  done
+  if [[ "$d" == *usbserial-* ]]; then
+    msg="$(ftdi_set_flow "$d" 2>/dev/null || true)"
+    print -u2 "rc-screen: $msg"
+    [[ "$msg" == *"SET_FLOW 0"* ]] && return 0
+  fi
+  return 1
 }
 
 remember_dev() {
@@ -226,28 +334,23 @@ abs_file() {
 }
 
 do_list() {
-  local -a cdc all
-  local line
-  print -u2 "CDC (rc-screen):"
-  cdc=("${(@f)$(list_cdc)}")
-  if (( ${#cdc} )); then
-    for p in "${cdc[@]}"; do
+  local -a found
+  local p line
+  print -u2 "devices:"
+  found=("${(@f)$(list_ports)}")
+  if (( ${#found} == 1 )) && [[ -z "${found[1]}" ]]; then
+    found=()
+  fi
+  if (( ${#found} )); then
+    for p in "${found[@]}"; do
       if relay_holds "$p"; then
-        print -u2 "  $p  (held by ux-ftdi-relay / uxmod)"
+        print -u2 "  $p  ($(port_kind "$p"), held by ux-ftdi-relay / uxmod)"
       else
-        print -u2 "  $p"
+        print -u2 "  $p  ($(port_kind "$p"))"
       fi
     done
   else
     print -u2 "  (none)"
-  fi
-  all=("${(@f)$(list_all)}")
-  if (( ${#all} != ${#cdc} )); then
-    print -u2 "other (ux-screen / FTDI):"
-    local p
-    for p in "${all[@]}"; do
-      [[ "$p" == *usbmodem* ]] || print -u2 "  $p"
-    done
   fi
   print -u2 "sockets: $SCREENDIR"
   line="$(session_line)"
@@ -255,7 +358,7 @@ do_list() {
     print -u2 "session:${line}"
     print -u2 "id:      $(session_id)"
     if [[ -f $devfile ]]; then
-      print -u2 "device:  $(<"$devfile")"
+      print -u2 "device:  $(<"$devfile")  ($(port_kind "$(<"$devfile")"))"
     fi
   else
     print -u2 "session: (none)"
@@ -322,10 +425,18 @@ do_hardcopy() {
 
 start_or_attach() {
   local dev="$1"
+  local live
   if [[ ! -f $rc ]]; then
     die "missing $rc"
   fi
   if session_exists; then
+    live="$(current_dev || true)"
+    if [[ -n "$live" && "$live" != "$dev" ]]; then
+      die "session $sock is on $live. --quit first, then attach $dev"
+    fi
+    if ! enable_hw_flow "$dev"; then
+      die "hardware flow (crtscts) did not stay set on $dev"
+    fi
     if [[ -t 0 ]]; then
       print -u2 "rc-screen: reattach session $sock"
       $screenbin -d -r "$sock" || true
@@ -338,20 +449,27 @@ start_or_attach() {
   assert_free_device "$dev"
   prep_line "$dev"
   remember_dev "$dev"
-  print -u2 "RC2014  $dev  $baud 8N1 RX/TX  session $sock"
+  print -u2 "RC2014  $dev  $(port_kind "$dev")  $baud 8N1 crtscts  session $sock"
   print -u2 "XMODEM: C-a s send / C-a r receive, or ${me:t} --send FILE"
   # Baud must be a screen argument. Without it Apple 4.00.03 resets the
   # node to 9600 and CP/M 115200 reads as 8-bit garbage. CDC DTR is not
-  # Propeller /RES, so the modem open is acceptable here.
+  # Propeller /RES. FTDI open on macOS does assert DTR.
+  # Start detached so the node is open, then set crtscts. A foreground
+  # screen does not return until detach, so stty cannot run after it.
   local line="${baud},cs8,-ixon,-ixoff"
+  $screenbin -d -m -S "$sock" -fn -c "$rc" "$dev" "$line" || die "screen failed to start"
+  if ! session_exists; then
+    rm -f "$devfile"
+    die "screen did not create session $sock"
+  fi
+  if ! enable_hw_flow "$dev"; then
+    $screenbin -S "$sock" -X quit 2>/dev/null || true
+    rm -f "$devfile"
+    die "hardware flow (crtscts) did not stay set on $dev"
+  fi
   if [[ -t 0 ]]; then
-    $screenbin -S "$sock" -fn -c "$rc" "$dev" "$line" || true
+    $screenbin -d -r "$sock" || true
   else
-    $screenbin -d -m -S "$sock" -fn -c "$rc" "$dev" "$line" || die "screen failed to start"
-    if ! session_exists; then
-      rm -f "$devfile"
-      die "screen did not create session $sock"
-    fi
     print -u2 "started detached. Attach with ${me}"
   fi
 }

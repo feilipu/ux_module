@@ -1,6 +1,7 @@
 # RC2014 ACIA console. GNU screen config for rc-screen.
-# Direct on /dev/cu.usbmodem* (USB CDC). No FTDI relay. No PTY.
-# RX/TX only. XMODEM needs 8-bit data and no XON/XOFF.
+# Direct on /dev/cu.usbmodem* (USB CDC) or /dev/cu.usbserial* (FTDI).
+# No FTDI relay. No PTY. XMODEM needs 8-bit data and no XON/XOFF.
+# RTS/CTS is stty crtscts on the open node. screen flow stays off.
 # lsx / lrx come from PATH (Homebrew lrzsz is typical on macOS).
 startup_message off
 vbell off

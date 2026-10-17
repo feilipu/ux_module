@@ -6,7 +6,7 @@ Put `openspin` and `proploader` on `PATH`. Build notes: `.agents/skills/tool-pro
 
 Quit GNU `screen` before a load (`C-a k`). `tools/ux-load.sh` then stops the FTDI relay so the port is free.
 
-Two consoles: `ux-screen` is SparkFun FTDI (DTR is `/RES`, relay). `rc-screen` is RC2014 ACIA on USB CDC (direct attach). Both live in `$HOME/bin`.
+Two consoles: `ux-screen` is SparkFun FTDI on the UX Module (DTR is `/RES`, relay). `rc-screen` is RC2014 ACIA on USB CDC or FTDI (direct attach). Both live in `$HOME/bin`.
 
 ## Product firmware
 
@@ -64,15 +64,17 @@ Older pyserial helpers (Linux `/dev/ttyUSB0` in the source): `tools/serial_dtr.p
 
 ## RC2014 ACIA console (`rc-screen`)
 
-GNU `screen` opens the USB CDC node (`/dev/cu.usbmodem*`) directly. There is no FTDI relay and no `serial_probe`. The session name is `rc2014`.
+GNU `screen` opens a USB CDC node (`/dev/cu.usbmodem*`) or an FTDI node (`/dev/cu.usbserial*`) directly. There is no FTDI relay and no `serial_probe`. The session name is `rc2014`.
 
 General command: `$HOME/bin/rc-screen`. Config: `$HOME/.screenrc-rc`. In-tree copies: `tools/rc-screen.sh` and `tools/screenrc-rc`.
 
-This is the CP/M console on the 8086 Consultancy USB-C stick. Do not use this script on `/dev/cu.usbserial-*`. That FTDI pin 6 is Propeller `/RES`. Use `ux-screen` for the SparkFun port.
+This is the CP/M console on the 8086 Consultancy USB-C stick, or on a Z80 RC2014 serial module. If more than one USB serial node exists, pass a path or a unique suffix. Use `ux-screen` for the SparkFun UX Module port. That FTDI pin 6 is Propeller `/RES`.
 
 ```sh
 rc-screen
 rc-screen /dev/cu.usbmodem01031
+rc-screen /dev/cu.usbserial-A50285BI
+rc-screen A50285BI
 rc-screen --list
 rc-screen --quit
 ```
@@ -90,6 +92,6 @@ rc-screen --send /path/to/file.com
 rc-screen --send --1k /path/to/file.com
 ```
 
-`--send` waits one second so CP/M is in receive first. The script starts `screen` with `115200,cs8,-ixon,-ixoff`. A missing baud flag makes Apple `screen` reset the node to 9600.
+`--send` waits one second so CP/M is in receive first. The script starts `screen` with `115200,cs8,-ixon,-ixoff`. A missing baud flag makes Apple `screen` reset the node to 9600. `screen` cannot set RTS/CTS. After the node is open, `rc-screen` sets `crtscts` and leaves XON/XOFF off. `$HOME/bin/rc-screen` does that on the serial node it holds (115200 8N2). `C-a i` on that PTY does not show the board CTS line. The in-tree script opens the node itself (115200 8N1), then sets `crtscts`. `C-a i` then shows `(CTS)` when the board `/RTS` is on.
 
 If `ux-ftdi-relay` holds the same CDC node, quit session `uxmod` and run `ux-screen --stop` first. Do not run both scripts on one node.

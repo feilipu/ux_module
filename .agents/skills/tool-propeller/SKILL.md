@@ -162,7 +162,7 @@ Scripts live in `tools/`. Humans and agents copy from [`tools/README.md`](../../
 | Command | Role |
 |---------|------|
 | `tools/ux-screen.sh` | GNU `screen` 115200 8N1 on SparkFun FTDI. `tools/ux-ftdi-relay.py` holds DTR off (that pin is `/RES`). Session `uxmod`. Config: `tools/screenrc-ux`. |
-| `rc-screen` | GNU `screen` 115200 8N1 on USB CDC (`/dev/cu.usbmodem*`). Direct attach. No relay. Session `rc2014`. `$HOME/bin/rc-screen`. See `tool-rc-screen`. |
+| `rc-screen` | GNU `screen` 115200 8N1 on USB CDC (`/dev/cu.usbmodem*`) or FTDI (`/dev/cu.usbserial*`). Direct attach. No relay. Session `rc2014`. `$HOME/bin/rc-screen`. See `tool-rc-screen`. |
 | `tools/serial_probe.py` | Headless TX/RX log on FTDI. Holds DTR off. Prints `BOOT`/`TX`/`RX` as `repr` plus `<CR>`/`<LF>`. Quit screen first. Not the CDC path. |
 | `tools/ux-load.sh` | EEPROM load on SparkFun FTDI Basic. Default `reset=dtr` on `/dev/cu.usbserial-*`. `-m` is manual `/RES`. Refuses `/dev/cu.usbmodem*`. |
 | `tools/screenrc-ux` | FTDI session: `flow off`; `C-a s` / `C-a r` prefill `lsx` / `lrx`. |
@@ -170,7 +170,7 @@ Scripts live in `tools/`. Humans and agents copy from [`tools/README.md`](../../
 ```bash
 tools/ux-screen.sh                         # FT232 console (relay, DTR off)
 tools/ux-screen.sh /dev/cu.usbserial-XXXX
-rc-screen                                  # RC2014 ACIA on USB CDC (direct)
+rc-screen                                  # RC2014 ACIA on CDC or FTDI (direct)
 tools/serial_probe.py                      # FTDI banner only (quit screen first)
 tools/serial_probe.py $'ABC123\r'
 ```
