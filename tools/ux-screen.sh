@@ -44,18 +44,27 @@ match_port() {
   done
 }
 
+# "${(@f)$(cmd)}" is one empty field when cmd prints nothing.
+read_lines() {
+  local raw="$1"
+  reply=()
+  [[ -n $raw ]] && reply=("${(@f)raw}")
+}
+
 pick_port() {
   local -a found matches ft232
   local want="${1:-${UX_SCREEN_DEV:-}}" p n
 
-  found=("${(@f)$(list_ports)}")
+  read_lines "$(list_ports)"
+  found=("${reply[@]}")
   ft232=()
   for p in "${found[@]}"; do
-    [[ "$p" == *usbserial* ]] && ft232+=("$p")
+    [[ -n $p && "$p" == *usbserial* ]] && ft232+=("$p")
   done
 
   if [[ -n "$want" ]]; then
-    matches=("${(@f)$(match_port "$want")}")
+    read_lines "$(match_port "$want" || true)"
+    matches=("${reply[@]}")
     if (( ${#matches} == 1 )); then
       print -r -- "${matches[1]}"
       return 0
@@ -145,6 +154,10 @@ if [[ "${1:-}" == --quit ]]; then
 fi
 
 dev="$(pick_port "${1:-}")" || exit 1
+if [[ -z $dev || ! -e $dev ]]; then
+  print -u2 "ux-screen: no serial device"
+  exit 1
+fi
 
 rc="$here/screenrc-ux"
 # macOS asserts DTR on open of cu.usbserial-*. On the SparkFun Basic that

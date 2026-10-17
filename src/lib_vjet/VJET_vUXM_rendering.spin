@@ -101,13 +101,10 @@ d1 if_z jmp #d0 'if not, repeat
 ''Main loop for renderer
 new_frame
         neg prevline,#1
-'' Wait for vertical blank (VGA publishes line >= NUM_LINES). Vsync and
-'' back porch used to write line 0, so this cog restarted and overwrote
-'' slots 0-7 before the raster started.
+''wait until we hit scanline 0 so we can start with a fresh frame
 :waitloop
-        rdword currentrequest, request_scanline
-        cmp currentrequest, #NUM_LINES wc
-if_c    jmp #:waitloop
+        rdword currentrequest, request_scanline wz
+if_nz   jmp #:waitloop
 
         mov currentscanline, cognumber ''reset current scanline for COG
 
@@ -320,26 +317,13 @@ if_e    neg d0,#1
 
 ''scanline rendering is finished, wait until next linebuffer is available
 :scanline_finished
-'' Do not write more than LINE_BUFFERS lines ahead of the VGA cog.
-'' During blanking, treat the raster as line 0 so this cog can fill slots
-'' 0..7 and then wait. The old request==0 and scanline>=16 test let a fast
-'' cog wrap the 8-slot buffer twice before active video.
+'' wait until TV requests the scanline we rendered
 :linewait
-        rdword currentrequest, request_scanline
-        cmp currentrequest, #NUM_LINES wc
-if_nc   jmp #:inblank
-:pace
-        mov d0, currentscanline
-        add d0, total_cogs
-        sub d0, #LINE_BUFFERS
-        cmps currentrequest, d0 wc
+        rdword currentrequest, request_scanline wz
+        cmp currentscanline,#16 wc
+if_z_and_nc jmp #new_frame
+        cmps currentrequest, prevline wz, wc
 if_be   jmp #:linewait
-        jmp #:scanlinedone
-:inblank
-        cmp currentscanline, #LINE_BUFFERS wc
-if_c    mov currentrequest, #0
-if_c    jmp #:pace
-        jmp #new_frame
 
 :scanlinedone
         mov prevline,currentscanline

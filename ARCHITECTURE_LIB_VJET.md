@@ -18,8 +18,11 @@ The product top `ux_module.spin` does not link this library. Demos use their own
 | `VJET_vUXM_rendering.spin` | PASM renderer cog program |
 | `VJET_vUXM_vga.spin` | PASM VGA output cog |
 | `hexfont.spin` | Font blob for text shapes |
-| `vjet_test.spin` | Demo: spinning triangles + centred text |
+| `vjet_test.spin` | Demo: spinning triangles + centred text. Beam-chase reference. |
 | `graphtest.spin` | Demo: graph-style drawing |
+| `vjet_fb.spin` | Known-good picture. Framebuffer. |
+| `VJET_vUXM_rendering_fb.spin` | PASM renderer for the framebuffer |
+| `VJET_vUXM_vga_fb.spin` | PASM VGA cog for the framebuffer |
 
 ## Runtime pipeline
 
@@ -43,23 +46,17 @@ Application (Spin top object)
 
 ## Scanline handshake (tear / flicker)
 
-The Hub scan buffer holds **eight** logical lines (`LINE_BUFFERS`). The VGA cog displays line `N` from slot `N & 7` and writes `N` into `vga_status`. During blanking it writes line **240** plus phase bits.
+The Hub scan buffer holds eight logical lines (`LINE_BUFFERS`). The VGA cog displays line `N` from slot `N & 7` and writes `N` into `vga_status`.
 
-Render cogs:
+Front porch writes line 240. Vsync and the back porch write line 0. Render cogs wait for line 0, then stay behind the VGA cog.
 
-1. Wait until the status line is `>= 240` (blanking).
-2. Fill slots 0..7 while they treat the raster as line 0.
-3. Then wait until they are fewer than eight lines ahead of the live VGA line.
-
-Do not publish line 0 during vsync or back porch. The old status longs used a low word of 0. Render cogs treated that as scanline 0, ran 16 lines, and overwrote the first eight slots before active video. A faster system clock (118 MHz vs 80 MHz) made that overrun worse.
-
-Spin must publish `dlist_ptr` at front porch, then wait for vsync bit 17 (`$02_00_00`) before it rebuilds the other list. If Spin rebuilds a list that a render cog still reads, the frame tears.
+A later handshake wrote line 240 in every blanking phase. With the demo PLL the monitor read 720×480 at 60 Hz and the picture tore. The demo uses the 2021 handshake.
 
 ## Video PLL
 
-`VJET_vUXM_vga` sets CTRA PLL internal, VCO/2. The NCO target is 5 MHz. VCO is 80 MHz (spec 64–128 MHz). PLLA is 40 MHz. VSCL uses 4 clocks per pixel, so the pixel rate is 10 MHz (256-wide VGA).
+`VJET_vUXM_vga` sets CTRA PLL internal, VCO/4. The NCO target is 10 MHz. VCO is 160 MHz. PLLA is 40 MHz on that divider. VSCL uses 4 clocks per pixel, so the pixel rate is 10 MHz.
 
-The old 10 MHz NCO with VCO/4 made VCO 160 MHz. That is out of spec and the PLL can unlock (jitter, tear, roll).
+A 5 MHz NCO with VCO/2 holds VCO at 80 MHz. That picture did not lock. The monitor menu read 1920×1080. The demo PLL stays until a locked replacement is measured.
 
 `hires_text_vga` uses a different PLL setup (`pr` in MHz, VCO/2) for 640×480 text. Do not copy VECTORJET FRQA into the text driver or the reverse.
 
@@ -73,6 +70,14 @@ Rendering constants in `VJET_vUXM_rendering.spin`:
 The VGA cog repeats each logical line (tile counter) so the analogue timing fills a taller raster. The Hub scan buffer is `linebuffers[(WIDTH*LINE_BUFFERS)/4]` longs (eight line slots).
 
 Display lists are ordinary Hub longs (for example `dlist1[900]`, `dlist2[900]`). Size is a demo choice, not a hardware limit.
+
+## Framebuffer
+
+`vjet_fb.spin` is the known-good picture. The user accepted it on 17 Oct 2026. The VGA cog scans a finished 256 by 80 bitmap. Two bits select one of four colours in each group of 16 pixels. The renderer stores lines 0, 3, 6, and so on. The VGA cog shows each stored line six times.
+
+Bit 0 of a colour byte marks a stripe. Dark lines of that band show the colour $55 lower. Even stored lines are bright, bright, dark, dark, bright, bright. Odd stored lines use the inverse order. The colours `$0055`, `$55AA`, and `$AAFF` stripe. Equal bytes stay solid.
+
+The program is 8044 bytes. The variables are 23776 bytes. The PLL, the porches, and `VCFG` stay on the 2021 line. PixelClocks is 4. FrameClocks is 16. Do not copy that `VSCL` into `VJET_vUXM_vga.spin`.
 
 ## Display list model
 
@@ -119,7 +124,7 @@ Init instructions are overlaid by live variables after boot. Do not treat early 
 - Starts CTRA in PLL video mode
 - Loops active lines with `WAITVID`, then front porch, vertical sync, and back porch
 - Publishes phase flags in `statusLong` so Spin can wait for blanking
-- Writes line 240 during front porch, vsync, and back porch (never line 0)
+- Writes line 240 on the front porch only. Vertical sync and the back porch write line 0.
 
 For the UX Module, demos pass `pinGroup = 16/8` (group 2 → P16–P23), which matches the board VGA connector.
 
@@ -152,7 +157,7 @@ Hub cost: eight line slots are 2 KB. Two lists of 900 longs are about 7 KB. The 
 
 Useful work while keeping the architecture intact:
 
-1. When graphics work resumes, start a Spin draw cog (not Cog 0). Wait `vjetStatus` bit 16 (`$01_00_00`), publish the list pointer, wait bit 17 (`$02_00_00`), then `gl.start` on the idle list. See `vjet_test.spin`.
+1. When graphics work resumes, start a Spin draw cog (not Cog 0). Wait until bit 16 rises, publish the list pointer, then call `gl.start` on the idle list. See `vjet_test.spin`. The current picture and the line count are in the handoff section of `3D_WORKPLAN_LIB_VJET.md`.
 2. Grow Hub lists to two buffers of about 900 longs. Reuse the text screen region if needed.
 3. Drive the back list from Z80 I/O at `PORT_VJET` (needs a command protocol)
 4. Tune render cog count against available cogs and fill rate

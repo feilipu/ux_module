@@ -103,10 +103,8 @@ PUB start(pinGroup,lineBuffers,statusLong) | pixelClock '' 7 Stack Longs
     directionState := ($FF << (8 * pinGroup))
     videoState := (%0_01_1_0_0_000_00000000000_000_0_11111111 | (pinGroup << 9))
 
-    ' NCO 5 MHz × PLL×16 = VCO 80 MHz (spec is 64-128). VCO/2 → 40 MHz video.
-    ' VSCL uses 4 clocks per pixel → 10 MHz pixels (256-wide VGA).
-    ' The old 10 MHz NCO with VCO/4 made VCO 160 MHz and the PLL unlocked.
-    pixelClock := 5_000_000
+    ' Demo PLL. NCO 10 MHz, VCO/4. VCO is 160 MHz.
+    pixelClock := constant(20_000_000 / 2)
     frequencyState := 1
 
     repeat 32
@@ -143,7 +141,7 @@ DAT
 
 initialization          mov     vcfg,           videoState                 ' Setup video hardware.
                         mov     frqa,           frequencyState
-                        movi    ctra,           #%0_00001_110              ' PLL internal (video mode) VCO/2
+                        movi    ctra,           #%0_00001_101              ' PLL internal, VCO/4
 
                         or      dira,           directionState             ' Setup video output pins
 
@@ -161,17 +159,21 @@ tilesDisplay
                         wrlong  tilesCounter,   syncIndicatorAddress
 
 tileDisplay             mov     vscl,           visibleScale               ' Set/Reset the video scale.
-                        mov     counter,        #256/4
+                        mov     counter,        #256/4-1                   ' 63 groups after the primed group.
 
 ' //////////////////////Visible Video//////////////////////////////////////////////////////////////////////////////////////////
 
-videoLoop               rdlong  buffer,         displayCounter             ' Download new pixels.
+                        rdlong  buffer,         displayCounter             ' Prime the first group.
                         add     displayCounter, #4
-
                         or      buffer,         HVSyncColors               ' Update display scanline.
-                        waitvid buffer,         #%%3210
 
+videoLoop               waitvid buffer,         #%%3210                    ' Shift this group.
+                        rdlong  buffer,         displayCounter             ' Next group, during the shift.
+                        add     displayCounter, #4
+                        or      buffer,         HVSyncColors
                         djnz    counter,        #videoLoop                 ' Repeat.
+
+                        waitvid buffer,         #%%3210                    ' Last group. No read past the line.
 
 ' //////////////////////Invisible Video////////////////////////////////////////////////////////////////////////////////////////
 
@@ -252,8 +254,8 @@ VSyncColors             long    $00_02_00_02                               ' Ver
 HVSyncColors            long    $03_03_03_03                               ' Horizontal and vertical sync colors.
 
 FPorchStatus            long    %001 << 16 + 240
-VSyncStatus             long    %011 << 16 + 240
-BPorchStatus            long    %101 << 16 + 240
+VSyncStatus             long    %011 << 16
+BPorchStatus            long    %101 << 16
 
 ' //////////////////////Configuration Settings/////////////////////////////////////////////////////////////////////////////////
 

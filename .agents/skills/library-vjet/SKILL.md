@@ -25,8 +25,8 @@ Human architecture note: `ARCHITECTURE_LIB_VJET.md`. Author mark in sources: IRQ
 
 ```
 Spin app
-  ├─ Vblank (status bit 16) then dlist_ptr := listA
-  ├─ WaitListTaken (status bit 17) then gl.start(listB) / draw / gl.done
+  ├─ Vblank (bit 16 rises, front porch) then dlist_ptr := listA
+  ├─ gl.start(listB) / draw / gl.done
   ├─ render.start(i, N, scanbuf, @dlist_ptr, @vga_status, @ready)  × N
   └─ vga.start(pinGroup, scanbuf, @vga_status)
          │
@@ -41,11 +41,21 @@ Resolution in UXM rendering: **WIDTH=256**, **NUM_LINES=240**, **LINE_BUFFERS=8*
 
 `vjet_test.spin` starts **3** render cogs + **1** VGA cog. That alone needs four cogs plus Spin. It cannot run beside the full UX text stack without stopping other drivers (`module-ux` cog budget).
 
-`ux_module.spin` does not link this library. Demos are their own tops. When graphics work resumes, product graphics uses **2** render cogs plus 1 VGA cog. The spare cog is for a Spin draw loop. Do not start VECTORJET from product `main`.
+`ux_module.spin` does not link this library. Demos are their own tops. Do not start VECTORJET from product `main`.
 
-Handshake: VGA writes line **240** in every blanking phase (not 0). Render cogs wait for `>= 240`, fill slots 0..7, then stay fewer than eight lines ahead of the live line. Spin publishes `dlist_ptr` at front porch and waits for vsync bit 17 before it rebuilds the other list.
+One busy Spin cog during the picture. `vjet_test`, plus the ACIA cog, plus the FTDI cog, stays clean while Cog 0 builds the list. A second cog in a tight Spin loop tears that picture.
 
-Video PLL: NCO 5 MHz, VCO/2, VCO 80 MHz (spec 64–128). Do not restore 10 MHz NCO + VCO/4 (VCO 160 MHz).
+Cog 0 in the bring-up has about 2KB of free Hub. Drawing there overrun that space, the picture tore, then the signal stopped. Park Cog 0 on `waitcnt`. Run the draw loop on another cog. Use the text buffer as that stack while text VGA is stopped. The text buffer is 800 longs. Stop that cog before `screenInit`.
+
+The stage-1 bring-up keeps the ACIA cog and the FTDI cog. The PS/2 cog stops for that session. Three render cogs, as in `vjet_test`. Cog 0 does not pump the FIFOs during the picture.
+
+Handshake: front porch writes line 240. Vsync and the back porch write line 0. Render cogs wait for line 0. The variant that writes line 240 in every blanking phase tore at 720×480 at 60 Hz. The demo uses the 2021 handshake.
+
+`vjet_test` sets `dlist_ptr` to `$8080`, sets the ready flag, then Cog 0 publishes a real list on the next vblank. That order stays clean. A render cog that keeps reading `$8080` can stay in the shape fixup, so Cog 0 must publish on that next vblank. Do not hand the publish to a cog that is not running yet.
+
+Pass `render.start` a long-aligned ready flag. `cognew` keeps only bits 15:2 of that address. A byte flag makes the render cogs wait on a different byte.
+
+Video PLL: demo setting is NCO 10 MHz, VCO/4, VCO 160 MHz. A 5 MHz NCO with VCO/2 did not lock on the target monitor. Keep the demo PLL until a locked replacement is measured.
 
 ## Display list format
 
@@ -77,13 +87,22 @@ Overflow uses Spin `ABORT`. Callers in demos use `\draw` to trap it.
 
 ## Double buffering
 
-Demos flip `dlist_ptr` each frame and rebuild the inactive buffer. Render cogs read `dlist_ptr` through `dlistPtrAdr` at frame start. Wait for vertical blank via `vga_status` bit 16 (`Vblank`), publish the pointer, then wait for vsync bit 17 (`WaitListTaken`) before `gl.start` on the other list.
+Demos flip `dlist_ptr` each frame and rebuild the inactive buffer. Render cogs read `dlist_ptr` through `dlistPtrAdr` at frame start, when the VGA low word is 0. Wait until bit 16 rises (front porch), publish the pointer, then call `gl.start` on the other list. The front porch low word is 240. Vertical sync and the back porch use a low word of 0.
 
 ## VGA cog (`VJET_vUXM_vga.spin`)
 
 - `start(pinGroup, lineBuffers, statusLong)` — `pinGroup` 0..3; UX uses `16/8` → group 2
 - Sets `VCFG` VGA mode, CTRA PLL video mode, drives eight pins
-- Writes phase codes into `statusLong` (front porch / vsync / back porch / active). Low word is 240 in all three blanking phases.
+- Writes phase codes into `statusLong` (front porch / vsync / back porch / active). The front porch low word is 240. Vsync and the back porch use a low word of 0.
+- Visible pixels: prime one group, then `WAITVID`, then read the next group while that group shifts. The last group of the line has no read past the line. Keep `visibleScale` at `(4 << 12) + 16`.
+
+## Framebuffer path
+
+`vjet_fb.spin` does not chase the beam. The VGA cog scans a finished 256×80 bitmap, two bits per pixel. Each group of 16 pixels has four colours. The cog shows each stored line six times. The renderer stores lines 0, 3, 6, and so on. Two buffers. A late frame repeats. The PLL, the porches, and `VCFG` stay on the 2021 line. PixelClocks for the visible pixels is 4. Visible FrameClocks stays 16.
+
+Bit 0 of a colour byte marks a stripe. The dark lines of that band show the colour $55 lower. Even stored lines are bright, bright, dark, dark, bright, bright. Odd stored lines use the inverse order. The user accepted this picture on 17 Oct 2026. It is the known-good image. The plan section "Frame buffer — 18 Oct 2026" in `3D_WORKPLAN_LIB_VJET.md` is the load note.
+
+`VJET_vUXM_vga.spin` and `VJET_vUXM_rendering.spin` stay the beam-chase pair. Do not copy the framebuffer `VSCL` into those files.
 
 ## Agent rules
 
@@ -91,9 +110,9 @@ Demos flip `dlist_ptr` each frame and rebuild the inactive buffer. Render cogs r
 2. Do not change `WIDTH` / `NUM_LINES` / `LINE_BUFFERS` in one file only; scan buffer size in the top object must match `(WIDTH*LINE_BUFFERS)/4` longs. VGA wrap is `tilesCounter & (LINE_BUFFERS-1)`.
 3. Preserve top-edge trap fixup and per-cog scanline striping (`currentscanline += total_cogs`).
 4. Treat UXM files as board-specialised; do not assume stock VECTORJET v1.0 timing.
-5. Do not write line 0 during vsync or back porch. Do not let a render cog write more than `LINE_BUFFERS` lines ahead of VGA.
-6. Stop text VGA (`wmf.stop`) **and** the I2C DDC cog (`i2c.stopCog`) before `VJET_vUXM_vga.start`. Stop VECTORJET VGA and `render.stop` before `wmf.init` and `i2c.startCog`. Never two VGA engines on P16–P23. The product top has no `enterGraphics` yet.
-7. Do not put the display-list builder on Cog 0 if ACIA must keep pumping (`module-ux`).
+5. Keep the demo handshake. Vsync and the back porch publish line 0. A render cog restarts its frame when the VGA line is 0 and its own line is 16 or more.
+6. Stop text VGA (`wmf.stop`), the I2C DDC cog (`i2c.stopCog`), and the PS/2 cog before `VJET_vUXM_vga.start`. Stop VECTORJET VGA and `render.stop` before `wmf.init` and `i2c.startCog`. Never two VGA engines on P16–P23. The product top has no `enterGraphics` yet.
+7. Park Cog 0 on `waitcnt` during the picture. A tight Spin loop beside the draw cog tears the scene. Do not draw on Cog 0. Free Hub above the bring-up is about 2KB, and the scene overruns it. Give the draw cog the text buffer as its stack, and stop that cog before `screenInit`. Leave the ACIA cog running. Cog 0 does not pump `acia.tx` during the picture.
 8. Prose: `style-ste-writing`.
 
 ## Related
