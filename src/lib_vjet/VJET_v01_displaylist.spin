@@ -10,6 +10,8 @@
 '' A polygon stores 24 bytes plus 12 bytes for each trapezoid.
 '' A sloped line stores 36 bytes. A horizontal line stores 16 bytes.
 '' The renderer writes the 8 current-edge bytes. This builder skips them.
+'' The renderer keeps 24 records on one scan line.
+'' A shape after those records on that line is skipped.
 
 
 #1
@@ -126,7 +128,7 @@ PUB line(x1,y1,x2,y2,colors) : ihead | tmp '' TODO: Add dedicated line shape typ
     if (spaceleft -= constant(2*4 + 2*4 + 2*2 + 2*4)) < 0
       abort 14
     byte[tmp]:=(SHP_TRAPSTACK)
-    ihead+= constant(2*4) ' current edges. The renderer writes these.
+    ihead+= constant(2*4) ' current edges. The top fixup writes these.
     tmp := slopeCalc(x2,x1,y2,y1)
     if x1 =< x2
       long[ihead]:=(x1)
@@ -232,7 +234,7 @@ PUB triangle(x1,y1,x2,y2,x3,y3,colors) : ihead | tmp,tmp2,tmp3
   ihead+=2
   word[ihead]:=(y3.word[1]+1) ' end line
   ihead+=2
-  ihead+=(constant(2*4)) ' current edges. The renderer writes these.
+  ihead+=(constant(2*4)) ' current edges. The top fixup writes these.
   'head:=ihead
 
   if y2.word[1] == y3.word[1] ' bottom flat?
@@ -412,7 +414,7 @@ PUB polygon(polyptr,vcount,colors,ccw) : ihead | tmp,lefti,righti,ybottom,ytop,t
   ihead+=2
   word[ihead]:=(ybottom+1) ' end line
   ihead+=2
-  ihead+=(constant(2*4)) ' current edges. The renderer writes these.
+  ihead+=(constant(2*4)) ' current edges. The top fixup writes these.
 
   '' initialize top edges - slopes will be added on later
   topptr:=ihead

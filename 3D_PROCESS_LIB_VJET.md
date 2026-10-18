@@ -154,3 +154,59 @@ The short framebuffer bring-up is on the board. Ten content lines fill the top b
 The bitmap holds the pixels. The list holds the commands. The list stays allocated. The 80-line pair is 20480 bytes. The bring-up cannot keep that pair.
 
 The next trial returns to the eight-line slice. The earlier beam-chase tears used the wide fan and a second Spin cog. This trial keeps three render cogs and the short scene. The original renderer used two cogs. Do not change the 2021 handshake, the PLL, or `visibleScale`.
+
+The 18 Oct 2026 load is 18304 bytes. 4824 bytes remain above the stack. EEPROM holds that image. Control-Option-G shows a full blue field, the text GFX, and two spinning triangles. The triangles sit in the top half. The blue field is the box `$1818` on all 240 logical lines. The triangles are drawn near logical line 80. The user did not report a tear. The accepted framebuffer demo is unchanged.
+
+The same slice then ran the orbit probe. That scene is one box, four triangles on a shallow ellipse, and five moving triangles. Far orbit triangles are drawn first. The user confirmed that this picture holds.
+
+The list holds 340 bytes. Each bring-up list is 160 longs. The program is 18588 bytes. 3708 bytes remain above the stack. The beam-chase renderer has no 50 percent mix. A later triangle covers an earlier one.
+
+The lead change is on EEPROM. The program is 18668 bytes. 3372 bytes remain above the stack. Each render cog starts the next line after the beam passes that slot. With three cogs the lead is 7 logical lines. The previous wait kept a lead of about 5 lines. The PLL, the 2021 handshake, and visibleScale stay the same.
+
+A return to text sends the line Text mode on FTDI. The VGA banner does not go out on FTDI. The draw stack is 192 longs. Those longs sit in front of the FTDI ring indexes. healRings masks an index that is outside the ring.
+
+The edge tear is not yet confirmed. Watch a triangle that meets the screen edge.
+
+The input split is on EEPROM. The program is 18828 bytes. 3208 bytes remain above the stack. Clock and mode are unchanged.
+
+Control-G keeps the FTDI cog and stops the PS/2 cog. A second Control-G returns to text and sends the line Text mode. The PS/2 chord keeps the keyboard cog and stops the FTDI cog. That arm was not tested. There is no keyboard on the bench.
+
+## Independent edges — 18 Oct 2026
+
+The dark full-width lines were the black clear. A render cog cleared its slot, then waited on the previous cog. That wait could run for about 15 logical lines. The lead is 7 logical lines. The cog then painted the stored edges and wrote them back. The next cog missed the same byte.
+
+The picture showed dark rules, broken triangles, and offset copies. Each cog owns every third line. It reads the initial edges and the slopes. A saturating multiply of 16 adds replaces the line-by-line add. The result matches repeated ADDS, including values that reach the 32-bit rails. The cog does not wait on the sync byte.
+
+It does not write the edges back. The top fixup still runs. The scanline path does not read those edges. The line wait, the PLL, and visibleScale stay the same. Three render cogs stay.
+
+The program is 18848 bytes. 3188 bytes remain above the stack. Clock is 117964800 Hz. The mode byte is $6F. EEPROM held that image before the span records.
+
+## Scan line time — 18 Oct 2026
+
+The photos show fewer torn lines after the independent edges. Flickered lines and repeated lines remain. Pixel samples of both photos give the cause.
+
+A solid red triangle keeps one colour through its body. The body stays red from its upper lines to its base. Those lines finish before the beam reads the slot.
+
+The lead is 7 logical lines. Each logical line is two physical lines, about 7550 system clocks. Seven lines are about 52800 system clocks. The box and the triangles on one line use a small part of that lead. The long fill locks to the Hub window. Each later long write takes 16 clocks.
+
+The flickered lines are the two colour bytes. An even logical line uses one byte. The next logical line uses the other byte. The VGA cog shows each logical line on two physical lines. $0055, $55AA, $66BB, $AAFF, and $80C0 therefore alternate by pairs. $C0C0, $7474, $4848, and $F0F2 use two equal bytes and stay steady.
+
+The repeated lines are the same double scan. The two physical lines of one logical line carry the same pixels. The stripe follows the scan line number. A triangle that moves down lets that stripe travel through the shape.
+
+The overlap stutter is a separate fault. An overlap line walked the list and wrote pixels in the open slot. A slow line left the lower object half drawn. The cog now records each span before the slot write. The record holds the left edge, the right edge, and the colour. The slot write is one fill and then those spans.
+
+A full-width first span fills with that colour. The 7-line lead and the three render cogs stay. The program is 19228 bytes. 2808 bytes remain above the stack. EEPROM holds this image. The user confirmed this picture on 18 Oct 2026.
+
+## Scan line records — 18 Oct 2026
+
+A general list uses the same records as the orbit scene. One scan line keeps 24 records. A box, a point, a line, a polygon, or a text shape uses one record when its range includes that line. A shape after these 24 records on that line is skipped. The skipped shapes are the front shapes.
+
+Text used to paint after every span. A later triangle could not cover a label. A text shape now stores its list address in order with the spans. The slot write paints that text between the spans. The orbit scene has no text, so its picture stays the same.
+
+A flat triangle stores 36 bytes. A general triangle stores 48 bytes. A box, a point, or a horizontal line stores 16 bytes. A sloped line stores 36 bytes. A text shape stores 20 bytes. The string stays outside the list, except for text_inline.
+
+A polygon stores 24 bytes plus 12 bytes for each trapezoid. The polygon uses one record on a scan line. Each trapezoid above that line costs two saturating multiplies. A filled triangle uses one record. A wireframe triangle uses three line records.
+
+The bring-up list is 160 longs. The orbit scene stores 340 bytes and draws 10 shapes. The beam-chase demo list is 900 longs. The demo draws 13 triangles and one text shape. Even lines use the low colour byte. Odd lines use the high colour byte.
+
+The VGA cog shows each logical line twice. It forces the low two bits of every colour byte on. The program size stays 19228 bytes. 2808 bytes remain above the stack.

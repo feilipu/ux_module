@@ -117,7 +117,7 @@ The keyboard driver waits until the clock pin falls. A command to the keyboard h
 
 A polled driver can share the cog. It samples the PS/2 pins once each UART bit. A PS/2 half-clock is about 30 µs, so the poll sees the edge. That driver is not in the tree. Do not load a guess.
 
-The bring-up still stops the keyboard cog. The final build keeps it. Cog 0 then calls `kbdToZ80` in graphics mode.
+The bring-up keeps the input that requested graphics and stops the other input. Control-G keeps the FTDI cog. The PS/2 chord keeps the keyboard cog and stops the FTDI cog. The final build keeps both inputs on one cog. That driver is not in the tree.
 
 ## VGA text path
 

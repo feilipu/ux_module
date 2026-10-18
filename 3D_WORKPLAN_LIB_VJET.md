@@ -51,9 +51,9 @@ Cog count in each mode:
 | Mode | Cogs in use | Free cog |
 |------|-------------|----------|
 | Text | Cog 0, FTDI, ACIA, PS/2, two text VGA, DDC | 1 |
-| Graphics | Cog 0, FTDI, ACIA, one framebuffer VGA, three render cogs, one draw | 0 |
+| Graphics | Cog 0, one input cog, ACIA, one slice VGA, three render cogs, one draw | 0 |
 
-The PS/2 cog stops in this bring-up. Three render cogs publish the frame. Cog 0 of the renderer waits for the other two stripes, then writes `done`. Two cogs never write `done`.
+Graphics keeps one input cog. Control-G keeps FTDI and stops PS/2. The PS/2 chord keeps the keyboard and stops FTDI. Three render cogs publish the frame. Cog 0 of the renderer waits for the other two stripes, then writes `done`. Two cogs never write `done`.
 
 The final build keeps the PS/2 keyboard. Graphics has no free cog. The keyboard must share the FTDI cog.
 
@@ -91,11 +91,17 @@ On 18 Oct 2026 the full bitmap is the costly store. The list and the bitmap both
 
 Three render cogs write that slice ahead of the scan. The original renderer used two cogs. Three cogs must stay ahead. The accepted framebuffer demo is unchanged.
 
+The 18 Oct 2026 load held. The field is the blue box. Two triangles spin in the top half. The program is 18304 bytes.
+
+The orbit probe on that same slice also held. The user confirmed it. The program for that scene is 18588 bytes.
+
+The lead change is in the source. Each render cog keeps a lead of 7 logical lines. The previous lead was about 5 lines. The input split is the EEPROM image. The program is 18828 bytes. Control-G keeps FTDI. The PS/2 chord stops FTDI. The PS/2 arm was not tested.
+
 Cog 0 is the only `acia.tx` writer. Do not draw on Cog 0 while the ACIA stays live.
 
 One shape header is 8 bytes. A flat triangle is 36 bytes. A general triangle is 48 bytes. A box is 16 bytes. A text shape is 20 bytes. The scene counts are in Capabilities.
 
-Two 300-long lists are 2400 bytes. Two 900-long lists overflow by 768 longs. The framebuffer demos use the 300-long lists. The bring-up lists are 64 longs each. The short scene fits in that list. Two 300-long lists do not fit beside the ten stored lines.
+Two 300-long lists are 2400 bytes. Two 900-long lists overflow by 768 longs. The framebuffer demos use the 300-long lists. The slice bring-up lists are 160 longs each. The orbit scene fits in that list. Two 300-long lists do not fit beside the ten stored lines.
 
 ## Known-good mechanisms
 
@@ -176,7 +182,7 @@ That picture differs from `demo/vjet_fb.spin`. Accept it on the monitor before i
 1. Set a mode flag so Cog 0 stops `wmf` calls.
 2. Call `wmf.stop`.
 3. Call `i2c.stopCog`.
-4. Call `kbd.stop` in this bring-up only. Graphics has no free cog. The final build keeps the keyboard on the FTDI cog.
+4. Stop the input that did not request graphics. Control-G calls `kbd.stop`. The PS/2 chord calls `term.stop`. Graphics has no free cog. The final build keeps the keyboard on the FTDI cog.
 5. Wait a short blank so the text driver has left the pins. Start at 250 ms. Shorten it only after a lock.
 6. Start the framebuffer VGA cog on pin group 2 (`16/8`).
 7. Start three render cogs. Pass the same buffers and the same control block.
@@ -198,7 +204,7 @@ The chord uses the same guard as Enter graphics. If `z80XmSess` or `hostXm` is s
 
 The return chord, Ctrl+Alt+Del, Enter text, and a backplane `/RESET` all stop the draw cog, the three render cogs, and the framebuffer VGA cog. Then they call `wmf.init`, `i2c.startCog`, and `kbd.start`.
 
-In graphics mode, `readZ80` still drains the ACIA receive FIFO and still writes FTDI. The text VGA cog is already stopped. `termToZ80` stays. This bring-up does not call `kbdToZ80` while `gfxMode` is set. The final build calls `kbdToZ80` in that branch.
+In graphics mode, `readZ80` still drains the ACIA receive FIFO. It writes FTDI only while that cog is running. The text VGA cog is already stopped. The FTDI arm calls `termToZ80`. The PS/2 arm calls `kbdToZ80`. The final build calls `kbdToZ80` in that branch.
 
 ### Stage 1 checks
 

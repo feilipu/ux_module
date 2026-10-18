@@ -116,6 +116,18 @@ PUB txn(bytechr, count)
     tx(bytechr)
 
 
+PUB healRings | m
+{{If a head or a tail is outside the ring, mask all four indexes.
+  A running cog reads these longs for every byte. Valid indexes stay.}}
+
+  m := rx_head | rx_tail | tx_head | tx_tail
+  if m & !BUFFER_MASK
+    rx_head &= BUFFER_MASK
+    rx_tail &= BUFFER_MASK
+    tx_head &= BUFFER_MASK
+    tx_tail &= BUFFER_MASK
+
+
 PUB txCheck : truefalse
 {{Check and return true if space in transmit buffer; return immediately.
   Returns: t|f}}

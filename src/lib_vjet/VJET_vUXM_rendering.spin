@@ -8,6 +8,9 @@ CON
   WIDTH = 256   
   NUM_LINES = 240
   LINE_BUFFERS = 8             '' Hub slots; must match VGA tile wrap (line & 7)
+  SPAN_MAX = 24                '' records kept for one scan line
+'' One box, point, line, polygon, or text shape uses one record.
+'' A shape after these 24 records on that line is skipped.
 
   Last_Scanline = NUM_LINES-1 ''final scanline for a frame
 
@@ -23,8 +26,8 @@ CON
 '' WORD end scanline
 
 '' Shape type 1 header - trapezoid stack (16 bytes)
-'' LONG current left edge
-'' LONG current right edge 
+'' LONG current left edge     '' top fixup writes these
+'' LONG current right edge    '' scan lines recompute from the initial edges
 '' LONG initial left edge
 '' LONG initial right edge
 
@@ -100,13 +103,13 @@ d1 if_z jmp #d0 'if not, repeat
 
 ''Main loop for renderer
 new_frame
-        neg prevline,#1
 ''wait until we hit scanline 0 so we can start with a fresh frame
 :waitloop
         rdword currentrequest, request_scanline wz
 if_nz   jmp #:waitloop
 
         mov currentscanline, cognumber ''reset current scanline for COG
+        mov span_ready,#0
 
         rdword dlist_base, dlist_ptr_adr  '' read adress of display list
         'wrword dlist_base, dlist_in_use
@@ -192,31 +195,65 @@ if_nc   jmp #:traplp
 '' ACTUAL LINE RENDERING STARTS HERE!
 '' ==================================                 
 setup_line
-        mov display_base,scanlines ' Calculate start of hub buffer for this scanline
+        tjnz span_ready,#:paint
+        mov prep_line,currentscanline
+        jmpret span_ret,#:build_spans
+:paint
+        mov span_ready,#0
+        mov display_base,scanlines
         mov d0,currentscanline
         and d0,#7
-        'mov line_n_7,d0 'preserve (scanline&7) for later
         shl d0,#8
         add display_base,d0
-        ' prepare speed hack
-        mov currentscanline_haxx,currentscanline
+
+        ' Fill first. A full-width first span supplies that colour.
+        mov span_color,black
+        mov span_i,#0
+        tjz span_count,#:fill
+        call #load_rec
+        tjnz rec_text,#:fill
+        tjnz poly_left,#:fill
+        cmp poly_right,#WIDTH wz
+if_ne   jmp #:fill
+        mov d0,poly_color
+        mov span_color,d0
+        shl d0,#8
+        or span_color,d0
+        mov d0,span_color
+        shl d0,#16
+        or span_color,d0
+        mov span_i,#1
+:fill
+        mov pixel_ptr,display_base
+        mov pixel_iter,#WIDTH/4
+:fillp  wrlong span_color,pixel_ptr
+        add pixel_ptr,#4
+        djnz pixel_iter,#:fillp
+
+:sloop  cmp span_i,span_count wc
+if_ae   jmp #:scanline_finished
+        call #load_rec
+        tjnz rec_text,#:textshape
+        shl poly_left,#16
+        shl poly_right,#16
+        call #draw_span
+:textdone
+        add span_i,#1
+        jmp #:sloop
+
+' Build prep_line into cog records. No pixel writes.
+' A text shape stores its list address among the spans.
+' Enter with jmpret span_ret. Return with jmp span_ret.
+:build_spans
+        mov currentscanline_haxx,prep_line
         add currentscanline_haxx,#1
         shl currentscanline_haxx,#16
-        
-        test currentscanline,#1 wc ' scanline odd/even into C
-        muxc coloroffset,#1 ' toggle between 2 and 3
-
-        mov pixel_ptr,display_base
-
-
-        mov pixel_iter,#WIDTH/4
-:loop   wrlong black,pixel_ptr
-        add pixel_ptr,#4
-        djnz pixel_iter,#:loop
-
+        test prep_line,#1 wc
+        muxc coloroffset,#1
+        mov span_count,#0
         mov dlist_next,dlist_base
-        jmp #:nextshape        
-        
+        jmp #:nextshape
+
 :shapeloop
         mov dlist_ptr,dlist_next
         rdword dlist_next,dlist_ptr
@@ -235,76 +272,69 @@ if_ae   jmp #:nextshape
 
         sub dlist_ptr,#2
 
-        'wait for shape sync
-        cmp poly_top,currentscanline wz  ' is first line of shape? 
-if_e    jmp #:synced ' not if first line
-        mov d1,sync_timeout
-:syncloop
-        rdbyte d0,dlist_ptr
-        cmp d0,currentscanline wz
-if_nz   djnz d1,#:syncloop ' if we don't get shape sync in a reasonable timeframe, render anyways
-        cmp poly_top,currentscanline wz  ' is first line of shape?  
-:synced        
-        mov poly_syncptr,dlist_ptr ' remember ptr to sync byte for later
-
-        add dlist_ptr,#1        
+        ' Each cog owns every third line.
+        ' Rebuild both edges from the initial edges and the slopes.
+        ' Do not wait for another render cog. Do not write the edges back.
+        add dlist_ptr,#1
         rdbyte shape_type,dlist_ptr
         add dlist_ptr,#5 ' move dlist ptr to start of shape data
 
-        cmp shape_type,#SHP_TRAPSTACK+1 wc 
+        cmp shape_type,#SHP_TRAPSTACK+1 wc
 if_ae   jmp #:othershapes
 
-        ' read edges
-        mov poly_edgebuf,dlist_ptr
-        mov trap_lines,currentscanline
-if_e    add dlist_ptr,#8 ' if first line of shape, read starting edges 
+        add dlist_ptr,#8 ' skip the current edges
         rdlong poly_left,dlist_ptr
-        sub trap_lines,poly_top
         add dlist_ptr,#4
         rdlong poly_right,dlist_ptr
         add dlist_ptr,#4
-if_ne   add dlist_ptr,#8 ' if first line of shape, fixup pointer
+        mov trap_lines,prep_line
+        sub trap_lines,poly_top
 
-        ' find current trapezoid (slightly unrolled for speed)
-:traplp rdword d0,dlist_ptr
-        cmpsub trap_lines,d0 wc,wz
-if_c    add dlist_ptr,#3*4
-if_c    rdword d0,dlist_ptr
-if_nc   jmp #:trapfound
-        cmpsub trap_lines,d0 wc,wz
-if_c    add dlist_ptr,#3*4
-if_c    jmp #:traplp
-:trapfound
+:traplp rdword d0,dlist_ptr wz
+if_z    jmp #:nextshape
+        cmp trap_lines,d0 wc
+if_b    jmp #:thistrap
+        add dlist_ptr,#4
+        rdlong v1,dlist_ptr
+        mov v2,d0
+        call #satmul
+        adds poly_left,vRes
+        add dlist_ptr,#4
+        rdlong v1,dlist_ptr
+        mov v2,d0
+        call #satmul
+        adds poly_right,vRes
+        sub trap_lines,d0
+        add dlist_ptr,#4
+        jmp #:traplp
 
+:thistrap
         add dlist_ptr,coloroffset ' 2 or 3
         rdbyte poly_color,dlist_ptr
         sub dlist_ptr,coloroffset
-        add dlist_ptr,#2+2
-        rdlong slope_left,dlist_ptr
         add dlist_ptr,#4
-        rdlong slope_right,dlist_ptr
+        rdlong v1,dlist_ptr
+        mov v2,trap_lines
+        tjz v2,#:leftready
+        call #satmul
+        adds poly_left,vRes
+:leftready
+        add dlist_ptr,#4
+        rdlong v1,dlist_ptr
+        mov v2,trap_lines
+        tjz v2,#:rightready
+        call #satmul
+        adds poly_right,vRes
+:rightready
+        call #store_span
+        jmp #:nextshape
 
-
-        call #draw_span
-
-        ' write back edges
-
-        adds poly_left,slope_left    
-        wrlong poly_left,poly_edgebuf
-        add poly_edgebuf,#4     
-        adds poly_right,slope_right
-        wrlong poly_right,poly_edgebuf
 :nextshape_sync
-        ' write sync
-        mov d0,currentscanline
-        add d0,#1
-        cmp poly_bottom,d0 wz
-if_e    neg d0,#1
-        wrbyte d0,poly_syncptr
 
  
 :nextshape
         tjnz dlist_next,#:shapeloop
+        jmp span_ret
         '}        
         
         'uncomment to enable diagonal line that aids in debugging
@@ -317,17 +347,26 @@ if_e    neg d0,#1
 
 ''scanline rendering is finished, wait until next linebuffer is available
 :scanline_finished
-'' wait until TV requests the scanline we rendered
+'' Record the next line while this cog waits.
+'' The slot write stays behind the same 7-line lead.
+        mov prep_line,currentscanline
+        add prep_line,total_cogs
+        cmp prep_line,#Last_Scanline wc,wz
+if_a    jmp #:linewait
+        jmpret span_ret,#:build_spans
 :linewait
         rdword currentrequest, request_scanline wz
         cmp currentscanline,#16 wc
 if_z_and_nc jmp #new_frame
-        cmps currentrequest, prevline wz, wc
+        mov d0,currentscanline
+        add d0,total_cogs
+        sub d0,#LINE_BUFFERS
+        cmps currentrequest,d0 wz,wc
 if_be   jmp #:linewait
 
 :scanlinedone
-        mov prevline,currentscanline
         add currentscanline, total_cogs
+        mov span_ready,#1
         cmp currentscanline,#Last_Scanline wc,wz
 if_be   jmp #setup_line
         jmp #new_frame
@@ -336,9 +375,10 @@ if_be   jmp #setup_line
 '' handle other shapes... 
 :othershapes
         cmp shape_type,#SHP_TEXT wz ' text?
-if_e    jmp #:textshape
+if_e    call #store_text
+if_e    jmp #:nextshape
         cmp shape_type,#SHP_BOX wz
-if_ne   jmp #:nextshape_sync
+if_ne   jmp #:nextshape
 :boxshape
         '' BOX DRAWING
         ' get stuff from display list
@@ -351,8 +391,8 @@ if_ne   jmp #:nextshape_sync
         rdbyte poly_color,dlist_ptr
         'sub dlist_ptr,coloroffset '' no further dlist reads, don't need to fix ptr
 
-        call #draw_span
-        jmp #:nextshape_sync
+        call #store_span
+        jmp #:nextshape
  
 
 :textshape
@@ -384,7 +424,7 @@ if_ne   jmp #:nextshape_sync
         mov text_pxwidth,#1
         test text_scale,#%01_00000 wc
         test text_scale,#%10_00000 wz
-if_nz_and_c  jmp #:nextshape_sync ' illegal
+if_nz_and_c  jmp #:textdone ' illegal
 
         ' prepare color
         ' put poly_color into all 4 bytes of span_color
@@ -415,7 +455,7 @@ if_nz   andn poly_left,#%10
 :chrloop
         rdbyte d0,strptr wz
         cmps poly_left,#WIDTH wc
-if_z_or_nc jmp #:nextshape_sync
+if_z_or_nc jmp #:textdone
         add strptr,#1
         cmps poly_left,#0 wc,wz
 if_b    jmp #:chrdone
@@ -446,6 +486,70 @@ if_nz   jmp #:tplp
 
         jmp #:chrloop
 
+
+store_span
+        mov d0,poly_right
+        sar d0,#16
+        maxs d0,#WIDTH
+        mov d1,poly_left
+        sar d1,#16
+        mins d1,#0
+        cmps d0,d1 wc,wz
+if_be   jmp store_span_ret
+        cmp span_count,#SPAN_MAX wc
+if_ae   jmp store_span_ret
+        shl d1,#9
+        or d1,d0
+        shl d1,#8
+        or d1,poly_color
+        mov span_ptr,span_count
+        add span_ptr,#span_buf
+        movd :stash,span_ptr
+        add span_count,#1
+:stash  mov span_ptr,d1
+store_span_ret
+        ret
+
+store_text
+        cmp span_count,#SPAN_MAX wc
+if_ae   jmp store_text_ret
+        mov d0,dlist_ptr
+        or d0,text_bit
+        mov span_ptr,span_count
+        add span_ptr,#span_buf
+        movd :stashtext,span_ptr
+        add span_count,#1
+:stashtext mov span_ptr,d0
+store_text_ret
+        ret
+
+load_rec
+        mov span_ptr,span_i
+        add span_ptr,#span_buf
+        movs :ldrec,span_ptr
+        mov d0,#0
+:ldrec  mov d0,0-0
+        mov rec_text,#0
+        shl d0,#1 wc
+if_c    mov rec_text,#1
+        shr d0,#1
+        tjnz rec_text,#:astext
+        mov poly_color,d0
+        and poly_color,#$FF
+        shr d0,#8
+        mov poly_right,d0
+        and poly_right,#$1FF
+        shr d0,#9
+        mov poly_left,d0
+        jmp load_rec_ret
+:astext mov dlist_ptr,d0
+        mov poly_top,d0
+        sub poly_top,#4
+        rdword poly_top,poly_top
+        shl poly_top,#16
+        sar poly_top,#16
+load_rec_ret
+        ret
 
 draw_span
         ' range check edges
@@ -577,7 +681,18 @@ newmult       ' setup
               add       vRes, tmp1    ' and add its contribution
               negz      vRes,vRes          
 newmult_ret   ret
-           
+
+' vRes = v1 * v2. v2 is a line count from 0 to 65535.
+' Each add saturates, as repeated ADDS does.
+' v1 stays. v2 becomes 0.
+satmul        mov       vRes,#0
+              mov       tmp1,v1
+              mov       muli,#16
+:sm           shr       v2,#1 wc
+        if_c  adds      vRes,tmp1
+              adds      tmp1,tmp1
+              djnz      muli,#:sm
+satmul_ret    ret
 
 
 ''===========
@@ -597,13 +712,12 @@ junkslope2 long $0000_8431
 }
 
 coloroffset long 2 'toggles between 2 and 3
+text_bit     long $80000000 ' text record: list address in bits 15..0
 
 white long $FF * $01010101
 black long $03 * $01010101
 red   long $CC * $01010101
 green long $4C * $01010101
-
-sync_timeout long 5000
 
 zero long 0
 
@@ -637,7 +751,6 @@ currentrequest res 1
 
 currentscanline res      1 ''current scanline that TV driver is rendering
 currentscanline_haxx res 1 ' speed hack  
-prevline       res       1
 tile_line     res        1
 display_base res         1
 
@@ -658,6 +771,15 @@ poly_syncptr  res 1
 text_scale    res 1
 fontptr       res 1
 strptr        res 1
+
+prep_line     res 1
+span_ready    res 1
+span_count    res 1
+span_i        res 1
+span_ptr      res 1
+span_ret      res 1
+rec_text      res 1
+span_buf      res SPAN_MAX
 
 'kak res 1
 

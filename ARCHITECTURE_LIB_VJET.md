@@ -52,6 +52,14 @@ The Hub scan buffer holds eight logical lines (`LINE_BUFFERS`). The VGA cog disp
 
 Front porch writes line 240. Vsync and the back porch write line 0. Render cogs wait for line 0, then stay behind the VGA cog.
 
+Each render cog takes every third line. It rebuilds both edges from the initial edges and the slopes. It does not wait on the sync byte. The line wait still holds the cog until the beam has passed that slot.
+
+It records the spans before the slot write. The slot write is one fill and then the spans. A full-width first span fills with that colour.
+
+One scan line keeps 24 records. A box, a point, a line, a polygon, or a text shape uses one record. A text shape is stored in list order with the spans. A shape after these 24 records on that line is skipped. The skipped shapes are the front shapes.
+
+Even logical lines use the low colour byte. Odd logical lines use the high colour byte. The VGA cog shows each logical line twice. It forces the low two bits of every colour byte on.
+
 A later handshake wrote line 240 in every blanking phase. With the demo PLL the monitor read 720×480 at 60 Hz and the picture tore. The demo uses the 2021 handshake.
 
 ## Video PLL
@@ -159,11 +167,11 @@ Pins P16–P23 have one owner. `hires_text_vga` (two cogs, 640×480 cells) and `
 | Mode | Video cogs | Other cogs that stay | Free |
 |------|------------|----------------------|------|
 | Text | 2 (`hires_text_vga`) + 1 I2C DDC | Spin, FTDI, ACIA, PS/2 (4) | 1 |
-| Graphics | 1 framebuffer VGA + 3 render | Spin, FTDI, ACIA. PS/2 stops in the bring-up. | 0 |
+| Graphics | 1 slice VGA + 3 render + 1 draw | Spin, ACIA, and the input that requested graphics. The other input stops. | 0 |
 
 The product firmware does not call `enterGraphics`. When graphics work resumes, stop the text pair and `i2c.stopCog` before VECTORJET VGA. Stop VECTORJET, then `wmf.init` and `i2c.startCog`. After `cogstop`, those cogs leave the pins. Then start the other driver.
 
-The final graphics build keeps the PS/2 keyboard. Graphics has no free cog. The keyboard shares the FTDI cog. Detail is in `ARCHITECTURE_UX_MODULE.md`. The shared driver is not in the tree. The bring-up still calls `kbd.stop`.
+The final graphics build keeps the PS/2 keyboard. Graphics has no free cog. The keyboard shares the FTDI cog. Detail is in `ARCHITECTURE_UX_MODULE.md`. The shared driver is not in the tree. The bring-up keeps the input that requested graphics and stops the other input.
 
 Do **not** build the display list on Cog 0 if the ACIA pump must stay live. Cog 0 is the only `acia.tx` writer. `vjet_test` blocks Cog 0 in `Vblank` + `draw`. That starves keyboard, FTDI, and Z80 I/O.
 

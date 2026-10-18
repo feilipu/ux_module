@@ -51,7 +51,11 @@ Resolution in UXM rendering: **WIDTH=256**, **NUM_LINES=240**, **LINE_BUFFERS=8*
 
 The beam-chase picture stays clean with one Spin cog. A second cog in a tight Spin loop tears that picture. Do not draw that path on Cog 0. The free Hub there is about 2 KB.
 
-The framebuffer bring-up is `src/ux_module_vjet.spin`. It stops text VGA, DDC, and the PS/2 cog. It starts one framebuffer VGA cog, three render cogs, and one draw cog. The draw cog uses `drawStack`. Cog 0 returns to the ACIA pump. Two render cogs never write `done`.
+The bring-up is `src/ux_module_vjet.spin`. It stops text VGA, DDC, and the input that did not request graphics. It starts the beam-chase VGA cog, three render cogs, and one draw cog. The draw cog uses `drawStack` (192 longs). Cog 0 returns to the ACIA pump. The slice is eight lines. On 18 Oct 2026 the orbit probe held on that slice. Far triangles are drawn first. This renderer has no 50 percent mix. The render wait starts the next line when the beam has passed current + cogs - 8. With three cogs that lead is 7 logical lines. Each render cog rebuilds both edges from the initial edges and the slopes. It does not read the sync byte. It does not write the current edges. The top fixup still writes those edges for shapes that start above line 0.
+
+The cog records the spans before the slot write. The slot write is one fill and then those spans. A full-width first span fills with that colour.
+
+One scan line keeps 24 records. A box, a point, a line, a polygon, or a text shape uses one record. A text shape is stored in list order with the spans. A shape after these 24 records on that line is skipped. The skipped shapes are the front shapes.
 
 The final build keeps the keyboard. Graphics has no free cog, so the keyboard shares the FTDI cog. That driver is not in the tree.
 
@@ -114,11 +118,11 @@ Bit 1 of that byte asks for a 50 percent mix when the control long `blend` (afte
 
 Even stored lines are bright, bright, dark, dark, bright, bright. Odd stored lines use the inverse order. The user accepted this picture on 17 Oct 2026. It is the known-good image. The forward plan is `3D_WORKPLAN_LIB_VJET.md`. The repair record is `3D_PROCESS_LIB_VJET.md`.
 
-The accepted scene draws 13 triangles and one text shape. That list uses at most 632 bytes. Each demo list is 1200 bytes. The bring-up lists are 64 longs. The bring-up scene is one box, two triangles, and the text " GFX". `set_lines` selects 10 content lines before the cogs start. The demo does not call `set_lines`. A flat triangle is 36 bytes. A general triangle is 48 bytes. A box is 16 bytes and a text shape is 20 bytes.
+The accepted scene draws 13 triangles and one text shape. That list uses at most 632 bytes. Each framebuffer list is 1200 bytes. The slice bring-up lists are 160 longs. The beam-chase demo lists are 900 longs. The scene is the orbit probe. The demo does not call `set_lines`. A flat triangle is 36 bytes. A general triangle is 48 bytes. A box is 16 bytes and a text shape is 20 bytes.
 
 `VJET_vUXM_vga.spin` and `VJET_vUXM_rendering.spin` stay the beam-chase pair. Do not copy the framebuffer `VSCL` into those files.
 
-The 80-line bitmap pair is 20480 bytes. The list stays allocated beside it. On 18 Oct 2026 the next bring-up returns to the eight-line slice. `LINE_BUFFERS` is 8. The slice is 2048 bytes.
+The 80-line bitmap pair is 20480 bytes. The list stays allocated beside it. The bring-up no longer keeps that pair. `LINE_BUFFERS` is 8. The slice is 2048 bytes.
 
 Three render cogs write that slice ahead of the scan. The original renderer used two cogs. Leave `STORED_LINES` at 80. Leave `demo/vjet_fb.spin` as the accepted picture.
 
@@ -130,9 +134,9 @@ Three render cogs write that slice ahead of the scan. The original renderer used
 4. Treat UXM files as board-specialised; do not assume stock VECTORJET v1.0 timing.
 5. Keep the demo handshake. Vsync and the back porch publish line 0. A render cog restarts its frame when the VGA line is 0 and its own line is 16 or more.
 6. Stop text VGA (`wmf.stop`) and the I2C DDC cog (`i2c.stopCog`) before `VJET_vUXM_vga.start`. Stop VECTORJET VGA and `render.stop` before `wmf.init` and `i2c.startCog`. Never two VGA engines on P16–P23. The product top has no `enterGraphics` yet.
-7. On the framebuffer bring-up, Cog 0 keeps the ACIA pump. The draw cog uses `drawStack`. Stop that cog before `screenInit`. Three render cogs stay. Graphics then has no free cog. This bring-up calls `kbd.stop` for that reason.
+7. On the slice bring-up, Cog 0 keeps the ACIA pump. The draw cog uses `drawStack`. Stop that cog before `screenInit`. Three render cogs stay. Graphics then has no free cog. The bring-up keeps the input that requested graphics and stops the other input. Cog 0 does not call `term.tx` while the FTDI cog is stopped.
 
-   The `gfxMode` branch does not call `kbdToZ80`. The final build keeps the keyboard on the FTDI cog. It calls `kbdToZ80` in that branch. The shared driver is not in the tree. Do not load a guess. On the beam-chase path, a second tight Spin loop tears the picture.
+   The FTDI arm calls `termToZ80`. The PS/2 arm calls `kbdToZ80`. The final build keeps the keyboard on the FTDI cog and calls `kbdToZ80` in that branch. The shared driver is not in the tree. Do not load a guess. On the beam-chase path, a second tight Spin loop tears the picture.
 8. Prose: `style-ste-writing`.
 
 ## Related

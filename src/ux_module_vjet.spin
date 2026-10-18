@@ -7,20 +7,17 @@
 ''***************************************
 ''
 '' Stage 1 bring-up top. Boot is the text console.
-'' Control-G on the FTDI link enters the framebuffer. The same byte returns to text.
-'' The store is shorter than the accepted demo. The accepted renderer keeps 80 lines.
-'' Three render cogs publish the frame. The PS/2 cog stops for that session.
+'' Graphics keeps the input that requested it and stops the other input.
+'' Eight line slots. Three render cogs. The scene is the orbit probe.
 '' Cog 0 keeps the ACIA pump. The draw cog has its own stack.
-'' The ACIA cog and the FTDI cog stay up. Product upload remains src/ux_module.spin.
+'' Product upload remains src/ux_module.spin.
 
 CON
 
   _clkmode      = XTAL1 + PLL16X
   _xinfreq      = 7_372_800
 
-  DLIST_SIZE    = 64                                    ' longs in each list. The short scene fits. 300 does not.
-  STORED        = 10                                    ' content lines. One extra line in the buffer stays black.
-  VIS_LINES     = STORED * 3                            ' logical lines in the band
+  DLIST_SIZE    = 160                                   ' longs in each list. The orbit scene stores 340 bytes.
   _STACK        = 256                                   ' Cog 0 stack, in longs. Cog 0 does not draw.
 
 
@@ -148,22 +145,21 @@ VAR
   long  busRstStamp                                     ' CNT at first P5-low sample
 
   byte  gfxMode                                         ' 1: VECTORJET owns P16-P23
+  byte  gfxArm                                          ' GFX_ARM_FTDI or GFX_ARM_KBD while gfxMode is 1
+  byte  gfxBellHold                                     ' 1: eat repeated Control-G until RX is idle
   byte  gfxChordArm                                     ' 1: Ctrl+Alt+G is a new press
   byte  gfxNeedDdc                                      ' 1: start DDC after P5 is released
+  byte  ftdiUp                                          ' 1: FTDI cog is running. readZ80 may call term.tx
   long  gfxReady                                        ' render cogs rdbyte this. Must be long-aligned.
   long  drawCog                                         ' cognew id + 1, or 0
   long  framecount
   long  vga_status                                      ' VECTORJET VGA phase. VGA cog writes it.
-  long  dlist_ptr                                       ' Cog 0 writes it. Render cogs read it.
+  long  dlist_ptr                                       ' Draw cog writes it. Render cogs read it.
   long  dlist1[DLIST_SIZE]                              ' list A
   long  dlist2[DLIST_SIZE]                              ' list B
-  long  go, front, done, stripe0, stripe1, stripe2, fixup, blend
-  long  pix0[(STORED + 1) * 16]
-  long  pix1[(STORED + 1) * 16]
-  long  pal0[(STORED + 1) * 16]
-  long  pal1[(STORED + 1) * 16]
-  long  scratch[render#SCRATCH_LONGS]
-  long  drawStack[128]
+  long  linebuffers[(render#WIDTH * render#LINE_BUFFERS) / 4]
+  long  ox[4], oy[4], oz[4], oc[4]
+  long  drawStack[192]                                  ' Draw cog stack. The next Hub is the FTDI rings.
 
 
 OBJ
@@ -173,13 +169,16 @@ OBJ
       wmf             : "wmf_terminal_vga"
       i2c             : "ddc_i2c"
       acia            : "acia_rc2014"
-      vga             : "VJET_vUXM_vga_fb"
-      render          : "VJET_vUXM_rendering_fb"
+      vga             : "VJET_vUXM_vga"
+      render          : "VJET_vUXM_rendering"
       gl              : "VJET_v01_displaylist"
       font            : "hexfont"
 
 
 CON
+
+  GFX_ARM_FTDI = 1                                      ' Control-G entered graphics. FTDI cog stays.
+  GFX_ARM_KBD  = 2                                      ' PS/2 chord entered graphics. Keyboard cog stays.
 
   gfxChord = kbd#KBD_ASCII_CTRL | kbd#KBD_ASCII_ALT | kbd#KBD_ASCII_G
 
@@ -187,15 +186,15 @@ CON
 PUB main | busHeld
 
   'start the serial terminal, then the text VGA before slower boot work
-  term.start (115200)
+  ftdiUp := term.start (115200)
   screenInit
   term.str (string("UX Module Initialised"))
   term.newLine
 
   ' Hold the 8085 while DDC and the keyboard take their cogs.
-  ' pulseZ80Reset starts the ACIA cog after those, on cog 6.
-  ' Graphics stops text, DDC, and the keyboard. VGA takes cog 2.
-  ' The draw cog takes cog 4. Render then takes cogs 3, 5, and 7.
+  ' pulseZ80Reset starts the ACIA cog after those.
+  ' Graphics stops text VGA, DDC, and the input that did not request it.
+  ' The request input stays. It is the only return path.
   holdZ80Reset
   startDdc
   kbd.start (KBD_DATA_PIN, KBD_CLK_PIN)
@@ -216,7 +215,10 @@ PUB main | busHeld
       hostXm := HOST_XM_OFF
     if not busHeld
       if gfxMode
-        termToZ80
+        if gfxArm == GFX_ARM_KBD
+          kbdToZ80
+        else
+          termToZ80
         readZ80
       elseif inXmodem or hostXmodem
         repeat while kbd.peekKey == gfxChord
@@ -302,11 +304,11 @@ PRI reportDdc
       term.str (i2c.mfgPtr)
       wmf.strScreen (i2c.mfgPtr)
     if i2c.hPix
-      term.tx (" ")
+      hostTx (" ")
       wmf.outScreen (" ")
       term.dec (i2c.hPix)
       wmf.decScreen (i2c.hPix, 4)
-      term.tx ("x")
+      hostTx ("x")
       wmf.outScreen ("x")
       term.dec (i2c.vPix)
       wmf.decScreen (i2c.vPix, 4)
@@ -352,15 +354,18 @@ PUB readZ80 | char, n, need
         acia.tdreHold
       else
         acia.tdreAllow
-    elseif term.txCheck
+    elseif (not ftdiUp) or term.txCheck
       acia.tdreAllow
     else
       acia.tdreHold
 
 
 PRI ftdiNeed(char) : n
-{{FTDI TX slots takeZ80Byte will use for this ACIA byte in the current PARSE_* state.}}
+{{FTDI TX slots takeZ80Byte will use for this ACIA byte in the current PARSE_* state.
+  Zero while the FTDI cog is stopped, so the Z80 drain does not wait on term.tx.}}
 
+  if not ftdiUp
+    return 0
   n := 1
   if z80Parse == PARSE_IDLE
     case char
@@ -373,6 +378,13 @@ PRI ftdiNeed(char) : n
         n := 0
       ASCII_CR:
         n := 2                                          ' term.newLine sends CR then LF
+
+
+PRI hostTx(c)
+{{One FTDI byte when that cog is running. A stopped cog must not fill the ring.}}
+
+  if ftdiUp
+    term.tx (c)
 
 
 PRI inXmodem : truefalse
@@ -393,7 +405,7 @@ PRI takeZ80Byte(char)
   case z80Parse
 
     PARSE_ESC:                                          ' byte after ESC
-      term.tx (char)
+      hostTx (char)
       if ( char == ASCII_LB )                           ' CSI Control Sequence Introducer
         z80N := 0
         z80Parse := PARSE_CSI
@@ -402,7 +414,7 @@ PRI takeZ80Byte(char)
         z80Parse := PARSE_IDLE
 
     PARSE_CSI:                                          ' ESC [ n ...
-      term.tx (char)
+      hostTx (char)
       if ( char => "0" AND char =< "9" )
         z80N := z80N*10 + char - ASCII_0
       elseif ( char == ASCII_SEMI )
@@ -413,7 +425,7 @@ PRI takeZ80Byte(char)
         z80Parse := PARSE_IDLE
 
     PARSE_CSI_M:                                        ' ESC [ n ; m ...
-      term.tx (char)
+      hostTx (char)
       if ( char => "0" AND char =< "9" )
         z80M := z80M*10 + char - ASCII_0
       else
@@ -422,12 +434,12 @@ PRI takeZ80Byte(char)
         z80Parse := PARSE_IDLE
 
     PARSE_XMODEM_N:                                     ' packet number
-      term.tx (char)
+      hostTx (char)
       z80N := char
       z80Parse := PARSE_XMODEM_M
 
     PARSE_XMODEM_M:                                     ' complemented packet number
-      term.tx (char)
+      hostTx (char)
       z80M := char
       if ( z80N == $FF - z80M )
         z80Remain := z80XmLen                           ' 128 or 1024 data; trailers follow
@@ -437,13 +449,13 @@ PRI takeZ80Byte(char)
         z80Parse := PARSE_IDLE                          ' n/~n already on FTDI, no payload yet
 
     PARSE_XMODEM:                                       ' payload to FTDI only (not VGA)
-      term.tx (char)
+      hostTx (char)
       z80Remain := z80Remain - 1
       if ( z80Remain == 0 )
         z80Parse := PARSE_XMODEM_CS
 
     PARSE_XMODEM_CS:                                    ' checksum or CRC bytes; never delimiters
-      term.tx (char)
+      hostTx (char)
       z80XmTrail := z80XmTrail - 1
       if ( z80XmTrail == 0 )
         z80Parse := PARSE_IDLE
@@ -458,7 +470,7 @@ PRI takeZ80Idle(char)
   case char
 
     XMODEM_SOH:                                         ' XMODEM-128 Start of Header
-      term.tx (char)
+      hostTx (char)
       z80XmLen := 128
       if z80XmCrc
         z80XmTrail := 2
@@ -468,7 +480,7 @@ PRI takeZ80Idle(char)
       z80Parse := PARSE_XMODEM_N
 
     XMODEM_STX:                                         ' XMODEM-1K Start of Header (CRC-16)
-      term.tx (char)
+      hostTx (char)
       z80XmLen := 1024
       z80XmCrc := 1
       z80XmTrail := 2
@@ -476,37 +488,38 @@ PRI takeZ80Idle(char)
       z80Parse := PARSE_XMODEM_N
 
     XMODEM_EOT, XMODEM_ETB, XMODEM_CAN:
-      term.tx (char)
+      hostTx (char)
       z80XmSess := 0
 
     ASCII_BS, ASCII_DEL:                                ' backspace (edit), delete
       if wmf.getColScreen > 0
-        term.tx (ASCII_BS)
-        term.tx (ASCII_SPACE)
-        term.tx (ASCII_BS)
+        hostTx (ASCII_BS)
+        hostTx (ASCII_SPACE)
+        hostTx (ASCII_BS)
         textOut (wmf#BS)
         textOut (wmf#ASCII_SPACE)
         textOut (wmf#BS)
       syncCurs
 
     ASCII_TAB:                                          ' horizontal tab; WMF owns glyph cursor
-      term.tx (char)
+      hostTx (char)
       wmf.outScreen (wmf#TB)
       syncCurs
 
     ASCII_LF:                                           ' eat linefeed from Z80 (CP/M CR+LF)
 
     ASCII_CR:                                           ' carriage return
-      term.newLine                                      ' CR+LF for PST / typical hosts
+      if ftdiUp
+        term.newLine                                    ' CR+LF for PST / typical hosts
       textOut (wmf#NL)
       syncCurs
 
     ASCII_ESC:                                          ' escape; next byte decides CSI vs literal
-      term.tx (char)
+      hostTx (char)
       z80Parse := PARSE_ESC
 
     other:                                              ' all other cases
-      term.tx (char)
+      hostTx (char)
       echoPrintable (char)
 
 
@@ -651,7 +664,7 @@ PUB kbdToZ80 | char, n
           if gfxMode
             leaveGraphics
           else
-            enterGraphics
+            enterGraphics (GFX_ARM_KBD)
         next
 
       case char
@@ -700,18 +713,26 @@ PUB kbdToZ80 | char, n
 
 PUB termToZ80 | n, b
 {{FTDI RX into the ACIA TX FIFO. Same cog as kbdToZ80. No XON/XOFF.
-  Host packet machine: EOT/ETB/CAN end the session only in OFF or GAP.}}
+  Host packet machine: EOT/ETB/CAN end the session only in OFF or GAP.
+  A Control-G that enters or leaves graphics eats repeats until RX is idle.}}
 
+  if gfxBellHold and term.rxCount == 0
+    gfxBellHold := 0
+    return
   n := 0
   repeat while term.rxCount > 0 and acia.txCheck and n < PUMP_LIMIT
     b := term.rx
     if b == ASCII_BELL and not inXmodem and not hostXmodem
       n++
+      if gfxBellHold
+        next
       if gfxMode
         leaveGraphics
       else
-        enterGraphics
+        enterGraphics (GFX_ARM_FTDI)
+      gfxBellHold := 1
       next
+    gfxBellHold := 0
     takeHostXm (b)
     acia.tx (b)
     n++
@@ -782,8 +803,9 @@ PRI releaseZ80Reset
 PRI discardHostInputs
 {{Drop FTDI RX and PS/2 so they cannot refill the ACIA TX FIFO.}}
 
-  repeat while term.rxCount > 0
-    term.rx
+  if ftdiUp
+    repeat while term.rxCount > 0
+      term.rx
   repeat while kbd.gotKey
     kbd.getKey
 
@@ -798,7 +820,9 @@ PRI wipeAciaWhileReset
   if gfxMode
     stopVectorjet
     screenInit
+    reviveInput
     gfxMode := 0
+    gfxArm := 0
     gfxNeedDdc := 1
   discardHostInputs
   acia.start (PORT_DEFAULT)                             ' stop + cognew; last_rdr := 0
@@ -847,28 +871,33 @@ PRI panicReset
   wipeAciaWhileReset
   textOut (wmf#CS)
   syncCurs
-  if term.txSpace => 4                                  ' ESC [ 2 J
+  if ftdiUp and term.txSpace => 4                       ' ESC [ 2 J
     term.clear
   releaseZ80Reset                                       ' release Z80 after local state is quiet
 
 
-PRI enterGraphics
-{{Stop text VGA, DDC, and the PS/2 cog, then start the framebuffer.
-  Graphics uses all eight cogs. The final build keeps the keyboard on the FTDI cog.
-  The shared driver is not here. Cog 0 returns to the ACIA pump.
-  The ACIA cog and the FTDI cog stay up.}}
+PRI enterGraphics(arm)
+{{Stop text VGA, DDC, and the input cog that did not request graphics.
+  arm is GFX_ARM_FTDI or GFX_ARM_KBD. That input stays and is the return path.
+  Graphics uses all eight cogs. Cog 0 returns to the ACIA pump.}}
 
   if gfxMode or inXmodem or hostXmodem
     return
+  gfxArm := arm
   gfxMode := 1
   wmf.stop
   i2c.stopCog
-  kbd.stop
+  if arm == GFX_ARM_FTDI
+    kbd.stop
+  else
+    ftdiUp := 0
+    term.stop
   waitcnt (clkfreq / 4 + cnt)                           ' 250 ms blank
   if not startVectorjet
-    term.str (string("Graphics start failed"))
-    term.newLine
     restoreText
+    if ftdiUp and term.txSpace => 24
+      term.str (string("Graphics start failed"))
+      term.newLine
 
 
 PRI leaveGraphics
@@ -878,19 +907,36 @@ PRI leaveGraphics
     restoreText
 
 
+PRI reviveInput
+{{Start the input cog that graphics stopped. The request cog stays as it is.}}
+
+  if gfxArm == GFX_ARM_KBD
+    if term.startRxTx (31, 30, 0, 115200)              ' no boot delay. The host is already open.
+      ftdiUp := 1
+  else
+    term.healRings
+    kbd.start (KBD_DATA_PIN, KBD_CLK_PIN)
+    gfxChordArm := 1
+
+
 PRI restoreText
-{{Text VGA, the DDC cog, then the PS/2 cog. P5 must already be released.}}
+{{Text VGA, the stopped input cog, one FTDI line, then DDC.
+  P5 must already be released. The VGA banner does not go to FTDI.}}
 
   stopVectorjet
   screenInit
+  reviveInput
+  if ftdiUp and term.txSpace => 12
+    term.str (string("Text mode"))
+    term.newLine
   i2c.startCog
-  kbd.start (KBD_DATA_PIN, KBD_CLK_PIN)
   gfxMode := 0
+  gfxArm := 0
   gfxNeedDdc := 0
 
 
 PRI stopVectorjet
-{{Stop the draw cog, the render cogs, and the framebuffer VGA cog.
+{{Stop the draw cog, the render cogs, and the slice VGA cog.
   Do this before screenInit.}}
 
   gfxReady := 0
@@ -900,35 +946,28 @@ PRI stopVectorjet
   vga.stop
 
 
-PRI startVectorjet : ok | t0
-{{Start the framebuffer VGA cog and three render cogs.
-  The draw cog posts the first list. Then Cog 0 sets the ready flag.
+PRI startVectorjet : ok
+{{Start the slice VGA cog and three render cogs.
+  The draw cog publishes on the front porch, then builds the other list.
   gfxReady is a long. On failure, stop every cog this call started.}}
 
   gfxReady := 0
   framecount := 0
+  vga_status := 0
   longfill (@dlist1, 0, DLIST_SIZE)
   longfill (@dlist2, 0, DLIST_SIZE)
-  longfill (@pix0, 0, (STORED + 1) * 16)
-  longfill (@pix1, 0, (STORED + 1) * 16)
-  longfill (@pal0, 0, (STORED + 1) * 16)
-  longfill (@pal1, 0, (STORED + 1) * 16)
-  longfill (@go, 0, 8)
-  dlist_ptr := @dlist1
-  if not vga.set_lines (STORED)
+  longfill (@linebuffers, 0, (render#WIDTH * render#LINE_BUFFERS) / 4)
+  dlist_ptr := @dlist2
+  if not vga.start (VGA_BASE_PIN / 8, @linebuffers, @vga_status)
     return 0
-  if not render.set_lines (STORED)
-    return 0
-  if not vga.start (VGA_BASE_PIN / 8, @pix0, @pal0, @go, @vga_status)
-    return 0
-  if not render.start (0, 3, @scratch, @dlist_ptr, @pix0, @pal0, @go, @gfxReady)
+  if not render.start (0, 3, @linebuffers, @dlist_ptr, @vga_status, @gfxReady)
     vga.stop
     return 0
-  if not render.start (1, 3, @scratch, @dlist_ptr, @pix0, @pal0, @go, @gfxReady)
+  if not render.start (1, 3, @linebuffers, @dlist_ptr, @vga_status, @gfxReady)
     render.stop
     vga.stop
     return 0
-  if not render.start (2, 3, @scratch, @dlist_ptr, @pix0, @pal0, @go, @gfxReady)
+  if not render.start (2, 3, @linebuffers, @dlist_ptr, @vga_status, @gfxReady)
     render.stop
     vga.stop
     return 0
@@ -937,42 +976,111 @@ PRI startVectorjet : ok | t0
     render.stop
     vga.stop
     return 0
-  t0 := cnt
-  repeat until (go == 1) or ((cnt - t0) > (clkfreq >> 1))
-  if go <> 1
-    return 0
   gfxReady := 1
   return 1
 
 
 PRI drawLoop
-{{Build one list, publish it, then wait until the render cogs finish.
+{{Publish the finished list at the front porch. Build the other list.
   Stack is drawStack. Text VGA is stopped.}}
 
   repeat
-    if go & 1
+    vblank
+    if framecount & 1
+      dlist_ptr := @dlist1
       gl.start (@dlist2, constant(DLIST_SIZE * 4))
     else
+      dlist_ptr := @dlist2
       gl.start (@dlist1, constant(DLIST_SIZE * 4))
     \drawScene
     gl.done
-    if go & 1
-      dlist_ptr := @dlist2
-    else
-      dlist_ptr := @dlist1
-    go++
-    repeat until done == go
     framecount++
 
 
-PRI drawScene | a
+PRI vblank
+{{Wait until bit 16 rises. That edge is the front porch.}}
 
-  gl.set_clip (0, VIS_LINES << 16, 0, render#WIDTH << 16)
-  gl.box (0, 0, render#WIDTH, VIS_LINES, $1818)
-  a := framecount << 5
-  gl.triangle (80 << 16 + sin(a) * 28, 12 << 16 + sin(a + 2048) * 6, 80 << 16 + sin(a + 2730) * 28, 12 << 16 + sin(a + 4778) * 6, 80 << 16 + sin(a + 5460) * 28, 12 << 16 + sin(a + 7508) * 6, $C0C0)
-  gl.triangle (160 << 16 + sin(a + $400) * 24, 12 << 16 + sin(a + 2048) * 6, 160 << 16 + sin(a + 2730) * 24, 12 << 16 + sin(a + 4778) * 6, 160 << 16 + sin(a + 5460) * 24, 12 << 16 + sin(a + 7508) * 6, $55AA)
-  gl.text_centered (render#WIDTH >> 1, 21, 0, 0, string(" GFX"), font.get, $FFFF)
+  repeat while vga_status & $01_00_00
+  repeat until vga_status & $01_00_00
+
+
+PRI drawScene | i, t
+
+  gl.set_clip (0, render#NUM_LINES << 16, 0, render#WIDTH << 16)
+  gl.box (0, 0, render#WIDTH, render#NUM_LINES, $1818)
+  placeOrbit
+  i := 0
+  repeat 4
+    if oz[i] => 0
+      quit
+    tri (ox[i], oy[i], 16, 18, oc[i])
+    i++
+  t := bounce (150)
+  tri ((24 + t) << 16, 118 << 16, 26, 11, $55AA)
+  t := bounce (150)
+  tri (72 << 16, (30 + t) << 16, 14, 16, $C0C0)
+  t := bounce (160)
+  tri ((16 + t) << 16, (200 - t) << 16, 16, 14, $66BB)
+  t := bounce (110)
+  tri ((28 + t) << 16, (196 + (t ~> 3)) << 16, 18, 12, $AAFF)
+  tri ((210 - t) << 16, (214 - (t ~> 3)) << 16, 18, 12, $7474)
+  t := bounce (36)
+  tri ((168 + t) << 16, 22 << 16, 12, 8, $80C0)
+  repeat while i < 4
+    tri (ox[i], oy[i], 16, 18, oc[i])
+    i++
+
+
+PRI placeOrbit | i, a
+{{Four triangles on a shallow ellipse. Negative z is far.}}
+
+  oc[0] := $0055
+  oc[1] := $F0F2
+  oc[2] := $AAFF
+  oc[3] := $4848
+  repeat i from 0 to 3
+    a := (framecount << 4) + (i << 11)
+    ox[i] := (128 << 16) + (sin (a + $800) * 70)
+    oy[i] := (118 << 16) + (sin (a) * 10)
+    oz[i] := sin (a)
+  sortOrbit
+
+
+PRI sortOrbit | i, j, zx, xx, yx, cx
+{{Far triangles first. A later triangle covers an earlier one.}}
+
+  repeat i from 1 to 3
+    zx := oz[i]
+    xx := ox[i]
+    yx := oy[i]
+    cx := oc[i]
+    j := i
+    repeat while j > 0
+      if oz[j - 1] =< zx
+        quit
+      oz[j] := oz[j - 1]
+      ox[j] := ox[j - 1]
+      oy[j] := oy[j - 1]
+      oc[j] := oc[j - 1]
+      j--
+    oz[j] := zx
+    ox[j] := xx
+    oy[j] := yx
+    oc[j] := cx
+
+
+PRI tri(x, y, hx, hy, colour)
+{{x and y are 16.16. hx and hy are pixels.}}
+
+  gl.triangle (x, y - (hy << 16), x - (hx << 16), y + (hy << 16), x + (hx << 16), y + (hy << 16), colour)
+
+
+PRI bounce(span) : t | n
+
+  n := span << 1
+  t := framecount // n
+  if t => span
+    t := n - t
 
 
 PRI sin(angle) : s

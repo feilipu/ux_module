@@ -140,7 +140,7 @@ tools/ux-screen.sh
    `CR_8N1` in `acia_rc2014.spin` is the 6850 control image. Word select is not driven. Keep that image.
 7. The final graphics build keeps the PS/2 keyboard. Text mode has one free cog. Graphics mode has no free cog. The keyboard shares the FTDI cog. `keyboard_ps2` is 332 longs and waits on the clock. `terminal_ftdi` is 107 longs and moves a pin every 1024 clocks.
 
-   A polled driver can share the cog. It is not in the tree. The bring-up still calls `kbd.stop`. The `gfxMode` branch does not call `kbdToZ80`. Do not load a merged driver until that driver exists.
+   A polled driver can share the cog. It is not in the tree. Do not load a merged driver until that driver exists. The bring-up keeps one input cog. Control-G keeps the FTDI cog and stops the PS/2 cog. The PS/2 chord keeps the keyboard cog and stops the FTDI cog. Cog 0 polls only that input. It does not call `term.tx` while the FTDI cog is stopped.
 8. Prose: `style-ste-writing`.
 
 ## Related
