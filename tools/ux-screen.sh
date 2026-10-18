@@ -229,7 +229,8 @@ sock="uxmod"
     sleep 0.1
   done
 ) &
-if /usr/bin/screen -ls 2>/dev/null | grep -q "\.${sock}"; then
+# Apple screen exits non-zero when a session exists. With pipefail that starts a second session.
+if { /usr/bin/screen -ls 2>/dev/null || true; } | grep -q "\.${sock}"; then
   print -u2 "reattach session $sock (FTDI already open)"
   /usr/bin/screen -d -r "$sock" || true
 else

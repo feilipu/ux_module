@@ -2,6 +2,8 @@
 
 This plan covers three stages. Stage 1 puts the known-good framebuffer on the same firmware as the UX Module text console. Stage 2 chooses the command path from CP/M-IDE. Stage 3 adds the CP/M-IDE library and tools.
 
+The live bring-up is the beam-chase slice in `src/ux_module_vjet.spin`. The EEPROM image is the 19772-byte test card. Stage 1 below records the framebuffer trial.
+
 The repair history is `3D_PROCESS_LIB_VJET.md`. This file does not repeat those loads.
 
 Product `main` stays in text mode until stage 1 passes its checks.
@@ -12,7 +14,8 @@ Product `main` stays in text mode until stage 1 passes its checks.
 |------|---------|
 | UX Module | RC2014 board. Propeller 1 (P8X32A). Product top is `src/ux_module.spin`. |
 | Text mode | `hires_text_vga` on P16–P23. Two VGA cogs. 640×480 cells, 80×40. |
-| Graphics mode | The framebuffer VGA cog on P16–P23. One VGA cog. 256×240 logical lines. |
+| Graphics mode | VECTORJET on P16–P23. The live bring-up is the slice. The accepted demo is the framebuffer. |
+| Slice | Beam-chase VGA cog and three render cogs. Eight line buffers. The live bring-up. |
 | Beam chase | `VJET_vUXM_vga` and `VJET_vUXM_rendering`. Demo is `demo/vjet_test.spin`. |
 | Framebuffer | `VJET_vUXM_vga_fb` and `VJET_vUXM_rendering_fb`. Demo is `demo/vjet_fb.spin`. |
 | Display list | Hub list of shapes. The render cogs read it. |
@@ -77,7 +80,9 @@ Hub is 32 KB. OpenSpin 1.00.81 measured these images.
 | `demo/vjet_fb.spin` | 8044 | about 944 | Accepted file `build/vjet_fb.binary`. Current source compiles to 8216. |
 | `vjet_fb_probe.spin` | 6696 | — | Stripe and glass check. Was on EEPROM. Not a demo. |
 | `vjet_fb_cube.spin` | 7520 | — | Stage 2 harness. Current source compiles to 7676. Not loaded. |
-| `ux_module_vjet.spin` | 20408 | 1148 | Framebuffer bring-up. Ten content lines. |
+| `ux_module_vjet.spin` | 20408 | 1148 | Framebuffer bring-up on 17 Oct. Ten content lines. |
+| `ux_module_vjet.spin` | 19772 | 1160 | EEPROM test card. 18 longs remain above the stack reserve. |
+| `ux_module_vjet.spin` | 16128 | 4792 | Stream copier. `openspin -u`. Font kept. Not loaded. |
 
 The accepted bitmap does not fit in the bring-up. Two bitmaps and two palettes at 80 lines are 20480 bytes. The bring-up keeps 10 content lines and one black line. Each content line needs 256 bytes.
 
@@ -98,6 +103,10 @@ The orbit probe on that same slice also held. The user confirmed it. The program
 The lead change is in the source. Each render cog keeps a lead of 7 logical lines. The previous lead was about 5 lines. The input split is the EEPROM image. The program is 18828 bytes. Control-G keeps FTDI. The PS/2 chord stops FTDI. The PS/2 arm was not tested.
 
 Cog 0 is the only `acia.tx` writer. Do not draw on Cog 0 while the ACIA stays live.
+
+The live image is the beam-chase test card. The program is 19772 bytes. Free Hub above the stack pointer is 1160 bytes. Cog 0 keeps a 256-long stack and 16 longs of free space. 18 longs remain above that pair. Each list is 296 longs, which is 1184 bytes.
+
+The 20408-byte row is the framebuffer bring-up. Ordered-work steps 3 to 5 use that wording. The next task is the streamed list in Stage 2.
 
 One shape header is 8 bytes. A flat triangle is 36 bytes. A general triangle is 48 bytes. A box is 16 bytes. A text shape is 20 bytes. The scene counts are in Capabilities.
 
@@ -224,13 +233,77 @@ Run these in order. Stop on the first failure.
 
 The 8085 must build scenes without a new Propeller binary for each model. The Propeller does not parse STL or OBJ for each frame. A cooker on CP/M or on the Mac converts the file once.
 
-Stage 1 steps 3 to 5 stay open. The cube harness starts the maths trial. The command cog waits for the bring-up switch, because that flag sits on the ACIA cog.
+The cube harness stays the maths trial. It uses the framebuffer cogs and it is not loaded. The next code is the streamed list on the beam-chase bring-up. The ACIA cog stays unchanged. The mode flag waits until that handler fits and a DIR test is possible.
 
 ### Cube harness
 
 `src/lib_vjet/vjet_fb_cube.spin` uses the framebuffer cogs. The mesh has 8 vertices and 12 triangles. Far faces are drawn first. RES draws the resident mesh. STR draws the same faces from a stream table. The label switches about once a second.
 
 The stream record is six signed pixels and one colour word. That is 14 bytes on the wire. Twelve triangles are 168 bytes. The harness keeps each pixel in a long so the sign survives. The program compiles to 7520 bytes. It is not loaded. `blend` stays clear.
+
+### Streamed lists
+
+The ACIA receive ring is the pipe. It holds 512 bytes. Cog 0 is its only reader. The ACIA cog does not write a display list.
+
+Cog 0 copies a complete list into the display list that the render cogs do not read. The pair is `dlist1` and `dlist2`. Each list is 1184 bytes. That Hub remains when a cog stops.
+
+The first list is in Hub before `enterGraphics`. Later lists use the same pair. A moving picture needs the ACIA feed for the whole graphics session. A static picture needs no more bytes.
+
+The draw cog publishes the filled pointer on the front porch. It then names the other list as the next fill target. A list that is still filling stays unpublished. The published list stays on the screen.
+
+The draw cog does not call `gl.start` on a list that Cog 0 is filling. After the first streamed list is on screen, the draw cog does not rebuild the test card.
+
+`startVectorjet` does not clear a list that is ready or still filling. It may clear the other list. The first frames can be blank. The porch then shows the stored list. A return to text clears the shown flag. The next entry shows the test card unless a list is ready or still filling.
+
+Graphics has no spare cog. The keyboard arm stops the FTDI cog. Both arms keep the ACIA cog. The store is Hub. A stopped cog loses its cog RAM.
+
+#### Lead-in
+
+Command bytes stay unassigned. The lead-in below is a trial. The bytes stay open.
+
+The mark is `$1C`. Do not use `$01`, `$02`, `$04`, `$06`, `$07`, `$15`, `$17`, `$18`, or `$43`. Those bytes belong to XMODEM or to Control-G.
+
+Do not start a list while `z80XmSess` or `hostXm` is set. Test `SOH` and `STX` before the mark.
+
+The next two bytes are a little-endian count. Then that many list bytes follow. Reject a count of 0. Reject a count above 1184. Any other count is valid.
+
+On a good count, clear only the fill target. Then store those bytes as the display list. The first word is the link. Do not echo those bytes to FTDI or to the text screen. A rejected count returns the parser to idle. The following bytes are then console bytes.
+
+A data byte of `$03` is payload. It does not reset the console FIFOs. A control-port write of `$03` still resets them. The graphics program writes the data port only.
+
+The pair stays a 6850. This trial does not set the mode flag. Control-G still leaves the pair as a 6850.
+
+On this beam-chase image, a solid face uses two equal colour bytes. The framebuffer stripe rule is a different picture.
+
+#### Parser
+
+Idle is state 0. The list states are 8, 9, 10, and 11.
+
+State 8 stores the low count byte. State 9 stores the high count byte. State 11 waits until the draw cog has left `gl.start`. State 10 stores the payload bytes. The draw cog sets `drawHold` when it will not call `gl.start`. Cog 0 clears the fill target only after that, or before graphics starts.
+
+`listFill` is 0 for `dlist1` and 1 for `dlist2`. A finished list sets `listReady` and returns to idle. The draw cog flips `listFill` only after it publishes.
+
+When `listReady` is set, leave the next mark in the ring. The 512-byte ring then stops the 8085. The porch publishes one new list in a frame.
+
+The porch order is fixed. Publish the buffer that `listFill` names. Then flip `listFill`. Then clear `listReady`. Then set `listShown`.
+
+While a list parse is open, or after `listShown` is set, hold the published pointer. Do not call `drawScene` in that case. The test card runs only when no list has started.
+
+`ftdiNeed` returns 0 from state 8 onward. A full FTDI transmit buffer does not stall the payload. The mark is still idle, so that first byte can wait.
+
+A reset that sets the parser to idle drops an open list. It does not clear `listReady` for a list that is already sealed.
+
+#### Hub room
+
+A graphics ring in the ACIA cog does not fit in the 18 longs above the stack reserve. This trial uses the two lists that are already allocated.
+
+A normal compile of the copier exceeds Hub by 68 longs. Compile the bring-up with `-u`. `main` calls `font.get`, so the font stays in the image.
+
+```
+openspin -u -L src -L src/lib_vjet -b -o build/ux_module_vjet.binary src/ux_module_vjet.spin
+```
+
+That compile removes 86 unused methods and saves 4068 bytes. The program is 16128 bytes. Free Hub is 4792 bytes. Do not use `-u` on `src/ux_module.spin`. The EEPROM image remains the 19772-byte test card.
 
 ### Roles
 
@@ -239,7 +312,7 @@ The stream record is six signed pixels and one colour word. That is 14 bytes on 
 | STL | Authoring file for triangles. ASCII or binary. No colour in the file. The cooker assigns one colour byte per solid or per facet. |
 | OBJ | Authoring file when a face is a convex quad. One convex face becomes one `gl.polygon`. |
 | Cooked mesh | The bytes that move to the UX Module. Int16 object-space vertices. Faces are indexes plus a colour byte. Weld duplicate STL corners. |
-| Command FIFO | Hub ring for graphics payloads on 0x81. The ACIA cog is the only writer. Graphics status is a separate Hub long, not `acia_status`. |
+| Command FIFO | The ACIA receive ring. Cog 0 copies a sealed list into the unpublished display list. The ACIA cog writes only that ring. Graphics status is a separate Hub long, not `acia_status`. |
 | Console pair | The only command path. Text mode is the 6850. Graphics mode changes the meaning of 0x80 and 0x81. |
 | Text shape | Labels on the graphics raster. The 80×40 console is stopped for the whole graphics session. |
 | GSX | Later CP/M compatibility layer for 2D programs. It calls the same port commands. |
@@ -265,7 +338,7 @@ The graphics path releases `/WAIT` on every exit, including an unknown command. 
 
 Cog 0 writes the mode flag. The ACIA cog only reads the flag. Enter text is a command. The ACIA cog stores that request in its own Hub byte. Cog 0 reads the byte, restores text, and clears the mode flag.
 
-The draw cog is the only consumer of payload bytes. It does not exist until graphics mode has started.
+Cog 0 copies payload bytes from the ACIA receive ring into the unpublished list. The draw cog publishes that list on the front porch. A list that arrives before graphics waits in Hub. The draw cog does not exist until graphics mode has started.
 
 The pair is still a 6850 until the flag is set. Stage 1 does not send the enter sequence. Stage 1 uses the chord and leaves the pair as a 6850.
 
@@ -286,7 +359,7 @@ Keep the first set small. Multi-byte values are little-endian on 0x81. A write t
 | Clear | colour word | Empty both lists to that colour. |
 | Load mesh | count, then cooked bytes | Store one resident mesh. Reject the load if Hub cannot hold it. |
 | Set pose | yaw, pitch, roll, scale | Draw cog uses this on the resident mesh. |
-| Stream frame | count, then screen triangles | Replace the dynamic frame. No resident mesh. |
+| Stream frame | count, then list bytes | See Streamed lists. The mark `$1C` is a trial lead-in. The command byte is not frozen. |
 | Draw | none | Draw cog flips at the next front porch. |
 | Text | x, y, scale, count, then bytes | One text shape from `hexfont.spin`. |
 | Status | none | Read on 0x80 while the flag is set. FIFO room, mode, overflow, list room, and key ready. |
@@ -295,7 +368,7 @@ The draw cog shifts pixel integers to 16.16 before `gl.triangle`. The 8085, or a
 
 `gl.polygon` is only for one convex face the host has already clipped. The stream primitive is `gl.triangle`.
 
-Colour values stay in the packed word the renderer already reads. A stripe colour is a pair whose high byte is the low byte minus $55. The cooker maps its colour byte to that word.
+Colour values stay in the packed word the renderer already reads. A framebuffer stripe is a pair whose high byte is the low byte minus $55. The cooker maps its colour byte to that word. On the beam-chase bring-up, a solid face stores two equal colour bytes.
 
 ### Who runs the maths
 
@@ -347,6 +420,8 @@ Borrow these habits only:
 - Updates take effect on the next frame.
 
 ### Stage 2 checks
+
+These checks stay open. The streamed-list trial does not close them. The mode flag is still absent. The pair stays a 6850.
 
 1. Count the Hub bytes of the stage 1 binary. State the largest resident mesh and the largest display list that still link.
 2. Count the bytes of one `gl.triangle` and one `gl.polygon` in a real list.
@@ -417,18 +492,21 @@ Do the rows in order. A later row waits for the exit text of the row above.
 | 3 | Bring-up top. Text boot, Control-G into the framebuffer, draw cog, three render cogs. | 60 s stable scene. FTDI still moves. |
 | 4 | Return path and Ctrl+Alt+Del back to text. Ten switches. | Text console works after each return. |
 | 5 | Promote the switch into the product top. Boot remains text. | Same checks on `ux_module.spin`. |
-| 6 | Measure list bytes and `/WAIT`. | Numbers recorded in this file. |
-| 7 | Mode flag on the existing 0x80 match. Graphics status on a read of 0x80. Handler must `fit`. | `DIR` works in text mode. `/INT` stays inactive in graphics mode. |
-| 8 | Cube, resident and streamed. | Frame-time note. Overflow bit proven. |
-| 9 | Freeze the command bytes. | A version byte in the status block. |
-| 10 | CP/M library, cooker, and cube `.COM` for `8085-cf-acia`. | Cube spins. A key returns to the CCP. |
-| 11 | GSX subset driver. | Open, clear, bar, convex fill, close. |
+| 6 | Copy a streamed list from the ACIA ring into the unpublished list. The pair stays a 6850. | The porch publishes one sealed list. The test card stops after that. |
+| 7 | Measure list bytes and `/WAIT`. | Numbers recorded in this file. |
+| 8 | Mode flag on the existing 0x80 match. Graphics status on a read of 0x80. Handler must `fit`. | `DIR` works in text mode. `/INT` stays inactive in graphics mode. |
+| 9 | Cube, resident and streamed. | Frame-time note. Overflow bit proven. |
+| 10 | Freeze the command bytes. | A version byte in the status block. |
+| 11 | CP/M library, cooker, and cube `.COM` for `8085-cf-acia`. | Cube spins. A key returns to the CCP. |
+| 12 | GSX subset driver. | Open, clear, bar, convex fill, close. |
 
-Status on 17 Oct 2026. Steps 1 and 2 are done. The two demos are `demo/vjet_test.spin` and `demo/vjet_fb.spin`.
+Status on 18 Oct 2026. Steps 1 and 2 are done. The live bring-up is the beam-chase test card in `src/ux_module_vjet.spin`. The program is 19772 bytes. Free Hub is 1160 bytes. 18 longs remain above the stack reserve.
 
-The bring-up compiles to 20408 bytes. It keeps 10 content lines. EEPROM on the bench holds that image. The serial banner was `UX Module Initialised`, then the 8085 prompt. The monitor check for step 3 is still open. Steps 4 and 5 stay open.
+The framebuffer bring-up of 20408 bytes is an earlier trial. Steps 3 to 5 in the table use that wording. The EEPROM image is the test card. Do not mark those steps passed.
 
-The cube harness is the start of stage 2. The bring-up store budget stays in Stage 1. The accepted variables are 23776 bytes. The command bytes are not frozen. The ACIA cog is unchanged.
+Step 6 is in the bring-up source. Cog 0 copies a list into the unpublished list. The draw cog publishes the pointer. Compile that top with `openspin -u`. The program is 16128 bytes. Free Hub is 4792 bytes.
+
+Command bytes are not frozen. The ACIA cog stays unchanged until the mode-flag handler fits and a DIR test is possible. The EEPROM image remains the 19772-byte test card.
 
 ## Risks
 
@@ -441,7 +519,7 @@ The cube harness is the start of stage 2. The bring-up store budget stays in Sta
 | BIOS ISR during graphics | Hold `/INT` inactive. The program stays in `di` until status says text mode. |
 | Graphics mode with no exit | Return chord, Enter text, Ctrl+Alt+Del, and backplane `/RESET` stop the framebuffer before `wmf.init`. |
 | XMODEM mistaken for commands | Ignore the chord and the enter sequence while a transfer is active. |
-| Two writers of the mode flag | Cog 0 writes the flag. The ACIA cog writes only the Enter-text request. The draw cog writes only the display list. |
+| Two writers of one list | Cog 0 writes the unpublished list. The draw cog writes the pointer on the porch. The ACIA cog writes only its receive ring. Cog 0 writes the mode flag when that flag exists. |
 | Stripe assumed for every colour pair | Only a high byte of low minus $55 stripes. Any other pair stays solid. |
 
 ## Sources
@@ -486,6 +564,7 @@ An adversarial review checked this plan against the ACIA wait loop, the cog map,
 | 8085 | Test platform is CP/M-IDE v3.0 `8085-cf-acia`. |
 | Grey field | A cold accepted picture and the hot switch are separate results. |
 | Other bases | 0xC0 stays undecoded. Do not move graphics to 0x00 or 0x40. |
+| Stream store | The unpublished list of the pair. Cog 0 copies the ACIA ring. The draw cog writes the pointer. |
 
 ## Address pair
 

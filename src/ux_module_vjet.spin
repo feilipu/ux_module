@@ -8,8 +8,11 @@
 ''
 '' Stage 1 bring-up top. Boot is the text console.
 '' Graphics keeps the input that requested it and stops the other input.
-'' Eight line slots. Three render cogs. The scene is the orbit probe.
-'' Cog 0 keeps the ACIA pump. The draw cog has its own stack.
+'' Eight line slots. Three render cogs. The scene is the test card.
+'' A streamed list replaces that card. Cog 0 copies it from the ACIA ring.
+'' The circle turns clockwise. Cog 0 keeps the ACIA pump. The draw cog has its own stack.
+'' Compile this file with -u so the copier fits. Keep the font.get call below.
+'' openspin -u -L src -L src/lib_vjet -b -o build/ux_module_vjet.binary src/ux_module_vjet.spin
 '' Product upload remains src/ux_module.spin.
 
 CON
@@ -17,7 +20,10 @@ CON
   _clkmode      = XTAL1 + PLL16X
   _xinfreq      = 7_372_800
 
-  DLIST_SIZE    = 160                                   ' longs in each list. The orbit scene stores 340 bytes.
+  DLIST_SIZE    = 296                                   ' longs in each list
+  CARD_X        = 128                                   ' circle centre, pixels
+  CARD_Y        = 120
+  CARD_R        = 84                                    ' circle radius, pixels
   _STACK        = 256                                   ' Cog 0 stack, in longs. Cog 0 does not draw.
 
 
@@ -98,6 +104,12 @@ CON
   PARSE_XMODEM_M  = 5                                   ' waiting complemented packet number
   PARSE_XMODEM    = 6                                   ' data bytes (z80Remain)
   PARSE_XMODEM_CS = 7                                   ' opaque trailers (z80XmTrail: 1 checksum, 2 CRC)
+  PARSE_LIST_LO   = 8                                   ' list count, low byte
+  PARSE_LIST_HI   = 9                                   ' list count, high byte
+  PARSE_LIST      = 10                                  ' list payload bytes
+  PARSE_LIST_ARM  = 11                                  ' wait until the draw cog leaves gl.start
+
+  LIST_MARK       = $1C                                 ' list lead-in. Trial only. Not an XMODEM byte.
 
   HOST_XM_OFF     = 0                                   ' no host→Z80 XMODEM session
   HOST_XM_GAP     = 1                                   ' between packets: SOH/STX/EOT/ETB/CAN only
@@ -157,8 +169,14 @@ VAR
   long  dlist_ptr                                       ' Draw cog writes it. Render cogs read it.
   long  dlist1[DLIST_SIZE]                              ' list A
   long  dlist2[DLIST_SIZE]                              ' list B
+  byte  listFill                                        ' 0 fills dlist1. 1 fills dlist2.
+  byte  listReady                                       ' 1: the fill target is complete
+  byte  listShown                                       ' 1: a streamed list is on screen
+  byte  drawHold                                        ' 1: the draw cog will not call gl.start
+  long  listCount                                       ' payload bytes still to store
+  long  listAt                                          ' next Hub byte in the fill target
   long  linebuffers[(render#WIDTH * render#LINE_BUFFERS) / 4]
-  long  ox[4], oy[4], oz[4], oc[4]
+  long  polyXY[20]                                      ' polygon vertices, x then y, 16.16
   long  drawStack[192]                                  ' Draw cog stack. The next Hub is the FTDI rings.
 
 
@@ -190,6 +208,7 @@ PUB main | busHeld
   screenInit
   term.str (string("UX Module Initialised"))
   term.newLine
+  keepFont                                              ' openspin -u must keep hexfont
 
   ' Hold the 8085 while DDC and the keyboard take their cogs.
   ' pulseZ80Reset starts the ACIA cog after those.
@@ -209,8 +228,8 @@ PUB main | busHeld
     if gfxNeedDdc and not busHeld
       i2c.startCog
       gfxNeedDdc := 0
-    if acia.takeParseIdle                               ' Z80 CR_RESET: abandon ESC/CSI/XMODEM
-      z80Parse := PARSE_IDLE
+    if acia.takeParseIdle                               ' Z80 CR_RESET: abandon ESC/CSI/XMODEM/list
+      z80Parse := PARSE_IDLE                            ' a sealed list stays in listReady
       z80XmSess := 0
       hostXm := HOST_XM_OFF
     if not busHeld
@@ -336,11 +355,20 @@ PRI reportDdc
 PUB readZ80 | char, n, need
 {{Drain Z80 TDR bytes to VGA and FTDI. Never blocks on acia.rx or term.tx.
   Bytes with ftdiNeed 0 (LF) still drain when FTDI TX is full.
+  A list mark stays in the ring while listReady is set.
   TDRE is allowed only when the next byte fits in FTDI TX.}}
+
+    if z80Parse == PARSE_LIST_ARM and ((not gfxMode) or drawHold)
+      claimList
+      z80Parse := PARSE_LIST
 
     n := 0
     repeat while acia.rxCount > 0 and n < PUMP_LIMIT
+      if z80Parse == PARSE_LIST_ARM
+        quit
       char := acia.rxPeek
+      if listReady and z80Parse == PARSE_IDLE and char == LIST_MARK
+        quit
       need := ftdiNeed (char)
       if need > 0 and term.txSpace < need
         quit
@@ -362,9 +390,10 @@ PUB readZ80 | char, n, need
 
 PRI ftdiNeed(char) : n
 {{FTDI TX slots takeZ80Byte will use for this ACIA byte in the current PARSE_* state.
-  Zero while the FTDI cog is stopped, so the Z80 drain does not wait on term.tx.}}
+  Zero while the FTDI cog is stopped, so the Z80 drain does not wait on term.tx.
+  Zero from the list count onward, so the payload does not wait on term.tx.}}
 
-  if not ftdiUp
+  if (not ftdiUp) or (z80Parse => PARSE_LIST_LO)
     return 0
   n := 1
   if z80Parse == PARSE_IDLE
@@ -460,6 +489,28 @@ PRI takeZ80Byte(char)
       if ( z80XmTrail == 0 )
         z80Parse := PARSE_IDLE
 
+    PARSE_LIST_LO:                                      ' count low byte. Do not echo.
+      listCount := char
+      z80Parse := PARSE_LIST_HI
+
+    PARSE_LIST_HI:                                      ' count high byte. Do not echo.
+      listCount := listCount | (char << 8)
+      if (listCount == 0) or (listCount > constant(DLIST_SIZE * 4))
+        z80Parse := PARSE_IDLE                          ' reject. Leave listReady as it is.
+      elseif (not gfxMode) or drawHold
+        claimList
+        z80Parse := PARSE_LIST
+      else
+        z80Parse := PARSE_LIST_ARM
+
+    PARSE_LIST:                                         ' payload. Do not echo.
+      byte[listAt] := char
+      listAt++
+      listCount--
+      if listCount == 0
+        listReady := 1
+        z80Parse := PARSE_IDLE
+
     other:                                              ' PARSE_IDLE
       takeZ80Idle (char)
 
@@ -490,6 +541,13 @@ PRI takeZ80Idle(char)
     XMODEM_EOT, XMODEM_ETB, XMODEM_CAN:
       hostTx (char)
       z80XmSess := 0
+
+    LIST_MARK:                                          ' list lead-in. SOH and STX are above.
+      if inXmodem or hostXmodem
+        hostTx (char)
+        echoPrintable (char)
+      elseif not listReady
+        z80Parse := PARSE_LIST_LO
 
     ASCII_BS, ASCII_DEL:                                ' backspace (edit), delete
       if wmf.getColScreen > 0
@@ -828,7 +886,7 @@ PRI wipeAciaWhileReset
   acia.start (PORT_DEFAULT)                             ' stop + cognew; last_rdr := 0
   waitcnt (clkfreq / 1000 + cnt)                        ' ACIA cog before 8085 runs
   acia.tdreHold                                         ' keep TDR closed until readZ80 sees FTDI room
-  z80Parse := PARSE_IDLE
+  z80Parse := PARSE_IDLE                                ' a sealed list stays in listReady
   z80XmSess := 0
   hostXm := HOST_XM_OFF
 
@@ -940,6 +998,8 @@ PRI stopVectorjet
   Do this before screenInit.}}
 
   gfxReady := 0
+  drawHold := 0
+  listShown := 0                                        ' the next entry can show the test card
   if drawCog
     cogstop (drawCog~ - 1)
   render.stop
@@ -948,16 +1008,27 @@ PRI stopVectorjet
 
 PRI startVectorjet : ok
 {{Start the slice VGA cog and three render cogs.
-  The draw cog publishes on the front porch, then builds the other list.
+  Keep a list that is ready or still filling.
+  The draw cog publishes on the front porch.
   gfxReady is a long. On failure, stop every cog this call started.}}
 
   gfxReady := 0
   framecount := 0
   vga_status := 0
-  longfill (@dlist1, 0, DLIST_SIZE)
-  longfill (@dlist2, 0, DLIST_SIZE)
+  if listReady or (z80Parse => PARSE_LIST_LO)
+    drawHold := 1
+    if listFill
+      longfill (@dlist1, 0, DLIST_SIZE)
+      dlist_ptr := @dlist1
+    else
+      longfill (@dlist2, 0, DLIST_SIZE)
+      dlist_ptr := @dlist2
+  else
+    drawHold := 0
+    longfill (@dlist1, 0, DLIST_SIZE)
+    longfill (@dlist2, 0, DLIST_SIZE)
+    dlist_ptr := @dlist2
   longfill (@linebuffers, 0, (render#WIDTH * render#LINE_BUFFERS) / 4)
-  dlist_ptr := @dlist2
   if not vga.start (VGA_BASE_PIN / 8, @linebuffers, @vga_status)
     return 0
   if not render.start (0, 3, @linebuffers, @dlist_ptr, @vga_status, @gfxReady)
@@ -981,20 +1052,56 @@ PRI startVectorjet : ok
 
 
 PRI drawLoop
-{{Publish the finished list at the front porch. Build the other list.
+{{Publish a streamed list on the front porch.
+  Otherwise hold that picture, or build the test card.
   Stack is drawStack. Text VGA is stopped.}}
 
   repeat
     vblank
-    if framecount & 1
-      dlist_ptr := @dlist1
-      gl.start (@dlist2, constant(DLIST_SIZE * 4))
+    if listReady
+      if listFill
+        dlist_ptr := @dlist2
+      else
+        dlist_ptr := @dlist1
+      listFill := 1 - listFill
+      listReady := 0
+      listShown := 1
+      drawHold := 1
+    elseif listShown or (z80Parse => PARSE_LIST_LO)
+      drawHold := 1
     else
-      dlist_ptr := @dlist2
-      gl.start (@dlist1, constant(DLIST_SIZE * 4))
-    \drawScene
-    gl.done
-    framecount++
+      drawHold := 0
+      if framecount & 1
+        dlist_ptr := @dlist1
+        gl.start (@dlist2, constant(DLIST_SIZE * 4))
+      else
+        dlist_ptr := @dlist2
+        gl.start (@dlist1, constant(DLIST_SIZE * 4))
+      \drawScene
+      gl.done
+      framecount++
+
+
+PRI keepFont | p
+{{Call the font so openspin -u keeps hexfont in the image.}}
+
+  p := font.get
+
+
+PRI claimList
+{{Clear the list that dlist_ptr does not name. Cog 0 then stores the payload there.}}
+
+  if dlist_ptr == @dlist1
+    listFill := 1
+    listAt := @dlist2
+  elseif dlist_ptr == @dlist2
+    listFill := 0
+    listAt := @dlist1
+  elseif listFill
+    listAt := @dlist2
+  else
+    listAt := @dlist1
+  longfill (listAt, 0, DLIST_SIZE)
 
 
 PRI vblank
@@ -1004,83 +1111,151 @@ PRI vblank
   repeat until vga_status & $01_00_00
 
 
-PRI drawScene | i, t
+PRI drawScene | i, a, sx, cx
+{{Grey field, grid, pillars, then the circle. A later shape covers an earlier one.}}
 
   gl.set_clip (0, render#NUM_LINES << 16, 0, render#WIDTH << 16)
-  gl.box (0, 0, render#WIDTH, render#NUM_LINES, $1818)
-  placeOrbit
-  i := 0
-  repeat 4
-    if oz[i] => 0
-      quit
-    tri (ox[i], oy[i], 16, 18, oc[i])
-    i++
-  t := bounce (150)
-  tri ((24 + t) << 16, 118 << 16, 26, 11, $55AA)
-  t := bounce (150)
-  tri (72 << 16, (30 + t) << 16, 14, 16, $C0C0)
-  t := bounce (160)
-  tri ((16 + t) << 16, (200 - t) << 16, 16, 14, $66BB)
-  t := bounce (110)
-  tri ((28 + t) << 16, (196 + (t ~> 3)) << 16, 18, 12, $AAFF)
-  tri ((210 - t) << 16, (214 - (t ~> 3)) << 16, 18, 12, $7474)
-  t := bounce (36)
-  tri ((168 + t) << 16, 22 << 16, 12, 8, $80C0)
-  repeat while i < 4
-    tri (ox[i], oy[i], 16, 18, oc[i])
-    i++
+  gl.box (0, 0, render#WIDTH, render#NUM_LINES, $5757)
+  gl.box (0, 8, render#WIDTH, 10, $FFFF)
+  gl.box (0, 20, render#WIDTH, 22, $FFFF)
+  gl.box (0, 214, render#WIDTH, 216, $FFFF)
+  gl.box (0, 226, render#WIDTH, 228, $FFFF)
+  gl.box (64, 0, 66, 34, $FFFF)
+  gl.box (192, 0, 194, 34, $FFFF)
+  gl.box (64, 206, 66, render#NUM_LINES, $FFFF)
+  gl.box (192, 206, 194, render#NUM_LINES, $FFFF)
+  gl.box (8, 0, 24, 60, $3333)
+  gl.box (8, 60, 24, 120, $0F0F)
+  gl.box (8, 120, 24, 180, $CFCF)
+  gl.box (8, 180, 24, render#NUM_LINES, $A3A3)
+  gl.box (232, 0, 248, 60, $E3E3)
+  gl.box (232, 60, 248, 120, $0F0F)
+  gl.box (232, 120, 248, 180, $9393)
+  gl.box (232, 180, 248, render#NUM_LINES, $AFAF)
+
+  a := (framecount << 2) & $1FFF
+  sx := sin(a)
+  cx := sin((a + 2048) & $1FFF)
+  drawCap(sx, cx)
+  quadRect(-24, -68, 24, -56, $0303, sx, cx)
+  repeat i from 0 to 5
+    bandQuad(-30, -12, i, i + 1, 6, barColour(i), sx, cx)
+  bandQuad(-12, -2, 0, 1, 1, $0303, sx, cx)
+  bandQuad(-2, 18, 0, 1, 1, $ABAB, sx, cx)
+  drawBase(sx, cx)
+  drawRed(sx, cx)
 
 
-PRI placeOrbit | i, a
-{{Four triangles on a shallow ellipse. Negative z is far.}}
+PRI drawCap(sx, cx) | a, b, c, d
+{{White top of the circle. Vertices run clockwise from the apex.}}
 
-  oc[0] := $0055
-  oc[1] := $F0F2
-  oc[2] := $AAFF
-  oc[3] := $4848
-  repeat i from 0 to 3
-    a := (framecount << 4) + (i << 11)
-    ox[i] := (128 << 16) + (sin (a + $800) * 70)
-    oy[i] := (118 << 16) + (sin (a) * 10)
-    oz[i] := sin (a)
-  sortOrbit
-
-
-PRI sortOrbit | i, j, zx, xx, yx, cx
-{{Far triangles first. A later triangle covers an earlier one.}}
-
-  repeat i from 1 to 3
-    zx := oz[i]
-    xx := ox[i]
-    yx := oy[i]
-    cx := oc[i]
-    j := i
-    repeat while j > 0
-      if oz[j - 1] =< zx
-        quit
-      oz[j] := oz[j - 1]
-      ox[j] := ox[j - 1]
-      oy[j] := oy[j - 1]
-      oc[j] := oc[j - 1]
-      j--
-    oz[j] := zx
-    ox[j] := xx
-    oy[j] := yx
-    oc[j] := cx
+  a := edgeX(-80)
+  b := edgeX(-70)
+  c := edgeX(-48)
+  d := edgeX(-30)
+  putVertex(0, 0, -CARD_R, sx, cx)
+  putVertex(1, a, -80, sx, cx)
+  putVertex(2, b, -70, sx, cx)
+  putVertex(3, c, -48, sx, cx)
+  putVertex(4, d, -30, sx, cx)
+  putVertex(5, -d, -30, sx, cx)
+  putVertex(6, -c, -48, sx, cx)
+  putVertex(7, -b, -70, sx, cx)
+  putVertex(8, -a, -80, sx, cx)
+  gl.polygon(@polyXY, 9, $FFFF, 0)
 
 
-PRI tri(x, y, hx, hy, colour)
-{{x and y are 16.16. hx and hy are pixels.}}
+PRI drawBase(sx, cx) | a, b, c, d
+{{Yellow bottom of the circle. Vertices run clockwise.}}
 
-  gl.triangle (x, y - (hy << 16), x - (hx << 16), y + (hy << 16), x + (hx << 16), y + (hy << 16), colour)
+  a := edgeX(18)
+  b := edgeX(48)
+  c := edgeX(68)
+  d := edgeX(80)
+  putVertex(0, -a, 18, sx, cx)
+  putVertex(1, a, 18, sx, cx)
+  putVertex(2, b, 48, sx, cx)
+  putVertex(3, c, 68, sx, cx)
+  putVertex(4, d, 80, sx, cx)
+  putVertex(5, 0, CARD_R, sx, cx)
+  putVertex(6, -d, 80, sx, cx)
+  putVertex(7, -c, 68, sx, cx)
+  putVertex(8, -b, 48, sx, cx)
+  gl.polygon(@polyXY, 9, $F3F3, 0)
 
 
-PRI bounce(span) : t | n
+PRI drawRed(sx, cx)
+{{Red block on the yellow bottom. The apex stays on the circle.}}
 
-  n := span << 1
-  t := framecount // n
-  if t => span
-    t := n - t
+  putVertex(0, -16, 52, sx, cx)
+  putVertex(1, 16, 52, sx, cx)
+  putVertex(2, 12, 78, sx, cx)
+  putVertex(3, 0, CARD_R, sx, cx)
+  putVertex(4, -12, 78, sx, cx)
+  gl.polygon(@polyXY, 5, $C3C3, 0)
+
+
+PRI bandQuad(y0, y1, n0, n1, parts, colour, sx, cx) | x0, x1, s0, s1
+{{One slice of a horizontal band. n0 and n1 are the fraction across the chord.}}
+
+  x0 := edgeX(y0)
+  x1 := edgeX(y1)
+  s0 := x0 << 1
+  s1 := x1 << 1
+  putVertex(0, -x0 + (s0 * n0) / parts, y0, sx, cx)
+  putVertex(1, -x0 + (s0 * n1) / parts, y0, sx, cx)
+  putVertex(2, -x1 + (s1 * n1) / parts, y1, sx, cx)
+  putVertex(3, -x1 + (s1 * n0) / parts, y1, sx, cx)
+  gl.polygon(@polyXY, 4, colour, 0)
+
+
+PRI quadRect(x0, y0, x1, y1, colour, sx, cx)
+{{Axis-aligned rectangle in circle pixels, then rotated.}}
+
+  putVertex(0, x0, y0, sx, cx)
+  putVertex(1, x1, y0, sx, cx)
+  putVertex(2, x1, y1, sx, cx)
+  putVertex(3, x0, y1, sx, cx)
+  gl.polygon(@polyXY, 4, colour, 0)
+
+
+PRI putVertex(i, lx, ly, sx, cx)
+{{Store one rotated vertex. Positive angle turns the card clockwise.}}
+
+  polyXY[i * 2] := (CARD_X << 16) + ((cx * lx) - (sx * ly))
+  polyXY[(i * 2) + 1] := (CARD_Y << 16) + ((sx * lx) + (cx * ly))
+
+
+PRI edgeX(ly) : x | n
+{{Half-width of the circle at local y. y is positive down.}}
+
+  n := (CARD_R * CARD_R) - (ly * ly)
+  if n < 1
+    return 0
+  x := isqrt(n)
+
+
+PRI isqrt(n) : r | bit
+
+  r := 0
+  bit := $80
+  repeat 8
+    r |= bit
+    if (r * r) > n
+      r &= !bit
+    bit >>= 1
+
+
+PRI barColour(i) : c
+
+  case i
+    0: c := $F3F3
+    1: c := $3F3F
+    2: c := $3333
+    3: c := $CFCF
+    4: c := $C3C3
+    5: c := $0F0F
+    other: c := $FFFF
 
 
 PRI sin(angle) : s

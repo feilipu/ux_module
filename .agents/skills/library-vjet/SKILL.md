@@ -49,11 +49,11 @@ Resolution in UXM rendering: **WIDTH=256**, **NUM_LINES=240**, **LINE_BUFFERS=8*
 
 `ux_module.spin` does not link this library. Demos are their own tops. Do not start VECTORJET from product `main`.
 
-The beam-chase picture stays clean with one Spin cog. A second cog in a tight Spin loop tears that picture. Do not draw that path on Cog 0. The free Hub there is about 2 KB.
+The beam-chase picture stays clean with one Spin cog. A second cog in a tight Spin loop tears that picture. Do not draw that path on Cog 0. The free Hub there is 1160 bytes. Cog 0 keeps a 256-long stack and 16 longs of `_FREE`. 18 longs remain above that pair.
 
-The bring-up is `src/ux_module_vjet.spin`. It stops text VGA, DDC, and the input that did not request graphics. It starts the beam-chase VGA cog, three render cogs, and one draw cog. The draw cog uses `drawStack` (192 longs). Cog 0 returns to the ACIA pump. The slice is eight lines. On 18 Oct 2026 the orbit probe held on that slice. Far triangles are drawn first. This renderer has no 50 percent mix. The render wait starts the next line when the beam has passed current + cogs - 8. With three cogs that lead is 7 logical lines. Each render cog rebuilds both edges from the initial edges and the slopes. It does not read the sync byte. It does not write the current edges. The top fixup still writes those edges for shapes that start above line 0.
+The bring-up is `src/ux_module_vjet.spin`. It stops text VGA, DDC, and the input that did not request graphics. It starts the beam-chase VGA cog, three render cogs, and one draw cog. The draw cog uses `drawStack` (192 longs). Cog 0 returns to the ACIA pump. The slice is eight lines. The default list is the test card and the circle turns clockwise. Far triangles are drawn first. This renderer has no 50 percent mix. The render wait starts the next line when the beam has passed current + cogs - 8. With three cogs that lead is 7 logical lines. Each render cog rebuilds both edges from the initial edges and the slopes. It does not read the sync byte. It does not write the current edges.
 
-The cog records the spans before the slot write. The slot write is one fill and then those spans. A full-width first span fills with that colour.
+The cog records the spans before the slot write. The slot write is one fill and then those spans. A full-width first span fills with that colour. A shape that starts above line 0 is walked from its initial edges. This cog does not write those edges.
 
 One scan line keeps 24 records. A box, a point, a line, a polygon, or a text shape uses one record. A text shape is stored in list order with the spans. A shape after these 24 records on that line is skipped. The skipped shapes are the front shapes.
 
@@ -61,7 +61,7 @@ The final build keeps the keyboard. Graphics has no free cog, so the keyboard sh
 
 Handshake: front porch writes line 240. Vsync and the back porch write line 0. Render cogs wait for line 0. The variant that writes line 240 in every blanking phase tore at 720×480 at 60 Hz. The demo uses the 2021 handshake.
 
-`vjet_test` sets `dlist_ptr` to `$8080`, sets the ready flag, then Cog 0 publishes a real list on the next vblank. That order stays clean. A render cog that keeps reading `$8080` can stay in the shape fixup, so Cog 0 must publish on that next vblank. Do not hand the publish to a cog that is not running yet.
+`vjet_test` sets `dlist_ptr` to `$8080`, sets the ready flag, then Cog 0 publishes a real list on the next vblank. That order stays clean. `$8080` is ROM. A render cog that still has that pointer reads ROM on every line, so Cog 0 must publish on that next vblank. Do not hand the publish to a cog that is not running yet.
 
 Pass `render.start` a long-aligned ready flag. `cognew` keeps only bits 15:2 of that address. A byte flag makes the render cogs wait on a different byte.
 
@@ -85,7 +85,7 @@ WORD  end scanline
 | 2 | `SHP_BOX` | left, right, colours, unused | 16 |
 | 3 | `SHP_TEXT` | scale, font, string, colours, x, unused | 20 |
 
-A polygon is a trap stack. It stores 24 bytes plus 12 bytes for each trapezoid. A sloped line stores 36 bytes. A horizontal line stores 16 bytes. The builder skips the 8 current-edge bytes. The renderer writes them.
+A polygon is a trap stack. It stores 24 bytes plus 12 bytes for each trapezoid. A trap height of 0 ends the shape. When two chains meet on one scanline, the builder advances both chains. It does not store a height of 0. The last trapezoid includes the bottom scanline. A sloped line stores 36 bytes. A horizontal line stores 16 bytes. The builder skips the 8 current-edge bytes. The beam-chase cog does not write them. The framebuffer cog writes them while it walks.
 
 Coordinates in the Spin API often use **16.16** fixed point (shift `<<16`). Colours are packed words consumed by the renderer/VGA path (two paint colours common in demos, e.g. `$ECEC`).
 
@@ -95,11 +95,43 @@ Builder calls:
 - `set_clip(t,b,l,r)`
 - `triangle` / `polygon` / `box` / `line` / `point` / `text*`
 
-Overflow uses Spin `ABORT`. Callers in demos use `\draw` to trap it.
+Overflow uses Spin `ABORT`. Callers in demos use `\draw` to trap it. `done` returns a negative value when the list overflowed. There is no room query.
+
+## Caller contract
+
+`box`, `point`, and `text` take integer pixels. `triangle`, `line`, and `polygon` take 16.16 values. `set_clip` takes 16.16 values. Call `set_clip` before the first shape. A clip of 0 draws nothing.
+
+`polygon` stores one convex face. Pass `ccw` as -1, 0, or +1. A value of 0 detects the winding from the top vertex. A flat top can detect the wrong side.
+
+The host clips the face in Y. The builder does not clip X. The span recorder clamps X to the screen.
+
+The face must reach its bottom scanline. A short face stays linked. The trap walk then reads the next shape. One scan line keeps 24 records. The builder does not report a skipped shape.
+
+Catch overflow with `\` and call `done`. `done` seals the list. One cog calls this object. Two cogs must not share it.
+
+`start` writes the first link to `$8080`. That address is ROM. Publish the pointer passed to `start`.
+
+On the beam-chase path, an even line uses the low colour byte. An odd line uses the high byte. Equal bytes are a solid colour. The VGA cog sets the low two bits of each byte. This path has no 50 percent mix. A framebuffer stripe pair is a different picture.
+
+The text string stays outside the list. `text_inline` copies it in. The font stays in Hub for the whole frame. Pair `VJET_vUXM_vga.spin` with `VJET_vUXM_rendering.spin`. The framebuffer files are the other engine.
 
 ## Double buffering
 
 Demos flip `dlist_ptr` each frame and rebuild the inactive buffer. Render cogs read `dlist_ptr` through `dlistPtrAdr` at frame start, when the VGA low word is 0. Wait until bit 16 rises (front porch), publish the pointer, then call `gl.start` on the other list. The front porch low word is 240. Vertical sync and the back porch use a low word of 0.
+
+## Streamed lists
+
+The ACIA receive ring is the pipe. Cog 0 is its only reader. A complete list is written into the display list that `dlist_ptr` does not name. `dlist1` and `dlist2` are that pair. Each is 1184 bytes.
+
+The first list is copied there before `enterGraphics`. Later lists use the same pair. Cog 0 appends bytes as the ring drains. The draw cog publishes the filled pointer on the front porch, then the other list is the next fill target. A list that is still filling stays unpublished. The published list stays on screen.
+
+The draw cog does not call `gl.start` on a list Cog 0 is filling. The ACIA cog does not write either list.
+
+The lead-in and the parser states are in `3D_WORKPLAN_LIB_VJET.md`. Command bytes are not frozen. The pair stays a 6850 for this trial.
+
+Compile `src/ux_module_vjet.spin` with `openspin -u`. `main` calls `font.get` so the font stays. That image is 16128 bytes. The EEPROM image remains the 19772-byte test card.
+
+`startVectorjet` does not clear a list that is ready or still filling. While `listReady` is set, Cog 0 leaves the next mark in the receive ring. After `listShown` is set, the draw cog does not rebuild the test card.
 
 ## VGA cog (`VJET_vUXM_vga.spin`)
 
@@ -118,7 +150,7 @@ Bit 1 of that byte asks for a 50 percent mix when the control long `blend` (afte
 
 Even stored lines are bright, bright, dark, dark, bright, bright. Odd stored lines use the inverse order. The user accepted this picture on 17 Oct 2026. It is the known-good image. The forward plan is `3D_WORKPLAN_LIB_VJET.md`. The repair record is `3D_PROCESS_LIB_VJET.md`.
 
-The accepted scene draws 13 triangles and one text shape. That list uses at most 632 bytes. Each framebuffer list is 1200 bytes. The slice bring-up lists are 160 longs. The beam-chase demo lists are 900 longs. The scene is the orbit probe. The demo does not call `set_lines`. A flat triangle is 36 bytes. A general triangle is 48 bytes. A box is 16 bytes and a text shape is 20 bytes.
+The accepted scene draws 13 triangles and one text shape. That list uses at most 632 bytes. Each framebuffer list is 1200 bytes. The slice bring-up lists are 296 longs. The beam-chase demo lists are 900 longs. The scene is the test card. The demo does not call `set_lines`. A flat triangle is 36 bytes. A general triangle is 48 bytes. A box is 16 bytes and a text shape is 20 bytes.
 
 `VJET_vUXM_vga.spin` and `VJET_vUXM_rendering.spin` stay the beam-chase pair. Do not copy the framebuffer `VSCL` into those files.
 

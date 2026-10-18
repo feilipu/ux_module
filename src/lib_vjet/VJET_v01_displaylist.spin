@@ -9,7 +9,8 @@
 ''
 '' A polygon stores 24 bytes plus 12 bytes for each trapezoid.
 '' A sloped line stores 36 bytes. A horizontal line stores 16 bytes.
-'' The renderer writes the 8 current-edge bytes. This builder skips them.
+'' The builder skips the 8 current-edge bytes.
+'' The beam-chase cog does not write them. The framebuffer cog writes them.
 '' The renderer keeps 24 records on one scan line.
 '' A shape after those records on that line is skipped.
 
@@ -447,10 +448,13 @@ PUB polygon(polyptr,vcount,colors,ccw) : ihead | tmp,lefti,righti,ybottom,ytop,t
     if righty <> ytop
      quit
 
-  '' build trapezoid stack
+  '' Build the trapezoid stack. bottomi is the next scanline to store.
+  '' A height of 0 ends the shape, so a shared scanline stores nothing.
+  '' The last trapezoid includes the bottom line.
   toplefty := toprighty := ytop
+  bottomi := ytop
   leftslope:=rightslope:=negx
-  repeat
+  repeat (vcount << 2)
     leftx := posx
     rightx:= negx
 
@@ -497,41 +501,46 @@ PUB polygon(polyptr,vcount,colors,ccw) : ihead | tmp,lefti,righti,ybottom,ytop,t
           quit
         righti:=tmp
 
-    'return lefti
     stepy:=lefty <# righty
-    'putword($FFF)
-    if (spaceleft -= constant(2+2+4+4)) < 0
-      abort 20
-    word[ihead]:=(stepy-(toplefty <# toprighty)+((tmp := (stepy==ybottom))>>31)) ' trapezoid height
-    ihead+=2
-    word[ihead]:=(colors)
-    ihead+=2
+    if stepy == ybottom
+      tmp := stepy - bottomi + 1
+    else
+      tmp := stepy - bottomi
+    if tmp > 0
+      if (spaceleft -= constant(2+2+4+4)) < 0
+        abort 20
+      word[ihead]:=(tmp)
+      ihead+=2
+      word[ihead]:=(colors)
+      ihead+=2
 
-    '' re-calculate slopes if neccessary
-    if leftslope == negx
-      leftslope:=slopeCalc2(leftx,topleftx,lefty+(toplefty<>ytop AND toplefty<>ybottom),toplefty)
-      topleftx:=leftx
-      toplefty:=lefty
-    if rightslope == negx
-      rightslope:=slopeCalc2(rightx,toprightx,righty+(toprighty<>ytop AND toprighty<>ybottom),toprighty)
-      toprightx:=rightx
-      toprighty:=righty
+      '' re-calculate slopes if neccessary
+      if leftslope == negx
+        leftslope:=slopeCalc2(leftx,topleftx,lefty+(toplefty<>ytop AND toplefty<>ybottom),toplefty)
+        topleftx:=leftx
+        toplefty:=lefty
+      if rightslope == negx
+        rightslope:=slopeCalc2(rightx,toprightx,righty+(toprighty<>ytop AND toprighty<>ybottom),toprighty)
+        toprightx:=rightx
+        toprighty:=righty
 
-    long[ihead]:=(leftslope)
-    ihead+=4
-    long[ihead]:=(rightslope)
-    ihead+=4
-    if topptr
-      long[topptr]+=leftslope<#0
-      long[topptr~][1]+=rightslope#>0 ' note the post-clear
+      long[ihead]:=(leftslope)
+      ihead+=4
+      long[ihead]:=(rightslope)
+      ihead+=4
+      if topptr
+        long[topptr]+=leftslope<#0
+        long[topptr~][1]+=rightslope#>0 ' note the post-clear
+      bottomi := stepy
 
-    if lefty=<righty
+    if stepy == ybottom
+      quit
+    if lefty == stepy
       lefti-=ccw
       leftslope:=negx
-    else
+    if righty == stepy
       righti+=ccw
       rightslope:=negx
-  until tmp
   head:=ihead
 
 PUB text(x,y,xscale,yscale,str,font,colors) : ihead |ystop
