@@ -11,6 +11,9 @@
 '' ctrl is eight longs: go, front, done, stripe0, stripe1, stripe2, fixup, blend.
 '' This cog writes front and reads done. The renderer owns fixup and blend.
 '' pix1 follows pix0. pal1 follows pal0. The byte stride is FB_BYTES and PAL_BYTES.
+'' Derived from VJET_vUXM_vga.spin, (C)2021 IRQsome Software.
+'' VGA lineage from Kwabena W. Agyeman.
+'' (C)2026 feilipu.
 
 CON
 
@@ -581,3 +584,24 @@ nxt14                   res     1
 nxt15                   res     1
 
                         fit     496
+
+DAT
+
+{{
+///////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+//                                                  TERMS OF USE: MIT License
+///////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+// Permission is hereby granted, free of charge, to any person obtaining a copy of this software and associated documentation
+// files (the "Software"), to deal in the Software without restriction, including without limitation the rights to use, copy,
+// modify, merge, publish, distribute, sublicense, and/or sell copies of the Software, and to permit persons to whom the
+// Software is furnished to do so, subject to the following conditions:
+//
+// The above copyright notice and this permission notice shall be included in all copies or substantial portions of the
+// Software.
+//
+// THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE
+// WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR
+// COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE,
+// ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
+///////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+}}

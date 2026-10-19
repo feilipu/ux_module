@@ -32,7 +32,7 @@ ux_module.spin
     └── hires_text_vga.spin Dual-cog VGA text engine (Parallax / Chip Gracey)
 ```
 
-Compile and upload with `ux_module.spin` as the top object. Use `-L src` only. VECTORJET lives under `src/lib_vjet` with its own demo tops. The product top does not link it.
+Compile and upload with `ux_module.spin` as the top object. Use `-L src` only. The six VECTORJET library objects stay in `src/lib_vjet/`. Compile tops and both heads are in `src/lib_vjet/demo/`. Display lists are in `src/lib_vjet/scene/`. The product top does not link them.
 
 ## Pin roles (summary)
 
@@ -129,7 +129,7 @@ Cursors are six bytes: text X/Y/mode and mouse X/Y/mode. The UX Module uses the 
 
 ## Relation to VECTORJET
 
-`src/lib_vjet` is not linked from the product top. Compile VECTORJET demos with their own top objects and `-L src -L src/lib_vjet`. Pins P16–P23 have one owner. See `ARCHITECTURE_LIB_VJET.md`.
+`src/lib_vjet` is not linked from the product top. Compile VECTORJET demos with their own top objects and `-L src -L src/lib_vjet`. Those tops and both heads are in `src/lib_vjet/demo/`. Display lists are in `src/lib_vjet/scene/`. Pins P16–P23 have one owner. See `ARCHITECTURE_LIB_VJET.md`.
 
 The framebuffer bring-up keeps the list and the bitmap. The 80-line bitmap pair is 20480 bytes. The next bring-up writes an eight-line slice ahead of the scan. The accepted framebuffer demo stays.
 

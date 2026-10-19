@@ -1,81 +1,11 @@
-'' Framebuffer probe. Same cogs and stripe rule as demo/vjet_fb.spin.
-'' The scene checks motion, crossings, and depth order.
-'' No ACIA cog. No FTDI cog.
-''
-'' Each frame draws 1 box and 9 triangles.
-'' The box stores 16 bytes. Each triangle is flat and stores 36 bytes.
-'' The list stores 340 bytes. Each list is 1200 bytes.
-''
-'' blend is 1. Bit 1 of a colour asks for the 50 percent mix.
-'' Glass colours are $55AA, $66BB, $AAFF, and $F0F2.
+'' One box and nine triangles. The beam-chase head includes this file.
+'' (C)2026 feilipu.
+'' blend is 1. Glass colours are $55AA, $66BB, $AAFF, and $F0F2.
 '' Solid colours are $1818, $C0C0, $7474, $80C0, $0055, and $4848.
-CON
-
-  _clkmode      = XTAL1 + PLL16X
-  _xinfreq      = 7_372_800
-
-  DLIST_SIZE = 300
-
-  WIDTH = render#WIDTH
-  HEIGHT = render#NUM_LINES
-
-
-OBJ
-vga: "VJET_vUXM_vga_fb.spin"
-render: "VJET_vUXM_rendering_fb.spin"
-gl: "VJET_v01_displaylist.spin"
-
 
 VAR
 
-long framecount, vga_status, dlist_ptr, boot
-long go, front, done, stripe0, stripe1, stripe2, fixup, blend
-long dlist1[DLIST_SIZE], dlist2[DLIST_SIZE]
-long pix0[render#FB_LONGS]
-long pix1[render#FB_LONGS]
-long pal0[render#PAL_LONGS]
-long pal1[render#PAL_LONGS]
-long scratch[render#SCRATCH_LONGS]
 long ox[4], oy[4], oz[4], oc[4]
-
-
-PUB main
-
-  longfill(@pix0, 0, render#FB_LONGS)
-  longfill(@pix1, 0, render#FB_LONGS)
-  longfill(@pal0, 0, render#PAL_LONGS)
-  longfill(@pal1, 0, render#PAL_LONGS)
-  longfill(@go, 0, 8)
-  blend := 1
-
-  vga.start(16 / 8, @pix0, @pal0, @go, @vga_status)
-
-  boot := 0
-  render.start(0, 3, @scratch, @dlist_ptr, @pix0, @pal0, @go, @boot)
-  render.start(1, 3, @scratch, @dlist_ptr, @pix0, @pal0, @go, @boot)
-  render.start(2, 3, @scratch, @dlist_ptr, @pix0, @pal0, @go, @boot)
-
-  gl.start(@dlist1, constant(DLIST_SIZE * 4))
-  \draw
-  gl.done
-  dlist_ptr := @dlist1
-  go := 1
-  boot := 1
-
-  repeat
-    repeat until done == go
-    framecount++
-    if go & 1
-      gl.start(@dlist2, constant(DLIST_SIZE * 4))
-      \draw
-      gl.done
-      dlist_ptr := @dlist2
-    else
-      gl.start(@dlist1, constant(DLIST_SIZE * 4))
-      \draw
-      gl.done
-      dlist_ptr := @dlist1
-    go++
 
 
 PRI draw | i, t

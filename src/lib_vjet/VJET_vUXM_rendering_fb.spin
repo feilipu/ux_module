@@ -5,7 +5,8 @@
 '' Other lines walk edges and are not stored. The VGA cog repeats each stored line.
 '' The cog does not wait on the VGA line number.
 '' Three cogs are required. Stripe 0 publishes done.
-'' (C)2021 IRQsome Software, framebuffer path 2026
+'' Derived from VJET_vUXM_rendering.spin, (C)2021 IRQsome Software.
+'' (C)2026 feilipu.
 
 CON
 

@@ -1,3 +1,6 @@
+'' 8x8 font "Bump IT UP" by Aaron Amar.
+'' Creative Commons Attribution Share Alike. The notice is in the DAT block.
+
 VAR
 
 long init

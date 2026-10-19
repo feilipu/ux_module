@@ -2,7 +2,7 @@
 
 This plan covers three stages. Stage 1 puts the known-good framebuffer on the same firmware as the UX Module text console. Stage 2 chooses the command path from CP/M-IDE. Stage 3 adds the CP/M-IDE library and tools.
 
-The live bring-up is the beam-chase slice in `src/ux_module_vjet.spin`. The EEPROM image is the 19772-byte test card. Stage 1 below records the framebuffer trial.
+The live bring-up is the beam-chase slice in `src/ux_module_vjet.spin`. EEPROM holds the 16392-byte image loaded on 19 Oct 2026. The mode flag powers up clear. Stage 1 below records the framebuffer trial.
 
 The repair history is `3D_PROCESS_LIB_VJET.md`. This file does not repeat those loads.
 
@@ -19,6 +19,9 @@ Product `main` stays in text mode until stage 1 passes its checks.
 | Beam chase | `VJET_vUXM_vga` and `VJET_vUXM_rendering`. Demo is `demo/vjet_test.spin`. |
 | Framebuffer | `VJET_vUXM_vga_fb` and `VJET_vUXM_rendering_fb`. Demo is `demo/vjet_fb.spin`. |
 | Display list | Hub list of shapes. The render cogs read it. |
+| Library directory | `src/lib_vjet/`. The six engine objects stay here. |
+| Demo directory | `src/lib_vjet/demo/`. Compile tops and both heads. |
+| Scene directory | `src/lib_vjet/scene/`. A head includes `scene/scene_*.spin`. |
 | Draw cog | Second Spin cog. It builds the display list. |
 | Cog 0 | Product main loop. The only writer of `acia.tx`. |
 | Console pair | 0x80 and 0x81. Text mode is the 6850. Graphics mode keeps this pair and changes the meaning. |
@@ -76,13 +79,13 @@ Hub is 32 KB. OpenSpin 1.00.81 measured these images.
 |-----|------|----------------------|------|
 | `ux_module.spin` | 12780 | 13516 | Text only. |
 | `demo/vjet_test.spin` | 6140 | — | Stored beam-chase demo. Current compile is 6156. |
-| `vjet_ftdi.spin` | 8660 | — | Beam chase plus ACIA and FTDI. Clean. |
+| `demo/vjet_ftdi.spin` | 8660 | — | Beam chase plus ACIA and FTDI. Clean. |
 | `demo/vjet_fb.spin` | 8044 | about 944 | Accepted file `build/vjet_fb.binary`. Current source compiles to 8216. |
-| `vjet_fb_probe.spin` | 6696 | — | Stripe and glass check. Was on EEPROM. Not a demo. |
-| `vjet_fb_cube.spin` | 7520 | — | Stage 2 harness. Current source compiles to 7676. Not loaded. |
+| `demo/vjet_fb_probe.spin` | 6696 | — | Stripe and glass check. Was on EEPROM. Not a demo. |
+| `demo/vjet_fb_cube.spin` | 7520 | — | Stage 2 harness. Current source compiles to 7676. Not loaded. |
 | `ux_module_vjet.spin` | 20408 | 1148 | Framebuffer bring-up on 17 Oct. Ten content lines. |
 | `ux_module_vjet.spin` | 19772 | 1160 | EEPROM test card. 18 longs remain above the stack reserve. |
-| `ux_module_vjet.spin` | 16128 | 4792 | Stream copier. `openspin -u`. Font kept. Not loaded. |
+| `ux_module_vjet.spin` | 16392 | 4520 | Stream copier and the mode flag. `openspin -u`. On EEPROM. The flag powers up clear. |
 
 The accepted bitmap does not fit in the bring-up. Two bitmaps and two palettes at 80 lines are 20480 bytes. The bring-up keeps 10 content lines and one black line. Each content line needs 256 bytes.
 
@@ -227,17 +230,19 @@ Run these in order. Stop on the first failure.
 6. Return to text mode. The banner path must run. The 8085 console must work.
 7. Repeat the switch ten times. Cog `start` must not fail for lack of a cog.
 
-`vjet_fb_probe.spin` is the check that the stripe rule holds on moving triangles. It is not step 3. The bring-up still has to boot in text and switch.
+`demo/vjet_fb_probe.spin` is the check that the stripe rule holds on moving triangles. It is not step 3. The bring-up still has to boot in text and switch.
 
 ## Stage 2 — Command path
 
 The 8085 must build scenes without a new Propeller binary for each model. The Propeller does not parse STL or OBJ for each frame. A cooker on CP/M or on the Mac converts the file once.
 
-The cube harness stays the maths trial. It uses the framebuffer cogs and it is not loaded. The next code is the streamed list on the beam-chase bring-up. The ACIA cog stays unchanged. The mode flag waits until that handler fits and a DIR test is possible.
+The cube harness stays the maths trial. It uses the framebuffer cogs and it is not loaded. The streamed list is in the beam-chase bring-up.
+
+The mode flag is in the ACIA cog. It powers up clear. Control-G does not set it. A DIR test is still required. The flag read runs on every bus cycle.
 
 ### Cube harness
 
-`src/lib_vjet/vjet_fb_cube.spin` uses the framebuffer cogs. The mesh has 8 vertices and 12 triangles. Far faces are drawn first. RES draws the resident mesh. STR draws the same faces from a stream table. The label switches about once a second.
+`src/lib_vjet/demo/vjet_fb_cube.spin` uses the framebuffer cogs. The mesh has 8 vertices and 12 triangles. Far faces are drawn first. RES draws the resident mesh. STR draws the same faces from a stream table. The label switches about once a second.
 
 The stream record is six signed pixels and one colour word. That is 14 bytes on the wire. Twelve triangles are 168 bytes. The harness keeps each pixel in a long so the sign survives. The program compiles to 7520 bytes. It is not loaded. `blend` stays clear.
 
@@ -271,7 +276,7 @@ On a good count, clear only the fill target. Then store those bytes as the displ
 
 A data byte of `$03` is payload. It does not reset the console FIFOs. A control-port write of `$03` still resets them. The graphics program writes the data port only.
 
-The pair stays a 6850. This trial does not set the mode flag. Control-G still leaves the pair as a 6850.
+The pair stays a 6850 while the flag is clear. Boot writes 0. Control-G does not set the flag.
 
 On this beam-chase image, a solid face uses two equal colour bytes. The framebuffer stripe rule is a different picture.
 
@@ -303,7 +308,11 @@ A normal compile of the copier exceeds Hub by 68 longs. Compile the bring-up wit
 openspin -u -L src -L src/lib_vjet -b -o build/ux_module_vjet.binary src/ux_module_vjet.spin
 ```
 
-That compile removes 86 unused methods and saves 4068 bytes. The program is 16128 bytes. Free Hub is 4792 bytes. Do not use `-u` on `src/ux_module.spin`. The EEPROM image remains the 19772-byte test card.
+That compile removes 86 unused methods and saves 4068 bytes. The program is 16392 bytes. Free Hub is 4520 bytes. Do not use `-u` on `src/ux_module.spin`. EEPROM holds this image. The text console answered `ls`.
+
+### Scene files
+
+The six library objects stay in `src/lib_vjet/`. Compile tops and both heads are in `src/lib_vjet/demo/`. Display lists are in `src/lib_vjet/scene/`. A top defines one scene macro and includes one head. The head includes `scene/scene_*.spin`. Do not compile a head or a scene file.
 
 ### Roles
 
@@ -504,9 +513,9 @@ Status on 18 Oct 2026. Steps 1 and 2 are done. The live bring-up is the beam-cha
 
 The framebuffer bring-up of 20408 bytes is an earlier trial. Steps 3 to 5 in the table use that wording. The EEPROM image is the test card. Do not mark those steps passed.
 
-Step 6 is in the bring-up source. Cog 0 copies a list into the unpublished list. The draw cog publishes the pointer. Compile that top with `openspin -u`. The program is 16128 bytes. Free Hub is 4792 bytes.
+Step 6 is in the bring-up source. Cog 0 copies a list into the unpublished list. The draw cog publishes the pointer. Compile that top with `openspin -u`. The program is 16392 bytes. Free Hub is 4520 bytes. That image is not on EEPROM.
 
-Command bytes are not frozen. The ACIA cog stays unchanged until the mode-flag handler fits and a DIR test is possible. The EEPROM image remains the 19772-byte test card.
+The mode flag is in the ACIA cog and powers up clear. Command bytes are not frozen. On 19 Oct 2026 EEPROM was programmed with the 16392-byte image. This shell has no `DIR` command. `ls` returned the same 20 files as before the load. A sealed list has not been sent.
 
 ## Risks
 
@@ -534,8 +543,8 @@ Command bytes are not frozen. The ACIA cog stays unchanged until the mode-flag h
 | `.agents/skills/hw-ux-pcb/SKILL.md` | Pin map and 74HC4078 |
 | `src/lib_vjet/demo/vjet_fb.spin` | Framebuffer demo |
 | `src/lib_vjet/demo/vjet_test.spin` | Original beam-chase demo |
-| `src/lib_vjet/vjet_fb_cube.spin` | Stage 2 cube harness |
-| `src/lib_vjet/vjet_fb_probe.spin` | Motion and occlusion check |
+| `src/lib_vjet/demo/vjet_fb_cube.spin` | Stage 2 cube harness |
+| `src/lib_vjet/demo/vjet_fb_probe.spin` | Motion and occlusion check |
 | `src/acia_rc2014.spin` | Port constants and the wait loop |
 | `cpu-8085` skill | 8085 opcodes and stack locals |
 | `8085-cf-acia/cpm22bios.asm` | `acia_interrupt` and the 6850 console |

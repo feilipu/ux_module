@@ -40,6 +40,8 @@ proploader -p /dev/cu.usbserial-XXXX -e -r build/ux_module.binary
 
 The two demos are in `src/lib_vjet/demo/`. `vjet_test.spin` is the beam-chase picture. `vjet_fb.spin` is the same picture on the framebuffer. The framebuffer solution is `VJET_vUXM_vga_fb.spin` and `VJET_vUXM_rendering_fb.spin`.
 
+The other compile tops and both heads are in that same directory. Display lists are in `src/lib_vjet/scene/`. A head includes one list as `scene/scene_*.spin`. Use the same `-L src -L src/lib_vjet`. Do not compile a head or a scene file. The six library objects stay in `src/lib_vjet/`.
+
 ```sh
 openspin -L src -L src/lib_vjet -b -o build/vjet_test.binary src/lib_vjet/demo/vjet_test.spin
 openspin -L src -L src/lib_vjet -b -o build/vjet_fb.binary src/lib_vjet/demo/vjet_fb.spin

@@ -23,7 +23,7 @@ ux_module.spin                 ' top object — compile/upload this
     └── hires_text_vga.spin    ' dual-cog VGA text (Chip Gracey)
 ```
 
-Boot is text VGA only. There is no DIAG_ switch. VECTORJET stays under `src/lib_vjet` with its own demo tops. Do not link it from `ux_module.spin` until graphics work resumes (`library-vjet`).
+Boot is text VGA only. There is no DIAG_ switch. VECTORJET stays under `src/lib_vjet`. Compile tops and both heads are in `src/lib_vjet/demo/`. Display lists are in `src/lib_vjet/scene/`. Do not link it from `ux_module.spin` until graphics work resumes (`library-vjet`).
 
 Archive demos under `archive/` are not part of the production tree.
 
@@ -67,12 +67,12 @@ Boot banner `"UX Module Initialised"` goes to FTDI and VGA.
 
 ## ACIA emulation (agent-critical)
 
-**Tree now:** ACIA PASM is `569cd07` wait (`waitpne` then `waitpeq wr`). Mailbox is 11 longs. Rise wait is `wait_pin_high`. `sync_irq` composes `acia_status` on a status read (after `/WAIT`). `last_rdr` is cog RAM (empty or `/RTS` high rewinds `tx_tail`). Spin pulses `DIRA[25]` when RIE/TIE; it does not RMW `acia_status`. Dropping that pulse drops host keys. Punch list: [references/remaining-errors.md](references/remaining-errors.md).
+**Tree now:** ACIA PASM is `569cd07` wait (`waitpne` then `waitpeq wr`). The 6850 mailbox is 11 longs. `gfx_flag` and `gfx_cmd` follow those longs. Rise wait is `wait_pin_high`. `sync_irq` composes `acia_status` on a status read (after `/WAIT`). `last_rdr` is cog RAM (empty or `/RTS` high rewinds `tx_tail`). Spin pulses `DIRA[25]` when RIE/TIE and `gfx_flag` is clear. It does not RMW `acia_status`. A set flag floats P25 and skips that pulse. The flag `rdlong` is after `andn outa, bus_int`. No Hub op sits between `waitpne` and `waitpeq`. Dropping the text-mode pulse drops host keys. Punch list: [references/remaining-errors.md](references/remaining-errors.md).
 
 - One PASM cog watches the decoded I/O address with `WAITPNE` / `WAITPEQ`.
 - Match uses `waitpeq … wr` so `/WAIT` asserts via **destination += mask**. Do not drop `wr`. Loop contract: `lang-pasm/references/acia-wait.md`.
 - Handler releases `/WAIT` with `or outa, bus_wait` after it places data or captures a write. `/RD` `/WR` rise uses `wait_pin_high` (poll pin and `req_master`). Do not put Hub ops on the match path to `waitpeq … wr`.
-- Hub block at `PAR` (11 longs): `rx_head`, `rx_tail`, `tx_head`, `tx_tail`, `acia_base`, `acia_config`, `acia_status`, `buffer_ptr`, `tdre_hold`, `req_master`, `req_parse_idle`, then rx/tx byte FIFOs.
+- Hub block at `PAR` (11 longs): `rx_head`, `rx_tail`, `tx_head`, `tx_tail`, `acia_base`, `acia_config`, `acia_status`, `buffer_ptr`, `tdre_hold`, `req_master`, `req_parse_idle`. Then `gfx_flag` and `gfx_cmd`. Then the rx and tx byte FIFOs. `stop` fills only the 11 longs. Cog 0 writes `gfx_flag`. The ACIA cog only reads it. Boot writes 0. Control-G does not set it.
 - Perspective: Z80 “receive” is Propeller `tx_*` (host→Z80); Z80 “transmit” is Propeller `rx_*`.
 - PASM `sync_irq` is the live writer of `acia_status` (status read, after `/WAIT`). `sync_irq` derives `RDRF` from the TX FIFO and `/RTS`, and `TDRE` from RX room and `tdre_hold`.
 - Spin `tx` / `rx` move FIFO indexes only. They abort on `req_parse_idle` / `req_master`. `rxCount` / `rxCheck` / `txCheck` / `txSpace` / `rxPeek` are counts or peeks only. Spin does not RMW `acia_status`.
@@ -80,7 +80,7 @@ Boot banner `"UX Module Initialised"` goes to FTDI and VGA.
 - `/RTS` high (`CR_TID_RTS1`): hide `RDRF`, keep FIFO bytes, present `last_rdr`. `/RTS` low: set `RDRF` if the TX FIFO holds data.
 - Empty or `/RTS`-high RDR: present `last_rdr`, do not move `tx_tail`. Full TDR: drop the write, do not set `OVRN` (that bit is a receiver error).
 - CR5/CR6 is a two-bit field. TIE is the exact value `CR_TIE_RTS0`, not bit 5 alone. Master reset `$03` zeros both FIFOs and sets `req_parse_idle`. It does not clear `tdre_hold`.
-- `/INT` level from `sync_irq` on a status read. Spin still pulses `DIRA[25]` when RIE/TIE so the 8085 sees a key while PASM is in `waitpeq`. Do not drop that pulse.
+- `/INT` level from `sync_irq` on a status read while the flag is clear. Spin still pulses `DIRA[25]` when RIE/TIE and `gfx_flag` is 0, so the 8085 sees a key while PASM is in `waitpeq`. A set flag floats P25. Do not drop the text-mode pulse.
 
 Edit with `lang-pasm` + `hw-ux-pcb`. Datasheet: `docs/MC6850.pdf`. OBEX idioms: `lang-pasm/references/obex-pasm.md`. Host drivers (RomWBW, CPM-IDE 8085) vs this tree: [references/acia-host-drivers.md](references/acia-host-drivers.md).
 

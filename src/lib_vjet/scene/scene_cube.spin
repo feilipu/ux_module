@@ -1,83 +1,21 @@
-'' Stage 2 cube harness. Uses the framebuffer solution.
-'' Eight vertices and twelve triangles. Far faces are drawn first.
+'' Eight vertices and twelve triangles. Included by the framebuffer head.
 '' RES draws the resident mesh. STR draws the same faces from a stream table.
-'' The stream table stores pixel integers. The draw shifts them to 16.16.
-'' No ACIA cog. No FTDI cog. This file is not one of the two demos.
+'' (C)2026 feilipu.
+
 CON
-
-  _clkmode      = XTAL1 + PLL16X
-  _xinfreq      = 7_372_800
-
-  DLIST_SIZE = 300
-
-  WIDTH = render#WIDTH
-  HEIGHT = render#NUM_LINES
 
   HALF = 36
   CX = 128
   CY = 110
 
 
-OBJ
-vga: "VJET_vUXM_vga_fb.spin"
-render: "VJET_vUXM_rendering_fb.spin"
-gl: "VJET_v01_displaylist.spin"
-font : "hexfont.spin"
-
-
 VAR
 
-long framecount, vga_status, dlist_ptr, boot
-long go, front, done, stripe0, stripe1, stripe2, fixup, blend
-long dlist1[DLIST_SIZE], dlist2[DLIST_SIZE]
-long pix0[render#FB_LONGS]
-long pix1[render#FB_LONGS]
-long pal0[render#PAL_LONGS]
-long pal1[render#PAL_LONGS]
-long scratch[render#SCRATCH_LONGS]
 long sx[8], sy[8], sz[8]
 long zc[12]
 long stream[84]
 byte order[12]
 byte label[8]
-
-
-PUB main | ms
-
-  longfill(@pix0, 0, render#FB_LONGS)
-  longfill(@pix1, 0, render#FB_LONGS)
-  longfill(@pal0, 0, render#PAL_LONGS)
-  longfill(@pal1, 0, render#PAL_LONGS)
-  longfill(@go, 0, 8)
-
-  vga.start(16 / 8, @pix0, @pal0, @go, @vga_status)
-
-  boot := 0
-  render.start(0, 3, @scratch, @dlist_ptr, @pix0, @pal0, @go, @boot)
-  render.start(1, 3, @scratch, @dlist_ptr, @pix0, @pal0, @go, @boot)
-  render.start(2, 3, @scratch, @dlist_ptr, @pix0, @pal0, @go, @boot)
-
-  gl.start(@dlist1, constant(DLIST_SIZE * 4))
-  ms := \draw
-  gl.done
-  dlist_ptr := @dlist1
-  go := 1
-  boot := 1
-
-  repeat
-    repeat until done == go
-    framecount++
-    if go & 1
-      gl.start(@dlist2, constant(DLIST_SIZE * 4))
-      ms := \draw
-      gl.done
-      dlist_ptr := @dlist2
-    else
-      gl.start(@dlist1, constant(DLIST_SIZE * 4))
-      ms := \draw
-      gl.done
-      dlist_ptr := @dlist1
-    go++
 
 
 PRI draw : ms | t0

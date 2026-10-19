@@ -1,5 +1,6 @@
 '' VECTORJET v1.0
 '' (C)2020 IRQsome Software
+'' Modified by feilipu 2026.
 '' Display list helper
 ''
 '' Each shape starts with an 8-byte header.

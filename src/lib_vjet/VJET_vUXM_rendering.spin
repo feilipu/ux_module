@@ -1,6 +1,7 @@
 '' VECTORJET for UX Module (based on v1.0)
 '' Special version, don't re-use if you don't know what you're doing
 '' (C)2021 IRQsome Software
+'' Modified by feilipu 2026.
 '' Rendering Cog code 
 
 CON
@@ -64,8 +65,8 @@ VAR
 
 PUB start(cognum,totalcogs,scanbuffer,dlistPtrAdr,videoSync,readyptr)
 '' Start one rendering cog. Call once per cog with cognum 0..totalcogs-1.
-'' Copies the five DAT parameters then cognew. Wait so the hub image is taken
-'' before the next start() overwrites those longs.
+'' Copy the five DAT parameters, then cognew.
+'' Wait so the hub image is taken before the next start overwrites those longs.
   longmove(@cognumber,@cognum,5)
   result := cognew(@Entry, readyptr)
   if result => 0
@@ -113,7 +114,8 @@ if_nz   jmp #:waitloop
 
         rdword dlist_base, dlist_ptr_adr  '' read adress of display list
         'wrword dlist_base, dlist_in_use
-        '{
+        ' The line walk does not read the edges this fixup writes.
+        {
 '' fixup shapes clipped by top edge of screen (negative ystart)
         mov init_share,cognumber ' we only handle every Nth fixup
         mov dlist_next,dlist_base
@@ -274,7 +276,7 @@ if_ae   jmp #:nextshape
 
         ' Each cog owns every third line.
         ' Rebuild both edges from the initial edges and the slopes.
-        ' Do not wait for another render cog. Do not write the edges back.
+        ' Do not write those edges back.
         add dlist_ptr,#1
         rdbyte shape_type,dlist_ptr
         add dlist_ptr,#5 ' move dlist ptr to start of shape data
@@ -309,7 +311,7 @@ if_b    jmp #:thistrap
         jmp #:traplp
 
 :thistrap
-        add dlist_ptr,coloroffset ' 2 or 3
+        add dlist_ptr,coloroffset
         rdbyte poly_color,dlist_ptr
         sub dlist_ptr,coloroffset
         add dlist_ptr,#4
@@ -334,8 +336,7 @@ if_b    jmp #:thistrap
  
 :nextshape
         tjnz dlist_next,#:shapeloop
-        jmp span_ret
-        '}        
+        jmp span_ret        
         
         'uncomment to enable diagonal line that aids in debugging
         {          
@@ -362,7 +363,20 @@ if_z_and_nc jmp #new_frame
         add d0,total_cogs
         sub d0,#LINE_BUFFERS
         cmps currentrequest,d0 wz,wc
-if_be   jmp #:linewait
+if_a    jmp #:scanlinedone
+'' The cog pauses when d0 leads the beam by 2 or more.
+'' A lead of 0 or 1 keeps this poll.
+        mov d1,d0
+        sub d1,currentrequest
+        cmp d1,#2 wc
+if_c    jmp #:linewait
+        mov d1,cnt
+        add d1,linepause
+        mov d0,cognumber
+        shl d0,#6
+        add d1,d0
+        waitcnt d1,#0
+        jmp #:linewait
 
 :scanlinedone
         add currentscanline, total_cogs
@@ -428,14 +442,14 @@ if_nz_and_c  jmp #:textdone ' illegal
 
         ' prepare color
         ' put poly_color into all 4 bytes of span_color
-        mov d0,poly_color  
+        mov d0,poly_color
         mov span_color,d0
         shl d0,#8
-        or  span_color,d0
+        or span_color,d0
         mov d0,span_color
         shl d0,#16
-        or  span_color,d0
-       
+        or span_color,d0
+
         rdword poly_left,dlist_ptr
         shl poly_left,#16 ' sign extend
         sar poly_left,#16
@@ -467,10 +481,10 @@ if_b    jmp #:chrdone
         rdword d0,d0
         add d0,text_y
         rdbyte d0,d0
-        
+
         mov pixel_ptr,display_base
         add pixel_ptr,poly_left
-        
+
 :tplp
         shr d0,#1 wc,wz
 :thewr1
@@ -553,17 +567,17 @@ load_rec_ret
 
 draw_span
         ' range check edges
-        
-        mov span_right,poly_right         
+
+        mov span_right,poly_right
         sar span_right,#16
         maxs span_right,#WIDTH
         mov span_left,poly_left
         sar span_left,#16
-        mins span_left,#0 
+        mins span_left,#0
 
         mov span_length,span_right
         cmps span_length,span_left wc,wz,wr
-if_be   jmp draw_span_ret ' return if span length/width =< 0   
+if_be   jmp draw_span_ret ' return if span length/width =< 0
 
 
         ' debug draw
@@ -588,14 +602,14 @@ if_be   jmp draw_span_ret ' return if span length/width =< 0
         '{
         ' draw span
         add span_left,display_base
-        
+
         ' super edge case: super short span
         cmp span_length,#6 wc,wz ' optimal threshold here seems to be 6, oddly enough (6 is the minimum for correct execution)
 if_be  jmp #:shortspan
 
         ' prepare color
         ' put poly_color into all 4 bytes of span_color
-        mov d0,poly_color  
+        mov d0,poly_color
         mov span_color,d0
         shl d0,#8
         or  span_color,d0
@@ -623,12 +637,12 @@ if_c    sub span_length,#2
         ' handle right edge cases
         test span_length,#%11 wc,wz
 if_z    jmp #:rightaligned
-        
+
         mov d0,span_left
         add d0,span_length
-        
+
         test span_length,#%01 wz
-if_nz   sub d0,#1 
+if_nz   sub d0,#1
 if_nz   wrbyte span_color,d0
 
 if_z_eq_c sub d0,#2
@@ -643,7 +657,7 @@ if_z    jmp draw_span_ret
         wrlong span_color,span_left
         add span_left,#4
         djnz span_length,#:spnlp
-        jmp draw_span_ret        
+        jmp draw_span_ret
 
 :shortspan
         tjz span_length,draw_span_ret
@@ -652,10 +666,12 @@ if_z    jmp draw_span_ret
         add span_left,#1
         djnz span_length,#:sspnlp
         '}
-  
+
 draw_span_ret
               ret
         
+'' newmult is not called. The framebuffer cog keeps it.
+{
 '' See: https://forums.parallax.com/discussion/160804/slightly-faster-integer-multiplication-in-pasm
 newmult       ' setup
               mov       vRes, #0      ' Primary accumulator (and final result)
@@ -681,16 +697,28 @@ newmult       ' setup
               add       vRes, tmp1    ' and add its contribution
               negz      vRes,vRes          
 newmult_ret   ret
+}
 
 ' vRes = v1 * v2. v2 is a line count from 0 to 65535.
 ' Each add saturates, as repeated ADDS does.
-' v1 stays. v2 becomes 0.
+' v1 stays. A short count returns when v2 is 0.
+' Four bits per pass. The loop stops after 16 bits.
 satmul        mov       vRes,#0
               mov       tmp1,v1
-              mov       muli,#16
+              mov       muli,#4
 :sm           shr       v2,#1 wc
         if_c  adds      vRes,tmp1
               adds      tmp1,tmp1
+              shr       v2,#1 wc
+        if_c  adds      vRes,tmp1
+              adds      tmp1,tmp1
+              shr       v2,#1 wc
+        if_c  adds      vRes,tmp1
+              adds      tmp1,tmp1
+              shr       v2,#1 wc
+        if_c  adds      vRes,tmp1
+              adds      tmp1,tmp1
+              tjz       v2,#satmul_ret
               djnz      muli,#:sm
 satmul_ret    ret
 
@@ -698,50 +726,26 @@ satmul_ret    ret
 ''===========
 ''DATA STUFF
 ''===========
-Dfield_1  long 1<<Dfield
-
+coloroffset long 2 'toggles between 2 and 3
+text_bit     long $80000000 ' text record: list address in bits 15..0
 opc_bit0 long 1<<26
 opc_bit1 long 2<<26
 
-con8080   long $8080                                             
-
-{
-junkcolor long $05_05
-junkslope long $0001_8431
-junkslope2 long $0000_8431 
-}
-
-coloroffset long 2 'toggles between 2 and 3
-text_bit     long $80000000 ' text record: list address in bits 15..0
-
-white long $FF * $01010101
 black long $03 * $01010101
-red   long $CC * $01010101
-green long $4C * $01010101
 
-zero long 0
+linepause long 1024
 
 tmp1 res 1
-tmp2 res 1
 muli res 1
 v1 res 1
 v2 res 1
 vRes res 1
 
-init_share res 1
-
-init_lines res 1
-text_y 'alias
+text_y
 trap_lines res 1
 pixel_iter res 1
 
-text_pxwidth ' alias
-slope_left res 1
-text_pxperchr 'alias
-slope_right res 1
-
 pixel_ptr   res 1
-pixel_ptr_stride res 1
 
 dlist_base res 1
 dlist_ptr  res 1
@@ -751,7 +755,6 @@ currentrequest res 1
 
 currentscanline res      1 ''current scanline that TV driver is rendering
 currentscanline_haxx res 1 ' speed hack  
-tile_line     res        1
 display_base res         1
 
 
@@ -762,11 +765,11 @@ span_color    res 1
 shape_type    res 1
 poly_top      res 1
 poly_bottom   res 1
-poly_left     res 1
-poly_right    res 1
+poly_left res 1
+poly_right res 1
+text_pxwidth res 1
+text_pxperchr res 1
 poly_color    res 1
-poly_edgebuf  res 1
-poly_syncptr  res 1
 
 text_scale    res 1
 fontptr       res 1

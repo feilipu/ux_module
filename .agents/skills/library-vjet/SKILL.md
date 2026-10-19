@@ -9,7 +9,7 @@ description: >
 
 # Library — VECTORJET (`src/lib_vjet`)
 
-Human architecture note: `ARCHITECTURE_LIB_VJET.md`. Author mark in sources: IRQsome Software (UXM specialisation).
+Human architecture note: `ARCHITECTURE_LIB_VJET.md`. The 2020 and 2021 objects keep the IRQsome mark. A new file uses (C)2026 feilipu. A file derived from an IRQsome object states that source and uses 2026.
 
 ## Files
 
@@ -21,11 +21,26 @@ Human architecture note: `ARCHITECTURE_LIB_VJET.md`. Author mark in sources: IRQ
 | `VJET_vUXM_rendering_fb.spin` | PASM render cogs; framebuffer bitmap |
 | `VJET_vUXM_vga_fb.spin` | PASM VGA cog; scans the finished bitmap |
 | `hexfont.spin` | Bitmap font for `text*` shapes |
-| `demo/vjet_test.spin` | Original demo. Beam chase. Spinning triangles. |
-| `demo/vjet_fb.spin` | Framebuffer demo. The same picture. |
-| `vjet_fb_cube.spin` | Stage 2 cube harness. Not a demo. |
-| `vjet_fb_probe.spin` | Stripe and glass check. Not a demo. |
-| `graphtest.spin` | Graph drawing sample. Not one of the two demos. |
+| `demo/head_slice.spin` | Beam-chase head. Not a compile top. |
+| `demo/head_fb.spin` | Framebuffer head. Not a compile top. |
+| `scene/scene_triangles.spin` | Spinning triangles. Both heads can include it. |
+| `scene/scene_graph.spin` | Graph picture. Beam-chase head only. |
+| `scene/scene_probe.spin` | Orbit probe. Beam-chase head. One box and nine triangles. |
+| `scene/scene_cube.spin` | Cube mesh. Framebuffer head only. |
+| `scene/scene_card.spin` | Test card. No compile top includes it. |
+| `demo/vjet_test.spin` | Original demo. Defines the triangle scene. Includes the beam-chase head. |
+| `demo/vjet_fb.spin` | Framebuffer demo. The same picture. Includes the framebuffer head. |
+| `demo/vjet_acia.spin` | Beam-chase triangles plus the ACIA cog. |
+| `demo/vjet_ftdi.spin` | Beam-chase triangles plus the ACIA cog and the FTDI cog. |
+| `demo/vjet_spin.spin` | Beam-chase triangles plus one extra Spin cog. The picture tears. |
+| `demo/vjet_fb_cube.spin` | Stage 2 cube harness. Not a demo. |
+| `demo/vjet_probe.spin` | Beam-chase orbit probe. Eight line slots. Do not load the framebuffer probe. |
+| `demo/vjet_fb_probe.spin` | Old framebuffer copy of the orbit probe. Do not load it. |
+| `demo/graphtest.spin` | Graph drawing sample. Not one of the two demos. |
+
+The six library objects stay in `src/lib_vjet/`. Compile tops and both heads are in `demo/`. Display lists are in `scene/`. A top in `demo/` defines one `SCENE_*` macro and includes one head. The head includes `scene/scene_*.spin`. Compile the top with `-L src -L src/lib_vjet`.
+
+`demo/head_fb.spin` defines `SCENE_FB` before the triangle scene. That branch drops two unused local names. The framebuffer image then matches the earlier compile.
 
 ## Pipeline
 
@@ -51,9 +66,7 @@ Resolution in UXM rendering: **WIDTH=256**, **NUM_LINES=240**, **LINE_BUFFERS=8*
 
 The beam-chase picture stays clean with one Spin cog. A second cog in a tight Spin loop tears that picture. Do not draw that path on Cog 0. The free Hub there is 1160 bytes. Cog 0 keeps a 256-long stack and 16 longs of `_FREE`. 18 longs remain above that pair.
 
-The bring-up is `src/ux_module_vjet.spin`. It stops text VGA, DDC, and the input that did not request graphics. It starts the beam-chase VGA cog, three render cogs, and one draw cog. The draw cog uses `drawStack` (192 longs). Cog 0 returns to the ACIA pump. The slice is eight lines. The default list is the test card and the circle turns clockwise. Far triangles are drawn first. This renderer has no 50 percent mix. The render wait starts the next line when the beam has passed current + cogs - 8. With three cogs that lead is 7 logical lines. Each render cog rebuilds both edges from the initial edges and the slopes. It does not read the sync byte. It does not write the current edges.
-
-The cog records the spans before the slot write. The slot write is one fill and then those spans. A full-width first span fills with that colour. A shape that starts above line 0 is walked from its initial edges. This cog does not write those edges.
+The bring-up is `src/ux_module_vjet.spin`. It stops text VGA, DDC, and the input that did not request graphics. It starts the beam-chase VGA cog, three render cogs, and one draw cog. The draw cog uses `drawStack` (192 longs). Cog 0 returns to the ACIA pump. The slice is eight lines. Graphics mode shows the spinning triangles. Boot stays the text console. Far triangles are drawn first. This renderer has no 50 percent mix. The render wait starts the next line when the beam has passed current + cogs - 8. With three cogs that lead is 7 logical lines. Each render cog rebuilds both edges from the initial edges and the slopes. The cog does not read the sync byte. The cog does not write the edges in the list. The draw cog waits until the front porch, then builds the next list. The cog records the spans before the slot write. The slot write is one fill and then those spans. A full-width first span fills with that colour. A shape that starts above line 0 is walked from its initial edges. This cog does not write those edges.
 
 One scan line keeps 24 records. A box, a point, a line, a polygon, or a text shape uses one record. A text shape is stored in list order with the spans. A shape after these 24 records on that line is skipped. The skipped shapes are the front shapes.
 
@@ -129,7 +142,7 @@ The draw cog does not call `gl.start` on a list Cog 0 is filling. The ACIA cog d
 
 The lead-in and the parser states are in `3D_WORKPLAN_LIB_VJET.md`. Command bytes are not frozen. The pair stays a 6850 for this trial.
 
-Compile `src/ux_module_vjet.spin` with `openspin -u`. `main` calls `font.get` so the font stays. That image is 16128 bytes. The EEPROM image remains the 19772-byte test card.
+Compile `src/ux_module_vjet.spin` with `openspin -u`. `main` calls `font.get` so the font stays. EEPROM holds the 16460 byte image. The mode flag powers up clear. Boot is the text console. Graphics mode shows the spinning triangles on the eight-line renderer. The field is one full-screen triangle. Do not load a framebuffer image. Do not replace that triangle with a box to skip a tall trap. Do not add a hub edge cache.
 
 `startVectorjet` does not clear a list that is ready or still filling. While `listReady` is set, Cog 0 leaves the next mark in the receive ring. After `listShown` is set, the draw cog does not rebuild the test card.
 
@@ -150,7 +163,11 @@ Bit 1 of that byte asks for a 50 percent mix when the control long `blend` (afte
 
 Even stored lines are bright, bright, dark, dark, bright, bright. Odd stored lines use the inverse order. The user accepted this picture on 17 Oct 2026. It is the known-good image. The forward plan is `3D_WORKPLAN_LIB_VJET.md`. The repair record is `3D_PROCESS_LIB_VJET.md`.
 
-The accepted scene draws 13 triangles and one text shape. That list uses at most 632 bytes. Each framebuffer list is 1200 bytes. The slice bring-up lists are 296 longs. The beam-chase demo lists are 900 longs. The scene is the test card. The demo does not call `set_lines`. A flat triangle is 36 bytes. A general triangle is 48 bytes. A box is 16 bytes and a text shape is 20 bytes.
+The accepted scene draws 13 triangles and one text shape. That list uses at most 632 bytes. A flat triangle is 36 bytes. A general triangle is 48 bytes. A box is 16 bytes and a text shape is 20 bytes.
+
+Each framebuffer list is 1200 bytes. That holds 33 flat triangles or 25 general triangles. Each beam-chase demo list is 3600 bytes. That holds 100 flat triangles or 75 general triangles. The larger list adds 67 flat triangles or 50 general triangles. The slice bring-up lists stay 296 longs.
+
+The bring-up scene is the spinning triangles. The demo does not call `set_lines`.
 
 `VJET_vUXM_vga.spin` and `VJET_vUXM_rendering.spin` stay the beam-chase pair. Do not copy the framebuffer `VSCL` into those files.
 
@@ -162,7 +179,7 @@ Three render cogs write that slice ahead of the scan. The original renderer used
 
 1. Keep display-list field sizes and offsets matched between `VJET_v01_displaylist.spin` comments and renderer PASM readers.
 2. Do not change `WIDTH` / `NUM_LINES` / `LINE_BUFFERS` in one file only; scan buffer size in the top object must match `(WIDTH*LINE_BUFFERS)/4` longs. VGA wrap is `tilesCounter & (LINE_BUFFERS-1)`.
-3. Preserve top-edge trap fixup and per-cog scanline striping (`currentscanline += total_cogs`).
+3. Keep the top-edge trap fixup as a block comment. The line walk reads the initial edges. Keep per-cog scanline striping (`currentscanline += total_cogs`).
 4. Treat UXM files as board-specialised; do not assume stock VECTORJET v1.0 timing.
 5. Keep the demo handshake. Vsync and the back porch publish line 0. A render cog restarts its frame when the VGA line is 0 and its own line is 16 or more.
 6. Stop text VGA (`wmf.stop`) and the I2C DDC cog (`i2c.stopCog`) before `VJET_vUXM_vga.start`. Stop VECTORJET VGA and `render.stop` before `wmf.init` and `i2c.startCog`. Never two VGA engines on P16–P23. The product top has no `enterGraphics` yet.
@@ -170,6 +187,8 @@ Three render cogs write that slice ahead of the scan. The original renderer used
 
    The FTDI arm calls `termToZ80`. The PS/2 arm calls `kbdToZ80`. The final build keeps the keyboard on the FTDI cog and calls `kbdToZ80` in that branch. The shared driver is not in the tree. Do not load a guess. On the beam-chase path, a second tight Spin loop tears the picture.
 8. Prose: `style-ste-writing`.
+9. Leave the six library objects in `src/lib_vjet/`. OpenSpin resolves a bare object name from the current directory, each `-L` path, and the top file's directory. Include a scene as `scene/name.spin`. Do not compile a head or a scene file.
+10. Keep the IRQsome mark on the 2020 and 2021 objects. A new file uses (C)2026 feilipu. A derived file states the IRQsome source and uses 2026. `hexfont.spin` stays the Aaron Amar font.
 
 ## Related
 

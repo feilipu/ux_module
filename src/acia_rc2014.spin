@@ -8,6 +8,10 @@
 '' last_rdr in cog RAM. sync_irq composes status on a status read.
 '' Spin still pulses DIRA[25] (RIE/TIE). It does not RMW acia_status.
 '' No XON/XOFF. PUMP_LIMIT, readZ80 ftdiNeed, hostXmodem.
+'' gfx_flag is 0 for a 6850. Cog 0 writes it. This cog only reads it.
+'' The read is after andn outa, bus_int. No Hub op sits between waitpne and waitpeq.
+'' A set flag floats /INT. An 0x80 write stores a command and does not change the 6850.
+'' An 0x81 write is payload in the receive ring. 0x03 there is not a reset.
 ''
 '' Practical 6850: FIFOs stand in for the UART. Clock divide, word select,
 '' and Break are not driven. PE, FE, CTS, and DCD stay 0. OVRN is not set
@@ -153,8 +157,10 @@ VAR
   long  tdre_hold                                       '#32  Spin 0/1; PASM keeps TDRE clear while nonzero
   long  req_master                                      '#36  CTRL+ALT+DEL: full 6850 reset including tdre_hold
   long  req_parse_idle                                  '#40  CR_RESET: Cog 0 must set PARSE_IDLE
-  byte  rx_buffer[BUFFER_LENGTH]                        '#44
-  byte  tx_buffer[BUFFER_LENGTH]                        '#44 + BUFFER_LENGTH
+  long  gfx_flag                                        ' 0: 6850. Cog 0 writes this. PASM reads it.
+  long  gfx_cmd                                         ' last 0x80 write while gfx_flag is set
+  byte  rx_buffer[BUFFER_LENGTH]
+  byte  tx_buffer[BUFFER_LENGTH]                        ' follows rx_buffer. Origin is buffer_ptr.
 
 
 PUB start(base) : okay
@@ -170,6 +176,8 @@ PUB start(base) : okay
   tdre_hold := 0
   req_master := 0
   req_parse_idle := 0
+  gfx_flag := 0
+  gfx_cmd := 0
   okay := cog := cognew(@entry,@rx_head) + 1
 
 
@@ -179,6 +187,8 @@ PUB stop
   if cog
       cogstop(cog~ - 1)
       longfill(@rx_head, 0, 11)
+      gfx_flag := 0
+      gfx_cmd := 0
 
 
 PUB txString( pStringPtr )
@@ -198,7 +208,7 @@ PUB tx(txbyte)
       return
     if (tx_tail - tx_head) & BUFFER_MASK <> 1
       quit
-    if ( tx_tail <> tx_head ) and not ( acia_config & constant ( CR_TID_RTS1 << DATA_BASE ) )
+    if not gfx_flag and ( tx_tail <> tx_head ) and not ( acia_config & constant ( CR_TID_RTS1 << DATA_BASE ) )
       if acia_config & constant ( CR_RIE << DATA_BASE )
         dira[ INT_PIN_NUM ]~~
         dira[ INT_PIN_NUM ]~
@@ -210,7 +220,7 @@ PUB tx(txbyte)
     return
   tx_head := ++tx_head & BUFFER_MASK
 
-  if not ( acia_config & constant ( CR_TID_RTS1 << DATA_BASE ) )
+  if not gfx_flag and not ( acia_config & constant ( CR_TID_RTS1 << DATA_BASE ) )
     if acia_config & constant ( CR_RIE << DATA_BASE )
       dira[ INT_PIN_NUM ]~~
       dira[ INT_PIN_NUM ]~
@@ -251,7 +261,7 @@ PUB rxCount : count
   count := rx_head - rx_tail
   count -= BUFFER_LENGTH * (count < 0)
 
-  if not tdre_hold and ( count < constant ( BUFFER_LENGTH-1 ) )
+  if not gfx_flag and not tdre_hold and ( count < constant ( BUFFER_LENGTH-1 ) )
     if acia_config & constant ( CR_TIE_RTS0 << DATA_BASE )
       dira[ INT_PIN_NUM ]~~
       dira[ INT_PIN_NUM ]~
@@ -281,6 +291,27 @@ PUB tdreAllow
 {{Allow PASM to set TDRE when the RX FIFO has room.}}
 
   tdre_hold := 0
+
+
+PUB setGfxFlag(n)
+{{Cog 0 writes the graphics flag. Nonzero selects the graphics bus.
+  This cog only reads the flag. A nonzero value floats /INT.}}
+
+  gfx_flag := n
+  if n
+    dira[ INT_PIN_NUM ]~
+
+
+PUB gfxFlag : n
+{{Return the graphics flag. 0 means the pair is a 6850.}}
+
+  n := gfx_flag
+
+
+PUB gfxCommand : n
+{{Return the last 0x80 write from graphics mode. Command values are not assigned.}}
+
+  n := gfx_cmd
 
 PUB masterReset
 {{CTRL+ALT+DEL: 6850 master reset including tdre_hold and config $03.
@@ -340,6 +371,10 @@ entry
                         mov     req_master_addr,t1
                         add     t1,#4                   ' req_parse_idle #40
                         mov     req_parse_idle_addr,t1
+                        add     t1,#4                   ' gfx_flag
+                        mov     gfx_flag_addr,t1
+                        add     t1,#4                   ' gfx_cmd
+                        mov     gfx_cmd_addr,t1
                         mov     last_rdr,#0
                         mov     cog_rts_hold,#0
 
@@ -361,6 +396,10 @@ wait
                                                         ' use wr effect to set /WAIT low on match (/INT gets hit as a side effect)
 
                         andn    outa,bus_int            ' reset /INT pin (modified as a side effect of the waitpeq outa wr effect)
+
+                        rdlong  t1,gfx_flag_addr        ' after /WAIT. Not between waitpne and waitpeq.
+                        cmp     t1,#0                wz
+            if_nz       jmp     #gfx_bus
 
                         testn   bus_a0,ina           wz ' isolate the base address
             if_z        jmp     #handler_data           ' handle data, otherwise fall through for handling command/status at base address
@@ -603,6 +642,63 @@ sync_irq
                         wrlong  t2,acia_status_addr
 sync_irq_ret            ret
 
+' Graphics bus. Reached only when gfx_flag is set.
+' Float /INT on every access. Release /WAIT on every exit.
+' Do not enter receive_command, transmit_status, or sync_irq.
+gfx_bus
+                        andn    dira,bus_int            ' /INT inactive
+                        testn   bus_a0,ina           wz
+            if_z        jmp     #gfx_data
+
+                        testn   bus_rd,ina           wz ' 0x80 read
+            if_nz       jmp     #gfx_status
+                        testn   bus_wr,ina           wz ' 0x80 write
+            if_nz       jmp     #gfx_command
+                        jmp     #gfx_release
+
+gfx_data
+                        testn   bus_rd,ina           wz ' 0x81 read
+            if_nz       jmp     #gfx_key
+                        testn   bus_wr,ina           wz ' 0x81 write is payload
+            if_nz       jmp     #receive_data
+                        jmp     #gfx_release
+
+gfx_command
+                        or      outa,bus_wait           ' release /WAIT before the Hub store
+                        mov     bus,ina
+                        mov     wait_mask,bus_wr
+                        call    #wait_pin_high
+                        shr     bus,#DATA_BASE
+                        and     bus,#$FF
+                        wrlong  bus,gfx_cmd_addr        ' command byte. Not acia_config. Not a reset.
+                        jmp     #wait
+
+gfx_status
+                        mov     bus,#1                  ' mode bit. Other status bits are not assigned.
+                        jmp     #gfx_put
+
+gfx_key
+                        mov     bus,#0                  ' no key byte on this path
+
+gfx_put
+                        shl     bus,#DATA_BASE
+                        or      outa,bus
+                        or      dira,data_active_mask
+                        nop
+                        nop
+                        nop
+                        nop
+                        or      outa,bus_wait
+                        mov     wait_mask,bus_rd
+                        call    #wait_pin_high
+                        andn    dira,data_active_mask
+                        andn    outa,data_active_mask
+                        jmp     #wait
+
+gfx_release
+                        or      outa,bus_wait
+                        jmp     #wait
+
 '
 ' Constants
 '
@@ -641,6 +737,8 @@ acia_status_addr        res     1
 tdre_hold_addr          res     1
 req_master_addr         res     1
 req_parse_idle_addr     res     1
+gfx_flag_addr           res     1
+gfx_cmd_addr            res     1
 
 rxbuff                  res     1
 txbuff                  res     1

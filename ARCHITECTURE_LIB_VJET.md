@@ -8,7 +8,9 @@ Prose style: `.agents/skills/style-ste-writing`.
 
 VECTORJET builds a display list in Spin, renders scanlines with one or more PASM cogs, and outputs VGA with a dedicated PASM cog. The UXM-prefixed files are a specialisation for the RC2014 UX Module pinout and clock. Upstream credit in the sources: IRQsome Software, with VGA lineage from Kwabena W. Agyeman / Parallax-style video generators.
 
-The product top `ux_module.spin` does not link this library. The two demos are `src/lib_vjet/demo/vjet_test.spin` and `src/lib_vjet/demo/vjet_fb.spin`. Compile a demo with `-L src -L src/lib_vjet`.
+The 2020 and 2021 objects keep the IRQsome mark. A new file uses (C)2026 feilipu. A file derived from an IRQsome object states that source and uses 2026. `hexfont.spin` is the Aaron Amar font.
+
+The product top `ux_module.spin` does not link this library. The six library objects stay in `src/lib_vjet/`. Compile tops and both heads are in `src/lib_vjet/demo/`. Display lists are in `src/lib_vjet/scene/`. The two demos are `src/lib_vjet/demo/vjet_test.spin` and `src/lib_vjet/demo/vjet_fb.spin`. Compile a demo with `-L src -L src/lib_vjet`.
 
 ## Files
 
@@ -20,11 +22,21 @@ The product top `ux_module.spin` does not link this library. The two demos are `
 | `hexfont.spin` | Font blob for text shapes |
 | `VJET_vUXM_rendering_fb.spin` | Framebuffer solution. PASM render cogs. |
 | `VJET_vUXM_vga_fb.spin` | Framebuffer solution. PASM VGA cog. |
+| `demo/head_slice.spin` | Beam-chase head. A top includes it. Not a compile top. |
+| `demo/head_fb.spin` | Framebuffer head. A top includes it. Not a compile top. |
+| `scene/scene_triangles.spin` | Spinning triangles. Both heads can include it. |
+| `scene/scene_graph.spin` | Graph picture. Beam-chase head only. |
+| `scene/scene_probe.spin` | Orbit probe. Beam-chase head. |
+| `scene/scene_cube.spin` | Cube mesh. Framebuffer head only. |
+| `scene/scene_card.spin` | Test card. `src/ux_module_vjet.spin` includes it. |
 | `demo/vjet_test.spin` | Original demo. Beam chase. Spinning triangles. |
 | `demo/vjet_fb.spin` | Framebuffer demo. The same picture. |
-| `vjet_fb_cube.spin` | Stage 2 cube harness. Not a demo. |
-| `vjet_fb_probe.spin` | Stripe and glass check. Not a demo. |
-| `graphtest.spin` | Graph drawing sample. Not one of the two demos. |
+| `demo/vjet_acia.spin` | Beam-chase triangles plus the ACIA cog. |
+| `demo/vjet_ftdi.spin` | Beam-chase triangles plus the ACIA cog and the FTDI cog. |
+| `demo/vjet_spin.spin` | Beam-chase triangles plus one extra Spin cog. The picture tears. |
+| `demo/vjet_fb_cube.spin` | Stage 2 cube harness. Not a demo. |
+| `demo/vjet_fb_probe.spin` | Stripe and glass check. Not a demo. |
+| `demo/graphtest.spin` | Graph drawing sample. Not one of the two demos. |
 
 ## Runtime pipeline
 

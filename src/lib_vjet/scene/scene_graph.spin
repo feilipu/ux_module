@@ -1,51 +1,6 @@
-CON
-
-  _clkmode      = XTAL1 + PLL16X
-  _xinfreq      = 7_372_800
-
-  DLIST_SIZE = 500
-
-  WIDTH = render#WIDTH
-  HEIGHT = render#NUM_LINES
-  
-OBJ
-vga: "VJET_vUXM_vga.spin"
-render: "VJET_vUXM_rendering.spin"
-gl: "VJET_v01_displaylist.spin"
-font : "hexfont.spin"
-
-
-VAR
-
-long framecount,vga_status,dlist_ptr
-long dlist1[DLIST_SIZE],dlist2[DLIST_SIZE] 
-long linebuffers[(WIDTH*render#LINE_BUFFERS)/4]
-
-
-PUB main | i,j,x,j2
-
-vga.start(16/8,@linebuffers,@vga_status)
-
-dlist_ptr:=$8080
-x:=false
-render.start(0,3,@linebuffers,@dlist_ptr,@vga_status,@x)
-render.start(1,3,@linebuffers,@dlist_ptr,@vga_status,@x)
-render.start(2,3,@linebuffers,@dlist_ptr,@vga_status,@x)
-x:=true
-
-repeat
-  Vblank
-  if framecount&1
-    dlist_ptr:=@dlist1
-    gl.start(@dlist2,constant(DLIST_SIZE*4))
-  else
-    dlist_ptr:=@dlist2
-    gl.start(@dlist1,constant(DLIST_SIZE*4))
-
-  \draw
-  gl.done
-  framecount++
-  
+'' Boxes, a price line, and labels. Included by the beam-chase head.
+'' Derived from the 2021 graphtest demo, (C)2021 IRQsome Software.
+'' (C)2026 feilipu.
 
 PRI draw | i,j,cx,cy,cx2,cy2,col
 
@@ -76,12 +31,7 @@ gl.text(20,10,0,0,string("STOCK PRICE HISTORY"),font.get,$FFFF)
 gl.text(207,17,0,0,string("-400"),font.get,$FFFF)
 gl.text(207,215,0,0,string("- 0"),font.get,$FFFF)
 gl.text(5,225,0,0,string("JAN 21"),font.get,$FFFF)
-gl.text(190,225,0,0,string("MAR 02"),font.get,$FFFF) 
-
-PUB Vblank
-
-repeat while vga_status&$01_00_00
-repeat until vga_status&$01_00_00
+gl.text(190,225,0,0,string("MAR 02"),font.get,$FFFF)
 
 DAT
 

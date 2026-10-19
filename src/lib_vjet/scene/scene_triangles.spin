@@ -1,63 +1,13 @@
-'' vjet_test plus the ACIA cog. Same clock, PLL, handshake, and draw loop.
-'' Port 0x80. A 1 ms low on P5 restarts the 8085 so it polls during the picture.
-''
-CON
+'' Spinning triangles and one text shape. The beam-chase head and the bring-up include this file.
+'' Beam chase and the framebuffer use this same picture.
+'' Derived from the 2021 vjet_test demo, (C)2021 IRQsome Software.
+'' (C)2026 feilipu.
 
-  _clkmode      = XTAL1 + PLL16X
-  _xinfreq      = 7_372_800
-
-  DLIST_SIZE = 900
-
-  WIDTH = render#WIDTH
-  HEIGHT = render#NUM_LINES
-
-
-OBJ
-vga: "VJET_vUXM_vga.spin"
-render: "VJET_vUXM_rendering.spin"
-gl: "VJET_v01_displaylist.spin"
-font : "hexfont.spin"
-acia : "acia_rc2014.spin"
-
-
-VAR
-
-long framecount,vga_status,dlist_ptr
-long dlist1[DLIST_SIZE],dlist2[DLIST_SIZE]
-long linebuffers[(WIDTH*render#LINE_BUFFERS)/4]
-
-PUB main | i,j,x,j2
-
-vga.start(16/8,@linebuffers,@vga_status)
-
-dlist_ptr:=$8080
-x:=false
-render.start(0,3,@linebuffers,@dlist_ptr,@vga_status,@x)
-render.start(1,3,@linebuffers,@dlist_ptr,@vga_status,@x)
-render.start(2,3,@linebuffers,@dlist_ptr,@vga_status,@x)
-x:=true
-
-acia.start(acia#PORT_80)
-outa[acia#RESET_PIN_NUM]~
-dira[acia#RESET_PIN_NUM]~~
-waitcnt(clkfreq/1000 + cnt)
-dira[acia#RESET_PIN_NUM]~
-
-repeat
-  Vblank
-  if framecount&1
-    dlist_ptr:=@dlist1
-    gl.start(@dlist2,constant(DLIST_SIZE*4))
-  else
-    dlist_ptr:=@dlist2
-    gl.start(@dlist1,constant(DLIST_SIZE*4))
-
-  \draw
-  gl.done
-  framecount++
-
-
+#ifdef SCENE_FB
+PRI draw
+#else
 PRI draw | cx,cy
+#endif
 
 gl.set_clip(0,HEIGHT<<16,0,WIDTH<<16)
 
@@ -110,7 +60,11 @@ gl.triangle(128<<16 + sin(0000+framecount<<5)*100,90<<16 + sin(2048+framecount<<
 
 gl.text_centered(WIDTH>>1,192 + sin(0000+framecount<<6)~>12,0,2,string(" WOOO! SPINNING TRIANGLES!"),font.get,$FFFF)
 
+#ifdef SCENE_FB
+PUB sin(angle) : s
+#else
 PUB sin(angle) : s | c,z
+#endif
               'angle: 0..8192 = 360deg
   s := angle
   if angle & $800
@@ -120,8 +74,3 @@ PUB sin(angle) : s | c,z
   s := word[s]
   if angle & $1000
     s := -s                    ' return sin = -$FFFF..+$FFFF
-
-PUB Vblank
-
-repeat while vga_status&$01_00_00
-repeat until vga_status&$01_00_00

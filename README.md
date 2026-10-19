@@ -188,7 +188,7 @@ tools/ux-load.sh
 tools/ux-screen.sh
 ```
 
-Top object is `src/ux_module.spin`. Product search path is `-L src` only. Add `-L src/lib_vjet` only for a VECTORJET demo top.
+Top object is `src/ux_module.spin`. Product search path is `-L src` only. Add `-L src/lib_vjet` only for a VECTORJET demo top. A VECTORJET top is in `src/lib_vjet/demo/`.
 
 `tools/ux-load.sh` writes EEPROM then runs. It uses DTR reset (SparkFun FTDI Basic pin 6). It refuses USB CDC (`/dev/cu.usbmodem*`). CDC is console only.
 
@@ -217,6 +217,37 @@ The only (at this stage) special PASM functions written for the UX Module are in
 `ddc_i2c.spin` also runs a Spin cog after boot. It talks to the monitor on the VGA DDC pins (swapped vs the boot EEPROM). It reads EDID at `0x50` and, if the display answers, DDC/CI at `0x37`. It does not change VGA timing.
 
 VECTORJET (`src/lib_vjet`) is not linked from the product top. Boot is text VGA only. The two demos are `src/lib_vjet/demo/vjet_test.spin` and `src/lib_vjet/demo/vjet_fb.spin`.
+
+The six library objects stay in `src/lib_vjet/`. Compile tops and both heads are in `src/lib_vjet/demo/`. Display lists are in `src/lib_vjet/scene/`. A top defines one scene and includes one head. The head includes `scene/scene_*.spin`. Compile with `-L src -L src/lib_vjet`.
+
+```
+src/lib_vjet
+|
+|---> VJET_v01_displaylist
+|---> VJET_vUXM_rendering
+|---> VJET_vUXM_vga
+|---> VJET_vUXM_rendering_fb
+|---> VJET_vUXM_vga_fb
+|---> hexfont
+|---> demo/
+|     |---> head_slice          beam-chase head
+|     |---> head_fb             framebuffer head
+|     |---> vjet_test           beam-chase demo
+|     |---> vjet_probe          beam-chase orbit probe
+|     |---> vjet_fb             framebuffer demo
+|     |---> graphtest           graph sample
+|     |---> vjet_acia           ACIA check
+|     |---> vjet_ftdi           FTDI check
+|     |---> vjet_spin           extra Spin cog check
+|     |---> vjet_fb_probe       stripe check
+|     |---> vjet_fb_cube        cube harness
+|---> scene/
+      |---> scene_triangles
+      |---> scene_graph
+      |---> scene_probe
+      |---> scene_cube
+      |---> scene_card
+```
 
 ```
 ux_module

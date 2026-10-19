@@ -2,6 +2,8 @@
 
 This file records the repairs from 11 Sep 2026 through 17 Oct 2026. The forward plan is `3D_WORKPLAN_LIB_VJET.md`.
 
+Compile tops now live in `src/lib_vjet/demo/`. Display lists live in `src/lib_vjet/scene/`. Names in this record are the files from those dates.
+
 The beam-chase bring-up did not hold a stable picture. The framebuffer demo did. That file is now `demo/vjet_fb.spin`. The user accepted that picture on 17 Oct 2026.
 
 ## What failed on 11 Sep 2026

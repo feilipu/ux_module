@@ -104,6 +104,8 @@ openspin -L src -L src/lib_vjet -b -o build/vjet_test.binary src/lib_vjet/demo/v
 openspin -L src -L src/lib_vjet -b -o build/vjet_fb.binary src/lib_vjet/demo/vjet_fb.spin
 ```
 
+Heads are in `src/lib_vjet/demo/`. A head includes a display list as `scene/scene_*.spin`. That prefix resolves on `-L src/lib_vjet`. Leave the six library objects in `src/lib_vjet/`.
+
 ## Load (FT232 Prop Plug only)
 
 The ROM bootloader clocks bits with `0xF9`. That needs a low-latency USB-UART (**FTDI FT232 / FT231**, SparkFun FTDI Basic, Parallax Prop Plug). Default reset is **DTR**.
@@ -186,7 +188,7 @@ tools/serial_probe.py $'ABC123\r'
 ## Agent rules
 
 1. If `openspin` or `proploader` is missing, build them with the steps above before inventing another toolchain.
-2. Compile the **top** object named by the user (`ux_module.spin` or a `lib_vjet` demo).
+2. Compile the **top** object named by the user (`ux_module.spin` or a top in `src/lib_vjet/demo/`). Do not compile a head or a scene file.
 3. Prefer `openspin` + `proploader` for this repo.
 4. EEPROM on the board is 32 KB or 64 KB; bootloader loads **32 KB** into Hub RAM.
 5. Do not install vendor FTDI VCP kexts on modern macOS — use Apple’s built-in FTDI driver.
