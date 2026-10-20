@@ -124,7 +124,7 @@ The live bring-up uses that slice. The framebuffer demo was removed.
 
 ## Hub-paint and tear — 20 Oct 2026
 
-The live bring-up paints Hub slots in place. The EEPROM image on 20 Oct 2026 is the stress picture, 17428 bytes. A sealed list from CP/M replaces that picture. The shell steps are in `3D_WORKPLAN_LIB_VJET.md`.
+The live bring-up paints Hub slots in place. The EEPROM image at the 20 Oct 2026 clean point is 17700 bytes. The font table is at 17236. The lists are at 17752 and 19752. A sealed list from CP/M replaces the local stress picture. The handoff is in `3D_PROCESS_LIB_VJET.md`. The shell steps are in `3D_WORKPLAN_LIB_VJET.md`.
 
 The tear bands are gone. The text painter clamps glyph writes to the slot. `:linewait` restarts a frame only after a non-zero published line. `restoreText` waits 250 ms after VECTORJET stops. Pace, a Hub edge cache, a cog-RAM `linebuf`, and a Hub scratch copy all failed. Those loads also broke keys, doubled line feeds, or blocked the return to text. The process file lists each load. Do not restore them.
 

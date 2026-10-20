@@ -292,3 +292,22 @@ The bring-up compiles with `openspin -u`. Without `-u` it exceeds Hub by 203 lon
 Option A cleared the tear bands. The picture was clean. Control-G printed `Text mode` on FTDI. Text VGA did not return.
 
 `restoreText` now waits 250 ms after VECTORJET stops, the same blank as enter. It also floats P16–P23. `render.stop` skips the loop when `rendcount` is 0. EEPROM holds 16508 bytes. Clock mode is `$6F`. Control-G enters graphics. A second Control-G returns to text.
+
+## Handoff — 20 Oct 2026
+
+The live EEPROM image is `src/ux_module_vjet.spin`. The file is 17700 bytes. The clock is 117964800 Hz. The mode byte is `$6F`. Variable space starts at 17700. The font table is at 17236. The two lists are at 17752 and 19752. Each list is 500 longs.
+
+Cog 0 drains the 8085 while graphics is on. Blanking takes up to 16 bytes. A visible pass takes two bytes, then sleeps 1 ms. A tight loop on the visible lines tears the picture. A drain that runs only on the front porch fills the receive ring. A full ring drops a byte and holds `/WAIT`. The draw cog sleeps between porch tests.
+
+`settleDrain` runs for 250 ms when graphics starts and when text returns. It reads the ring during that wait. A `$07` in that wait is not a second switch.
+
+Each scene program sends one sealed list, then `$07`, then the later frames. A host key makes the program send `$07` and return to the CCP. The host does not type Control-G to start the picture. `gfx_flag` stays clear.
+
+| Program | Frames | Bytes | CRC blocks | State on this image |
+|---------|-------:|------:|-----------:|---------------------|
+| `SPINTRI.COM` | 32 | 29474 | 231 | On G:. Accepted on the 17428-byte image. Not run here yet. |
+| `ORBIT.COM` | 32 | 20238 | 159 | On G:. Accepted on the 17428-byte image. Not run here yet. |
+| `TVTEST.COM` | 16 | 25406 | 199 | On G:. Accepted after the settle drain. Each stored pose is 22.5 degrees. Not run here yet. |
+| `STRESS.COM` | 24 | 41448 | 324 | On G:. Started once. The picture is not accepted. Motion is one BDOS call per byte. |
+
+`G:TESTART.COM` still sends one white box. Do not run a COM built for an older font address or list address. Product `src/ux_module.spin` stays text only. Steps 5 and 8 stay open. The next pass runs `SPINTRI`, then `ORBIT`, then `TVTEST`, on this image. The per-byte pace stays for a later pass.

@@ -567,13 +567,15 @@ Do the rows in order. A later row waits for the exit text of the row above.
 
 Status on 20 Oct 2026. Steps 1 and 2 are done. Steps 3 and 4 pass on the beam-chase bring-up. Text boots. Control-G shows a clean eight-line picture. Control-G returns to text. The product top does not have this switch. Do not mark step 5 passed.
 
-The live source picture is `scene/scene_stress.spin`. `DLIST_SIZE` is 500. Commit `2d52f35` keeps the spinning triangles and `DLIST_SIZE` 296. The stress change is local.
+The live source picture is `scene/scene_stress.spin`. `DLIST_SIZE` is 500. A sealed list replaces that picture. The clean point is the handoff in `3D_PROCESS_LIB_VJET.md`.
 
 Step 6 is in the bring-up. Cog 0 copies a sealed list into the unpublished list. The draw cog publishes that pointer. On 20 Oct 2026 `G:TESTART.COM` sent one white box, then `$07`. The VGA picture was that box. The local stress picture stopped. Control-G on FTDI returns to text.
 
 ### Measurements on 20 Oct 2026
 
-The EEPROM image is 17428 bytes. Clock is 117964800 Hz, mode `$6F`. Variable space starts at 17428 and ends at 30892, which is 13464 bytes. The two lists use 4000 of those bytes. The initial stack pointer is 30900. Hub above that pointer is 1868 bytes. That room is the stack. No resident mesh is allocated.
+The 17428-byte image was an earlier bring-up the same day. Clock is 117964800 Hz, mode `$6F`. On that image, variable space starts at 17428 and ends at 30892, which is 13464 bytes. The two lists use 4000 of those bytes. The initial stack pointer is 30900. Hub above that pointer is 1868 bytes. That room is the stack. No resident mesh is allocated.
+
+The clean-point image is 17700 bytes. The font table is at 17236. The lists are at 17752 and 19752. `G:SPINTRI.COM`, `G:ORBIT.COM`, `G:TVTEST.COM`, and `G:STRESS.COM` use those addresses. The handoff in `3D_PROCESS_LIB_VJET.md` lists each file. Do not run a COM from an older address pair.
 
 One `gl.box` stores 16 bytes. The white box used that size. A flat `gl.triangle` stores 36 bytes. A triangle with three different scan lines stores 48 bytes. A `gl.polygon` stores 24 bytes plus 12 bytes for each trapezoid. The wire adds `$1C` and a 16-bit count, which is 3 bytes, in front of the list. This image accepts a list of 2000 bytes. That holds 55 flat triangles, or 41 general triangles, or 125 boxes.
 

@@ -159,8 +159,10 @@ VAR
   byte  gfxMode                                         ' 1: VECTORJET owns P16-P23
   byte  gfxArm                                          ' GFX_ARM_FTDI or GFX_ARM_KBD while gfxMode is 1
   byte  gfxBellHold                                     ' 1: eat repeated Control-G until RX is idle
+  byte  gfxNest                                         ' 1: settleDrain is running. A bell is not a switch.
   byte  gfxChordArm                                     ' 1: Ctrl+Alt+G is a new press
   byte  gfxNeedDdc                                      ' 1: start DDC after P5 is released
+  byte  z80Pump                                         ' bytes readZ80 may take this pass
   byte  ftdiUp                                          ' 1: FTDI cog is running. readZ80 may call term.tx
   long  gfxReady                                        ' render cogs rdbyte this. Must be long-aligned.
   long  drawCog                                         ' cognew id + 1, or 0
@@ -223,6 +225,7 @@ PUB main | busHeld
   pulseZ80Reset
   acia.setGfxFlag (0)                                   ' flag stays clear. Control-G does not set it.
   keepGfx
+  z80Pump := PUMP_LIMIT
 
   ' MAIN COG EVENT LOOP — one writer for acia.tx (no extra pump cog).
   ' Skip the keyboard while Z80→host or host→Z80 XMODEM is in progress.
@@ -238,17 +241,15 @@ PUB main | busHeld
       hostXm := HOST_XM_OFF
     if not busHeld
       if gfxMode
-        if gfxArm == GFX_ARM_KBD
-          kbdToZ80
-        else
-          termToZ80
-        readZ80
+        pumpGraphics
       elseif inXmodem or hostXmodem
+        z80Pump := PUMP_LIMIT
         repeat while kbd.peekKey == gfxChord
           kbd.getKey
         termToZ80
         readZ80
       else
+        z80Pump := PUMP_LIMIT
         kbdToZ80
         termToZ80
         readZ80
@@ -367,7 +368,7 @@ PUB readZ80 | char, n, need
       z80Parse := PARSE_LIST
 
     n := 0
-    repeat while acia.rxCount > 0 and n < PUMP_LIMIT
+    repeat while acia.rxCount > 0 and n < z80Pump
       if z80Parse == PARSE_LIST_ARM
         quit
       char := acia.rxPeek
@@ -378,6 +379,8 @@ PUB readZ80 | char, n, need
         quit
       char := acia.rx
       takeZ80Byte (char)
+      if gfxNest and z80Parse == PARSE_IDLE
+        quit                                           ' leave the prompt byte for text mode
       n++
 
     if acia.rxCount > 0
@@ -556,9 +559,9 @@ PRI takeZ80Idle(char)
     ASCII_BELL:                                         ' Control-G from the Z80. Same switch as FTDI.
       if inXmodem or hostXmodem
         hostTx (char)
-      elseif gfxMode
+      elseif (not gfxNest) and gfxMode
         leaveGraphics
-      else
+      elseif not gfxNest
         enterGraphics (GFX_ARM_FTDI)
 
     ASCII_BS, ASCII_DEL:                                ' backspace (edit), delete
@@ -962,7 +965,7 @@ PRI enterGraphics(arm)
   else
     ftdiUp := 0
     term.stop
-  waitcnt (clkfreq / 4 + cnt)                           ' 250 ms blank
+  settleDrain                                           ' 250 ms blank. The ACIA ring stays empty.
   if not startVectorjet
     restoreText
     if ftdiUp and term.txSpace => 24
@@ -996,7 +999,7 @@ PRI restoreText
 
   stopVectorjet
   wmf.stop                                              ' drop a partial text-VGA start
-  waitcnt (clkfreq / 4 + cnt)                           ' 250 ms blank, same as enter
+  settleDrain                                           ' 250 ms blank. The ACIA ring stays empty.
   screenInit
   reviveInput
   if ftdiUp and term.txSpace => 12
@@ -1032,14 +1035,17 @@ PRI startVectorjet : ok
   gfxReady := 0
   framecount := 0
   vga_status := 0
-  if listReady or (z80Parse => PARSE_LIST_LO)
+  if listReady or (z80Parse => PARSE_LIST_LO) or listShown
     drawHold := 1
-    if listFill
-      longfill (@dlist1, 0, DLIST_SIZE)
-      dlist_ptr := @dlist1
-    else
-      longfill (@dlist2, 0, DLIST_SIZE)
-      dlist_ptr := @dlist2
+    if listReady and z80Parse == PARSE_IDLE
+      showSealed                                        ' keep the sealed list on screen
+    elseif not listShown
+      if listFill
+        longfill (@dlist1, 0, DLIST_SIZE)
+        dlist_ptr := @dlist1
+      else
+        longfill (@dlist2, 0, DLIST_SIZE)
+        dlist_ptr := @dlist2
   else
     drawHold := 0
     longfill (@dlist1, 0, DLIST_SIZE)
@@ -1076,14 +1082,7 @@ PRI drawLoop
   repeat
     vblank
     if listReady
-      if listFill
-        dlist_ptr := @dlist2
-      else
-        dlist_ptr := @dlist1
-      listFill := 1 - listFill
-      listReady := 0
-      listShown := 1
-      drawHold := 1
+      showSealed
     elseif listShown or (z80Parse => PARSE_LIST_LO)
       drawHold := 1
     else
@@ -1112,6 +1111,40 @@ PRI keepGfx | n
   n := acia.gfxCommand
 
 
+PRI showSealed
+{{Point dlist_ptr at the sealed list and free the other buffer.
+  Cog 0 calls this while the draw cog is stopped. The draw cog calls it on vblank.}}
+
+  if listFill
+    dlist_ptr := @dlist2
+  else
+    dlist_ptr := @dlist1
+  listFill := 1 - listFill
+  listReady := 0
+  listShown := 1
+  drawHold := 1
+
+
+PRI settleDrain | t
+{{250 ms blank after a VGA stop. Read the ACIA so a full ring cannot drop a byte.
+  Publish a sealed list before the next mark. A Control-G here is not a switch.
+  Cog 0 is already inside readZ80. _STACK is 256 longs.}}
+
+  gfxNest := 1
+  z80Pump := PUMP_LIMIT
+  if not listReady
+    drawHold := 1
+  t := cnt
+  repeat until (cnt - t) => (clkfreq / 4)
+    if listReady and z80Parse == PARSE_IDLE
+      showSealed
+    if acia.rxCheck
+      if (z80Parse => PARSE_LIST_LO) or (z80Parse == PARSE_IDLE and (acia.rxPeek == LIST_MARK or acia.rxPeek == ASCII_BELL))
+        readZ80
+    waitcnt (clkfreq / 1000 + cnt)                      ' 1 ms. Sixteen list bytes keep ahead of 115200.
+  gfxNest := 0
+
+
 PRI claimList
 {{Clear the list that dlist_ptr does not name. Cog 0 then stores the payload there.}}
 
@@ -1128,11 +1161,38 @@ PRI claimList
   longfill (listAt, 0, DLIST_SIZE)
 
 
+PRI pumpGraphics
+{{Drain the Z80 while graphics is on.
+  Blanking takes a full pump. A visible pass takes two bytes, then sleeps.
+  A tight loop on the visible lines tears the picture.
+  A porch-only drain fills the receive ring. A full ring drops a byte and holds /WAIT.}}
+
+  if vga_status & $01_00_00
+    z80Pump := PUMP_LIMIT
+    repeat while vga_status & $01_00_00
+      if gfxArm == GFX_ARM_KBD
+        kbdToZ80
+      else
+        termToZ80
+      readZ80
+  else
+    z80Pump := 2
+    if gfxArm == GFX_ARM_KBD
+      kbdToZ80
+    else
+      termToZ80
+    readZ80
+    waitcnt (clkfreq / 1000 + cnt)
+
+
 PRI vblank
-{{Wait until bit 16 rises. That edge is the front porch.}}
+{{Wait until bit 16 rises. That edge is the front porch.
+  Sleep between tests. A tight loop here keeps Cog 0 off the porch.}}
 
   repeat while vga_status & $01_00_00
+    waitcnt (clkfreq / 20000 + cnt)
   repeat until vga_status & $01_00_00
+    waitcnt (clkfreq / 20000 + cnt)
 
 
 PRI drawScene

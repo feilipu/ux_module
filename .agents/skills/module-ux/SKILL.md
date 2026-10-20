@@ -141,6 +141,8 @@ tools/ux-screen.sh
 7. The final graphics build keeps the PS/2 keyboard. Text mode has one free cog. Graphics mode has no free cog. The keyboard shares the FTDI cog. `keyboard_ps2` is 332 longs and waits on the clock. `terminal_ftdi` is 107 longs and moves a pin every 1024 clocks.
 
    A polled driver can share the cog. It is not in the tree. Do not load a merged driver until that driver exists. The bring-up keeps one input cog. Control-G keeps the FTDI cog and stops the PS/2 cog. The PS/2 chord keeps the keyboard cog and stops the FTDI cog. Cog 0 polls only that input. It does not call `term.tx` while the FTDI cog is stopped.
+
+   The bring-up top meters `readZ80` in graphics. Blanking uses `PUMP_LIMIT`. A visible pass uses two bytes and a 1 ms sleep. Text mode and XMODEM keep `PUMP_LIMIT`. The product top does not have this path. A tight loop on the visible lines tears the picture. A porch-only drain fills the ACIA ring and holds `/WAIT`.
 8. Prose: `style-ste-writing`.
 
 ## Related

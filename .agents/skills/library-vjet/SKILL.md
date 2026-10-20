@@ -137,7 +137,9 @@ The draw cog does not call `gl.start` on a list Cog 0 is filling. The ACIA cog d
 
 The lead-in and the parser states are in `3D_WORKPLAN_LIB_VJET.md`. Command bytes are not frozen. The pair stays a 6850 for this trial. A Z80 `$07` enters graphics after a sealed list. A second `$07` returns to text. FTDI Control-G does the same switch. The CP/M-IDE v3.0 shell functions and the G: test steps are in that work plan.
 
-Compile `src/ux_module_vjet.spin` with `openspin -u`. `main` calls `font.get` so the font stays. The mode flag powers up clear. Boot is the text console. The local picture is the stress scene until a sealed list arrives. The tear bands are gone. `restoreText` waits 250 ms after VECTORJET stops.
+In graphics, Cog 0 takes a full pump while blanking bit 16 is set. On a visible line it takes two bytes, then sleeps 1 ms. `readZ80` uses `z80Pump` for that cap. Text mode and XMODEM keep `PUMP_LIMIT`. Do not tight-loop Cog 0 on the visible lines. Do not limit the drain to the front porch. A porch-only drain fills the receive ring, drops a byte, and holds `/WAIT`. The draw cog sleeps between porch tests.
+
+Compile `src/ux_module_vjet.spin` with `openspin -u`. `main` calls `font.get` so the font stays. The mode flag powers up clear. Boot is the text console. The local picture is the stress scene until a sealed list arrives. The tear bands are gone. `settleDrain` reads the ring for 250 ms on entry and on return. A `$07` in that wait is not a switch. The clean-point image is 17700 bytes. The font table is at 17236. The lists are at 17752 and 19752. Rebuild a scene COM after the image grows. The handoff is in `3D_PROCESS_LIB_VJET.md`.
 
 Do not restore the framebuffer sources. Do not replace that triangle with a box to skip a tall trap. Do not add a Hub edge cache. Do not restore `gl.pace`, a cog-RAM `linebuf`, a Hub scratch copy, skip-if-late, or paint during `:linewait`. Those loads failed. Detail is in `3D_PROCESS_LIB_VJET.md`.
 
