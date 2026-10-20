@@ -69,7 +69,7 @@ Resolution in UXM rendering: **WIDTH=256**, **NUM_LINES=240**, **LINE_BUFFERS=8*
 
 The beam-chase picture stays clean with one Spin cog. A second cog in a tight Spin loop tears that picture. Do not draw that path on Cog 0. The free Hub there is 1160 bytes. Cog 0 keeps a 256-long stack and 16 longs of `_FREE`. 18 longs remain above that pair.
 
-The bring-up is `src/ux_module_vjet.spin`. It stops text VGA, DDC, and the input that did not request graphics. It starts the beam-chase VGA cog, three render cogs, and one draw cog. The draw cog uses `drawStack` (192 longs). Cog 0 returns to the ACIA pump. The slice is eight lines. Graphics mode shows the spinning triangles. Boot stays the text console. Far triangles are drawn first. This renderer has no 50 percent mix. The render wait starts the next line when the beam has passed current + cogs - 8. With three cogs that lead is 7 logical lines. Each render cog rebuilds both edges from the initial edges and the slopes. The cog does not read the sync byte. The cog does not write the edges in the list. The draw cog waits until the front porch, then builds the next list. The cog records the spans before the slot write. The slot write is one fill and then those spans. A full-width first span fills with that colour. A shape that starts above line 0 is walked from its initial edges. This cog does not write those edges. The text painter clamps each glyph write to the 256-byte slot. `:linewait` restarts a frame only after the cog has seen a non-zero published line.
+The bring-up is `src/ux_module_vjet.spin`. It stops text VGA, DDC, and the input that did not request graphics. It starts the beam-chase VGA cog, three render cogs, and one draw cog. The draw cog uses `drawStack` (192 longs). Cog 0 returns to the ACIA pump. The slice is eight lines. Graphics mode shows the local scene until a sealed list arrives. Boot stays the text console. Far triangles are drawn first. This renderer has no 50 percent mix. The render wait starts the next line when the beam has passed current + cogs - 8. With three cogs that lead is 7 logical lines. Each render cog rebuilds both edges from the initial edges and the slopes. The cog does not read the sync byte. The cog does not write the edges in the list. The draw cog waits until the front porch, then builds the next list. The cog records the spans before the slot write. The slot write is one fill and then those spans. A full-width first span fills with that colour. A shape that starts above line 0 is walked from its initial edges. This cog does not write those edges. The text painter clamps each glyph write to the 256-byte slot. `:linewait` restarts a frame only after the cog has seen a non-zero published line.
 
 One scan line keeps 24 records. A box, a point, a line, a polygon, or a text shape uses one record. A text shape is stored in list order with the spans. A shape after these 24 records on that line is skipped. The skipped shapes are the front shapes.
 
@@ -137,15 +137,15 @@ Demos flip `dlist_ptr` each frame and rebuild the inactive buffer. Render cogs r
 
 ## Streamed lists
 
-The ACIA receive ring is the pipe. Cog 0 is its only reader. A complete list is written into the display list that `dlist_ptr` does not name. `dlist1` and `dlist2` are that pair. Each is 1184 bytes.
+The ACIA receive ring is the pipe. Cog 0 is its only reader. A complete list is written into the display list that `dlist_ptr` does not name. `dlist1` and `dlist2` are that pair. Each list is `DLIST_SIZE` longs. The stress bring-up uses 500 longs (2000 bytes).
 
 The first list is copied there before `enterGraphics`. Later lists use the same pair. Cog 0 appends bytes as the ring drains. The draw cog publishes the filled pointer on the front porch, then the other list is the next fill target. A list that is still filling stays unpublished. The published list stays on screen.
 
 The draw cog does not call `gl.start` on a list Cog 0 is filling. The ACIA cog does not write either list.
 
-The lead-in and the parser states are in `3D_WORKPLAN_LIB_VJET.md`. Command bytes are not frozen. The pair stays a 6850 for this trial.
+The lead-in and the parser states are in `3D_WORKPLAN_LIB_VJET.md`. Command bytes are not frozen. The pair stays a 6850 for this trial. A Z80 `$07` enters graphics after a sealed list. A second `$07` returns to text. FTDI Control-G does the same switch. The CP/M-IDE v3.0 shell functions and the G: test steps are in that work plan.
 
-Compile `src/ux_module_vjet.spin` with `openspin -u`. `main` calls `font.get` so the font stays. EEPROM holds the 16508 byte image. The mode flag powers up clear. Boot is the text console. Graphics mode shows the spinning triangles on the eight-line renderer. The field is one full-screen triangle. The tear bands are gone. `restoreText` waits 250 ms after VECTORJET stops.
+Compile `src/ux_module_vjet.spin` with `openspin -u`. `main` calls `font.get` so the font stays. The mode flag powers up clear. Boot is the text console. The local picture is the stress scene until a sealed list arrives. The tear bands are gone. `restoreText` waits 250 ms after VECTORJET stops.
 
 Do not load a framebuffer image. Do not replace that triangle with a box to skip a tall trap. Do not add a Hub edge cache. Do not restore `gl.pace`, a cog-RAM `linebuf`, a Hub scratch copy, skip-if-late, or paint during `:linewait`. Those loads failed. Detail is in `3D_PROCESS_LIB_VJET.md`.
 
@@ -170,9 +170,9 @@ Even stored lines are bright, bright, dark, dark, bright, bright. Odd stored lin
 
 The accepted scene draws 13 triangles and one text shape. That list uses at most 632 bytes. A flat triangle is 36 bytes. A general triangle is 48 bytes. A box is 16 bytes and a text shape is 20 bytes.
 
-Each framebuffer list is 1200 bytes. That holds 33 flat triangles or 25 general triangles. Each beam-chase demo list is 3600 bytes. That holds 100 flat triangles or 75 general triangles. The larger list adds 67 flat triangles or 50 general triangles. The slice bring-up lists stay 296 longs.
+Each framebuffer list is 1200 bytes. That holds 33 flat triangles or 25 general triangles. Each beam-chase demo list is 3600 bytes. That holds 100 flat triangles or 75 general triangles. The larger list adds 67 flat triangles or 50 general triangles. The stress bring-up lists are 500 longs. Commit `2d52f35` keeps 296 longs for the spinning triangles.
 
-The bring-up scene is the spinning triangles. The demo does not call `set_lines`.
+The live bring-up scene is the stress picture. The demo does not call `set_lines`.
 
 `VJET_vUXM_vga.spin` and `VJET_vUXM_rendering.spin` stay the beam-chase pair. Do not copy the framebuffer `VSCL` into those files.
 

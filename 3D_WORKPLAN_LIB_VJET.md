@@ -2,7 +2,7 @@
 
 This plan covers three stages. Stage 1 puts the known-good framebuffer on the same firmware as the UX Module text console. Stage 2 chooses the command path from CP/M-IDE. Stage 3 adds the CP/M-IDE library and tools.
 
-The live bring-up is the beam-chase slice in `src/ux_module_vjet.spin`. EEPROM holds the 16508-byte image loaded on 20 Oct 2026. The mode flag powers up clear. Stage 1 below records the framebuffer trial.
+The live bring-up is the beam-chase slice in `src/ux_module_vjet.spin`. The EEPROM image on 20 Oct 2026 is the stress picture, 17428 bytes. The mode flag powers up clear. Stage 1 below records the framebuffer trial.
 
 The repair history is `3D_PROCESS_LIB_VJET.md`. This file does not repeat those loads. The tear bands are gone. Failed repairs of that tear are in the process file. Do not restore those loads.
 
@@ -32,15 +32,58 @@ Use these names only. Clock, pins, and the ACIA model stay as in `ARCHITECTURE_U
 
 ## Test platform
 
-The test machine is CP/M-IDE v3.0 on the RC2014 8085, with the Compact Flash module and the ACIA console. The shell prints `RC2014 - CP/M IDE Shell v3.0`. The UX Module is that ACIA. The console pair is 0x80 and 0x81. The CF card uses other ports. The line is 115200 8N2.
+The test machine is CP/M-IDE v3.0 on the RC2014 8085. The branch is `cpm-ide-msx`. The source tree is `/Users/phillip/Container/ubuntu-data/CPM-IDE`. The card has the Compact Flash module and the ACIA console. The shell prints `RC2014 - CP/M IDE Shell v3.0`. The UX Module is that ACIA. The console pair is 0x80 and 0x81. The CF card uses other ports. The line is 115200 8N2.
 
-The UX FTDI console uses that same frame. Host tools set two stop bits. The FTDI relay leaves `CRTSCTS` clear.
+The shell program is yash. `help` lists the built-in functions. This list was recorded on 20 Oct 2026 from the live shell. These are the only shell functions.
+
+```
+RC2014 - CP/M IDE Shell v3.0
+The following functions are built in:
+  cpm [path] - CPMIDE.CFG, or A-P in a directory
+  xget <file> - sx checksum
+  ls [path] - directory listing
+  cd <path> - change the current working directory
+  pwd - show the current working directory
+  rm <file> - delete a file
+  rmdir <path> - remove an empty directory
+  mkdir <path> - create a directory
+  cp <src> <dst> - copy a file
+  mv <src> <dst> - rename or move a file
+  ds - disk status
+  help - this is it
+  exit - exit and restart
+```
+
+`cpm [path]` starts CP/M. A path of `cpm` mounts the letter directories inside that directory. Those letters are A to P. `cpm .` mounts the letters in the current directory. Drive G: is the FAT directory `/cpm/G`. `pwd` in that directory prints `/CPM/G`. On 20 Oct 2026 `ls` there showed `TESTART.COM` at 4992 bytes.
+
+`xget <file>` receives one file onto the FAT volume. The protocol is XMODEM-128 with the checksum. The shell sends NAK. The host sends with the checksum (`sx --checksum`). There is no `hget`. `xget` stays in text mode.
+
+After `cpm` starts, `XMODEM.COM` sends and receives on the CP/M drive. That program can use the CRC or the checksum. On this image, `XMODEM NAME.COM /r` prints `Receiving via CON with CRCs`. The host then sends with CRC. The command is `lsx -b -q -X FILE`. Quiet is required. Progress text on the line aborts CP/M. On this Mac, `lsx` 0.13.1 has `-X` and has no `--checksum`.
+
+A CP/M file name is 8.3. Use letters and digits. An underscore ends the name. `test_article.com` is not a legal name. The file on G: is `TESTART.COM`. The COM file is 4910 bytes. XMODEM stores 39 blocks of 128 bytes, which is 4992 bytes.
+
+The UX FTDI console uses the same 115200 8N2 frame. Host tools set two stop bits. The FTDI relay leaves `CRTSCTS` clear. Do not restart that relay during a test. DTR on this header is Propeller `/RES`.
 
 The BIOS console is interrupt driven. `acia_interrupt` in `8085-cf-acia/cpm22bios.asm` reads status, reads data, and writes control. A graphics session holds `/INT` inactive before the register meaning changes. The interrupt then stays out of the pair.
 
 Host programs for this test are 8085. Before you write them, read the z88dk skill `cpu-8085` and `target-rc2014` for subtype `acia85`. The skill file is `/Users/phillip/Container/ubuntu-data/z88dk/.agents/skills/cpu-8085/SKILL.md`.
 
-Assemble with `z88dk-z80asm -m8085` inside the Ubuntu container. Use Zilog mnemonics. I/O is `in a,(n)` and `out (n),a`. Locals live on the stack. Do not add a BSS scratch cell for a temporary.
+The C sender uses classic 80cc and the `+cpm` target. Assemble other 8085 sources with `z88dk-z80asm -m8085` inside the Ubuntu container. Use Zilog mnemonics. I/O is `in a,(n)` and `out (n),a`. Locals live on the stack. Do not add a BSS scratch cell for a temporary.
+
+### Shell test
+
+Start at the yash prompt. The current directory is the volume root.
+
+1. Type `cpm cpm`.
+2. Type `G:`.
+3. Type `XMODEM TESTART.COM /r`.
+4. Send `vjet/test_article.com` with CRC.
+5. Wait until the console prints `OK` and `G>`.
+6. Type `TESTART`.
+
+The VGA picture is one white box on a dark field. FTDI still prints the CCP prompt. Control-G on FTDI returns to the text console. At the CCP, `exit` returns to yash.
+
+Do not send `$07` while XMODEM is active. The program sends `$07` after the sealed list. During the transfer the pair stays a 6850.
 
 ## Machine limits
 
@@ -258,7 +301,7 @@ The stream record is six signed pixels and one colour word. That is 14 bytes on 
 
 The ACIA receive ring is the pipe. It holds 512 bytes. Cog 0 is its only reader. The ACIA cog does not write a display list.
 
-Cog 0 copies a complete list into the display list that the render cogs do not read. The pair is `dlist1` and `dlist2`. Each list is 1184 bytes. That Hub remains when a cog stops.
+Cog 0 copies a complete list into the display list that the render cogs do not read. The pair is `dlist1` and `dlist2`. Each list is `DLIST_SIZE` longs. The stress image uses 500 longs, which is 2000 bytes. That Hub remains when a cog stops.
 
 The first list is in Hub before `enterGraphics`. Later lists use the same pair. A moving picture needs the ACIA feed for the whole graphics session. A static picture needs no more bytes.
 
@@ -274,11 +317,11 @@ Graphics has no spare cog. The keyboard arm stops the FTDI cog. Both arms keep t
 
 Command bytes stay unassigned. The lead-in below is a trial. The bytes stay open.
 
-The mark is `$1C`. Do not use `$01`, `$02`, `$04`, `$06`, `$07`, `$15`, `$17`, `$18`, or `$43`. Those bytes belong to XMODEM or to Control-G.
+The mark is `$1C`. Do not use `$01`, `$02`, `$04`, `$06`, `$15`, `$17`, `$18`, or `$43` as that mark. Those bytes belong to XMODEM. `$07` is Control-G. It switches graphics. It is not a list mark.
 
 Do not start a list while `z80XmSess` or `hostXm` is set. Test `SOH` and `STX` before the mark.
 
-The next two bytes are a little-endian count. Then that many list bytes follow. Reject a count of 0. Reject a count above 1184. Any other count is valid.
+The next two bytes are a little-endian count. Then that many list bytes follow. Reject a count of 0. Reject a count above `DLIST_SIZE * 4`. Any other count is valid. The stress image uses 500 longs, so that limit is 2000 bytes. The triangle image uses 296 longs, so that limit is 1184 bytes.
 
 On a good count, clear only the fill target. Then store those bytes as the display list. The first word is the link. Do not echo those bytes to FTDI or to the text screen. A rejected count returns the parser to idle. The following bytes are then console bytes.
 
@@ -316,7 +359,7 @@ A normal compile of the copier exceeds Hub by 68 longs. Compile the bring-up wit
 openspin -u -L src -L src/lib_vjet -b -o build/ux_module_vjet.binary src/ux_module_vjet.spin
 ```
 
-That compile removes 86 unused methods and saves 4068 bytes. The program is 16392 bytes. Free Hub is 4520 bytes. Do not use `-u` on `src/ux_module.spin`. A later hub-paint compile is 16508 bytes. EEPROM holds that image. The text console answered `ls`.
+That compile removes 86 unused methods and saves 4068 bytes. An earlier copier image is 16392 bytes, with 4520 bytes free. Do not use `-u` on `src/ux_module.spin`. The EEPROM image on 20 Oct 2026 is 17428 bytes. The size note is under Measurements on 20 Oct 2026.
 
 ### Scene files
 
@@ -488,7 +531,7 @@ The Propeller never sees the STL text.
 
 `xget` is the shell command. It receives one XMODEM-128 checksum file onto the FAT volume. The host sends with the checksum. There is no `hget`.
 
-After `cpm` starts, `XMODEM.COM` sends and receives on the CP/M drive. That program uses the CRC.
+After `cpm` starts, `XMODEM.COM` sends and receives on the CP/M drive. That program can use the CRC or the checksum. `xget` is checksum only.
 
 Load the `.COM` and the cooked file with `xget` or with `XMODEM.COM`. During the transfer the pair stays a 6850. The graphics meaning starts only after `vjet_open`.
 
@@ -517,13 +560,49 @@ Do the rows in order. A later row waits for the exit text of the row above.
 | 11 | CP/M library, cooker, and cube `.COM` for `8085-cf-acia`. | Cube spins. A key returns to the CCP. |
 | 12 | GSX subset driver. | Open, clear, bar, convex fill, close. |
 
-Status on 18 Oct 2026. Steps 1 and 2 are done. The live bring-up is the beam-chase test card in `src/ux_module_vjet.spin`. The program is 19772 bytes. Free Hub is 1160 bytes. 18 longs remain above the stack reserve.
+Status on 20 Oct 2026. Steps 1 and 2 are done. Steps 3 and 4 pass on the beam-chase bring-up. Text boots. Control-G shows a clean eight-line picture. Control-G returns to text. The product top does not have this switch. Do not mark step 5 passed.
 
-The framebuffer bring-up of 20408 bytes is an earlier trial. Steps 3 to 5 in the table use that wording. The EEPROM image is the test card. Do not mark those steps passed.
+The live source picture is `scene/scene_stress.spin`. `DLIST_SIZE` is 500. Commit `2d52f35` keeps the spinning triangles and `DLIST_SIZE` 296. The stress change is local.
 
-Step 6 is in the bring-up source. Cog 0 copies a list into the unpublished list. The draw cog publishes the pointer. Compile that top with `openspin -u`. The program is 16392 bytes. Free Hub is 4520 bytes. That image is not on EEPROM.
+Step 6 is in the bring-up. Cog 0 copies a sealed list into the unpublished list. The draw cog publishes that pointer. On 20 Oct 2026 `G:TESTART.COM` sent one white box, then `$07`. The VGA picture was that box. The local stress picture stopped. Control-G on FTDI returns to text.
 
-The mode flag is in the ACIA cog and powers up clear. Command bytes are not frozen. On 19 Oct 2026 EEPROM was programmed with the 16392-byte image. This shell has no `DIR` command. `ls` returned the same 20 files as before the load. A sealed list has not been sent.
+### Measurements on 20 Oct 2026
+
+The EEPROM image is 17428 bytes. Clock is 117964800 Hz, mode `$6F`. Variable space starts at 17428 and ends at 30892, which is 13464 bytes. The two lists use 4000 of those bytes. The initial stack pointer is 30900. Hub above that pointer is 1868 bytes. That room is the stack. No resident mesh is allocated.
+
+One `gl.box` stores 16 bytes. The white box used that size. A flat `gl.triangle` stores 36 bytes. A triangle with three different scan lines stores 48 bytes. A `gl.polygon` stores 24 bytes plus 12 bytes for each trapezoid. The wire adds `$1C` and a 16-bit count, which is 3 bytes, in front of the list. This image accepts a list of 2000 bytes. That holds 55 flat triangles, or 41 general triangles, or 125 boxes.
+
+`/WAIT` below is the cog count from `waitpeq` until `or outa, bus_wait`. A cog instruction is 4 clocks. A hub instruction is 8 to 23 clocks. Control-G does not set `gfx_flag`, so the white box used the 6850 path.
+
+A data write with the flag clear is 64 to 109 clocks. That is 0.54 µs to 0.92 µs. The same write with the flag set is 72 to 117 clocks. That is 0.61 µs to 0.99 µs. The flag-set path is in the cog. This image does not take it.
+
+An idle status read with the flag clear calls `sync_irq`. That path is about 272 to 452 clocks. That is 2.3 µs to 3.8 µs. A live 8085 loop has not timed these stretches.
+
+The mode flag is in the ACIA cog and powers up clear. Command bytes are not frozen. `$1C` is still a trial mark.
+
+### CP/M-IDE v3.0 test
+
+The shell, the yash functions, and the drive G: steps are under Test platform.
+
+The 8085 does not send STL or OBJ. It sends console bytes. BDOS function 2 writes one byte to the ACIA data port. Cog 0 reads that byte from the receive ring.
+
+Send the list first. Then send `$07`. The parser stores the list while text mode is still up. `$07` then calls `enterGraphics` with the FTDI arm. `startVectorjet` keeps a list that is already ready. The porch shows that list. The local scene stops. A second `$07` from the 8085, or Control-G on FTDI, returns to text.
+
+Do not send `$07` while `z80XmSess` or `hostXm` is set. `xget` and `XMODEM.COM` stay in text mode.
+
+The sender is `vjet/test_article.c` in the CP/M-IDE tree. It sends `$1C`, the count 16, one white box, then `$07`. The box is display-list type 2. The link word is 0. The box covers x 40..200 and y 40..200. The colour word is `$FFFF`.
+
+Build it in the Ubuntu container with classic 80cc and the `+cpm` target:
+
+```
+export PATH=/data/z88dk/bin:$PATH
+export ZCCCFG=/data/z88dk/lib/config
+zcc +cpm -compiler=80cc -clib=8085 -m8085 test_article.c -o test_article -create-app
+```
+
+On 20 Oct 2026 this program ran as `G:TESTART`. The VGA picture was one white box. The local stress picture stopped. Control-G on FTDI returned to text. `exit` at the CCP returned to the yash prompt.
+
+A later start the same day used `cpm cpm` from the volume root. G: mounted at cluster 86. `DIR` listed `TESTART.COM` before the program and again after it. The CCP returned to `G>`. The VGA picture was the white box again. Control-G on FTDI printed `Text mode`. `DIR` then listed `TESTART.COM` again.
 
 ## Risks
 

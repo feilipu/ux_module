@@ -11,9 +11,9 @@
 ''
 '' Stage 1 bring-up top. Boot is the text console.
 '' Graphics keeps the input that requested it and stops the other input.
-'' Eight line slots. Three render cogs. The picture is scene/scene_triangles.spin.
+'' Eight line slots. Three render cogs. The picture is scene/scene_stress.spin.
 '' A streamed list replaces that picture. Cog 0 copies it from the ACIA ring.
-'' The triangles spin. Cog 0 keeps the ACIA pump. The draw cog has its own stack.
+'' The stress picture moves. Cog 0 keeps the ACIA pump. The draw cog has its own stack.
 '' Compile this file with -u so the copier fits. Keep the font.get call below.
 '' openspin -u -L src -L src/lib_vjet -b -o build/ux_module_vjet.binary src/ux_module_vjet.spin
 '' Product upload remains src/ux_module.spin.
@@ -23,7 +23,7 @@ CON
   _clkmode      = XTAL1 + PLL16X
   _xinfreq      = 7_372_800
 
-  DLIST_SIZE    = 296                                   ' longs in each list. The spinning triangles fit in this.
+  DLIST_SIZE    = 500                                   ' longs in each list. The stress picture fits in this.
   _STACK        = 256                                   ' Cog 0 stack, in longs. Cog 0 does not draw.
 
 
@@ -553,6 +553,14 @@ PRI takeZ80Idle(char)
       elseif not listReady
         z80Parse := PARSE_LIST_LO
 
+    ASCII_BELL:                                         ' Control-G from the Z80. Same switch as FTDI.
+      if inXmodem or hostXmodem
+        hostTx (char)
+      elseif gfxMode
+        leaveGraphics
+      else
+        enterGraphics (GFX_ARM_FTDI)
+
     ASCII_BS, ASCII_DEL:                                ' backspace (edit), delete
       if wmf.getColScreen > 0
         hostTx (ASCII_BS)
@@ -1062,7 +1070,7 @@ PRI startVectorjet : ok
 
 PRI drawLoop
 {{Publish a streamed list on the front porch.
-  Otherwise hold that picture, or build the spinning triangles.
+  Otherwise hold that picture, or build the stress picture.
   Stack is drawStack. Text VGA is stopped.}}
 
   repeat
@@ -1128,12 +1136,12 @@ PRI vblank
 
 
 PRI drawScene
-{{Build the spinning triangles. The draw cog calls this while graphics is on.}}
+{{Build the stress picture. The draw cog calls this while graphics is on.}}
 
   draw
 
 
-#include "scene/scene_triangles.spin"
+#include "scene/scene_stress.spin"
 DAT
 
 {{
