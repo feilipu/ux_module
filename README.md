@@ -249,12 +249,6 @@ src/lib_vjet
       |---> scene_card
 ```
 
-This video shows the lib_vjet pictures on the UX Module.
-
-[![UX Module with lib_vjet](https://img.youtube.com/vi/gWfvbpljERk/0.jpg)](https://www.youtube.com/watch?v=gWfvbpljERk)
-<BR>
-CLICK IMAGE TO VIEW!
-
 ```
 ux_module
 |
@@ -280,6 +274,12 @@ Once the UX Module is running the ACIA emulation is enabled, so the RC2014 Z80 c
 This video below shows the expected output of a session.
 
 [![UX Module for RC2014 Operation](https://img.youtube.com/vi/dZT0yxjd9zs/0.jpg)](https://www.youtube.com/watch?v=dZT0yxjd9zs)
+<BR>
+CLICK IMAGE TO VIEW!
+
+This video shows the lib_vjet pictures on the UX Module.
+
+[![UX Module with lib_vjet](https://img.youtube.com/vi/gWfvbpljERk/0.jpg)](https://www.youtube.com/watch?v=gWfvbpljERk)
 <BR>
 CLICK IMAGE TO VIEW!
 
