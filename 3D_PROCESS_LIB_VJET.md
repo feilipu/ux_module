@@ -1,10 +1,10 @@
 # 3D implementation process — lib_vjet
 
-This file records the repairs from 11 Sep 2026 through 17 Oct 2026. The forward plan is `3D_WORKPLAN_LIB_VJET.md`.
+This file records the repairs from 11 Sep 2026 through 20 Oct 2026. The forward plan is `3D_WORKPLAN_LIB_VJET.md`.
 
 Compile tops now live in `src/lib_vjet/demo/`. Display lists live in `src/lib_vjet/scene/`. Names in this record are the files from those dates.
 
-The beam-chase bring-up did not hold a stable picture. The framebuffer demo did. That file is now `demo/vjet_fb.spin`. The user accepted that picture on 17 Oct 2026.
+The beam-chase bring-up did not hold a stable picture. The framebuffer demo did. That file is now `demo/vjet_fb.spin`. The user accepted that picture on 17 Oct 2026. The eight-line slice later ran the spinning triangles. A remaining tear is open.
 
 ## What failed on 11 Sep 2026
 
@@ -212,3 +212,67 @@ A polygon stores 24 bytes plus 12 bytes for each trapezoid. The polygon uses one
 The bring-up list is 160 longs. The orbit scene stores 340 bytes and draws 10 shapes. The beam-chase demo list is 900 longs. The demo draws 13 triangles and one text shape. Even lines use the low colour byte. Odd lines use the high colour byte.
 
 The VGA cog shows each logical line twice. It forces the low two bits of every colour byte on. The program size stays 19228 bytes. 2808 bytes remain above the stack.
+
+## Hub-paint slice — 19 Oct 2026
+
+Commit `6615776` records the eight-line hub-paint renderer. Each cog fills the VGA slot, then paints the spans. The fill is `:fillp`. The spans use `draw_span` `:spnlp`. `linepause` is `long 1024`. The lead is 7 logical lines.
+
+The bring-up is `src/ux_module_vjet.spin`. Graphics mode builds `scene/scene_triangles.spin`. The field is one full-screen triangle `$ECEC`. EEPROM holds that image at 16460 bytes. Clock mode is `$6F`. Boot is the text console. Control-G enters graphics. A second Control-G returns to text.
+
+The picture still tears. The tear sits in the top band of about 20 lines. A second band sits about 30 percent down the screen. Solid white `$FFFF` and grey show interior streaks. The lavender field is `$ECEC`. Rainbow pairs `$0055`, `$55AA`, and `$AAFF` stripe by design.
+
+The VGA cog writes `tilesCounter` once at the start of each logical line. It then scans that Hub slot twice. A render cog that writes the same slot during those two scans leaves a half-written line. The renderer cannot tell pass 1 from pass 2.
+
+## Failed tear repairs — 20 Oct 2026
+
+These loads tried to stop that slot race. The restore removed those loads. The live image is the 16460-byte hub-paint from `6615776`. Do not restore these paths.
+
+| Bytes | Change | Result |
+|-------|--------|--------|
+| 16864 | Hub edge cache and field box | Horizontal stripes. Scene-specific cut. |
+| 16604 | `gl.pace` | About 12 frames per second. Tear stayed. |
+| 16532 | Cog-RAM `linebuf` | Vertical rainbow bars. |
+| 16536 | Hub scratch, skip if late | Interlace comb and sparkle lines. |
+| 16528 | Paint during `:linewait` | Keys dead. |
+| 16528 | Wait then always copy | Double line feed. Text mode stuck. |
+| 16460 | Hub-paint from `6615776` | Restored. Known tear remains. |
+
+### Hub edge cache, 16864 bytes
+
+`CACHE_N` was 16. Each hit wrote eight Hub longs before `store_span`. Extra Hub writes delayed the spans. The second VGA pass of a doubled line still showed the field. The picture became horizontal stripes.
+
+A full-screen lavender box was added to skip the tall field trap. That cut is specific to this scene. The library must draw any allowed polygon. The cache and the box are gone.
+
+### Draw-cog pace, 16604 bytes
+
+`gl.pace` slept until the next front porch before every shape. Fourteen shapes ran at about 12 frames per second. The VGA and render slot race stayed. Pace is deleted from `VJET_v01_displaylist.spin`.
+
+### Cog-RAM line buffer, 16532 bytes
+
+The cog painted 64 longs in cog RAM labelled `linebuf`, then copied them to the Hub slot. Propeller 1 cannot index cog RAM. The walk used `movd` and `movs`. The instruction after a patch still fetches the old encoding.
+
+A delay slot after the patch still tiled `linebuf[0]` across four pixels. The screen was solid lavender with vertical rainbow bars. Those bars moved horizontally. `fit 496` passed only after `pixel_iter`, `span_right`, and the `maxs`/`mins` clamps were dropped. Do not paint a line in cog RAM.
+
+### Hub scratch, skip if late, 16536 bytes
+
+VAR held `line_scratch[64*3]`. Each cog painted its 256-byte scratch, then copied 64 longs into the VGA slot. A late line skipped the copy.
+
+The triangles returned. Copy during the two physical scans made an interlace comb. A skipped copy left the previous occupant of that slot. Sparkle lines from other slots appeared in the top quarter of the screen.
+
+### Paint during the lead wait, 16528 bytes
+
+The cog painted the next line before `:linewait`. That extra Hub traffic starved Cog 0 `termToZ80`. Screen keys died. A CR stuffed into GNU screen moved the FT232 offsets from 95 to 96. CP/M did not echo. VGA and the terminal still showed the boot banner.
+
+### Wait then always copy, 16528 bytes
+
+The cog waited the full lead, then always copied the scratch into the slot. The console showed a double line feed. Control-G entered graphics. A second Control-G did not return to text.
+
+GNU screen and `tools/screenrc-ux` were not edited. `term.newLine` is still CR then LF. The extra LF and the stuck text came from this renderer. The restore of `6615776` recovered single line feeds and the return to text.
+
+## Rules for the next tear fix
+
+Keep the hub-paint painter. Keep `LINE_BUFFERS` 8, `SPAN_MAX` 24, the 7-line lead, and `linepause` `long 1024`. Keep `satmul`. Keep `visibleScale` `(4 << 12) + 16`. Keep the 2021 PLL.
+
+A later fix must stay general. It must not slow the draw. It must keep FTDI keys, single line feeds, and Control-G return to text.
+
+Do not restore pace. Do not cut the scene. Do not cap slopes. Do not replace the field triangle with a box. Do not add a Hub edge cache. Do not walk a line with `movd`/`movs`. Do not paint during `:linewait`. Do not skip a late publish.

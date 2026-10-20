@@ -28,7 +28,7 @@ The product top `ux_module.spin` does not link this library. The six library obj
 | `scene/scene_graph.spin` | Graph picture. Beam-chase head only. |
 | `scene/scene_probe.spin` | Orbit probe. Beam-chase head. |
 | `scene/scene_cube.spin` | Cube mesh. Framebuffer head only. |
-| `scene/scene_card.spin` | Test card. `src/ux_module_vjet.spin` includes it. |
+| `scene/scene_card.spin` | Test card. No compile top includes it. |
 | `demo/vjet_test.spin` | Original demo. Beam chase. Spinning triangles. |
 | `demo/vjet_fb.spin` | Framebuffer demo. The same picture. |
 | `demo/vjet_acia.spin` | Beam-chase triangles plus the ACIA cog. |
@@ -67,6 +67,8 @@ Front porch writes line 240. Vsync and the back porch write line 0. Render cogs 
 Each render cog takes every third line. It rebuilds both edges from the initial edges and the slopes. It does not wait on the sync byte. The line wait still holds the cog until the beam has passed that slot.
 
 It records the spans before the slot write. The slot write is one fill and then the spans. A full-width first span fills with that colour.
+
+The live painter writes those longs into the Hub VGA slot. The VGA cog scans that slot twice. A write during those two scans tears the line. Failed repairs of that race are in `3D_PROCESS_LIB_VJET.md`.
 
 One scan line keeps 24 records. A box, a point, a line, a polygon, or a text shape uses one record. A text shape is stored in list order with the spans. A shape after these 24 records on that line is skipped. The skipped shapes are the front shapes.
 
@@ -122,6 +124,12 @@ The beam-chase path keeps eight line slots. The slice is 2048 bytes. Each slot i
 The demo source starts three render cogs. A trial on 16 Oct 2026 used two render cogs. That picture tore. The original renderer used two cogs. Three cogs on this slice must stay ahead of the scan.
 
 The next bring-up load uses that slice. `demo/vjet_fb.spin` stays the accepted picture. `STORED_LINES` stays 80.
+
+## Hub-paint and tear — 20 Oct 2026
+
+The live bring-up paints Hub slots in place. EEPROM holds 16460 bytes from commit `6615776`. Graphics mode builds `scene/scene_triangles.spin`. The field is one full-screen triangle.
+
+The picture still tears on doubled scanlines. Pace, a Hub edge cache, a cog-RAM `linebuf`, and a Hub scratch copy all failed. Those loads also broke keys, doubled line feeds, or blocked the return to text. The process file lists each load. Do not restore them.
 
 ## Display list model
 

@@ -216,7 +216,7 @@ The only (at this stage) special PASM functions written for the UX Module are in
 
 `ddc_i2c.spin` also runs a Spin cog after boot. It talks to the monitor on the VGA DDC pins (swapped vs the boot EEPROM). It reads EDID at `0x50` and, if the display answers, DDC/CI at `0x37`. It does not change VGA timing.
 
-VECTORJET (`src/lib_vjet`) is not linked from the product top. Boot is text VGA only. The two demos are `src/lib_vjet/demo/vjet_test.spin` and `src/lib_vjet/demo/vjet_fb.spin`.
+VECTORJET (`src/lib_vjet`) is not linked from the product top. Boot is text VGA only. The two demos are `src/lib_vjet/demo/vjet_test.spin` and `src/lib_vjet/demo/vjet_fb.spin`. The bring-up top is `src/ux_module_vjet.spin`. Failed tear repairs on the eight-line slice are in `3D_PROCESS_LIB_VJET.md`.
 
 The six library objects stay in `src/lib_vjet/`. Compile tops and both heads are in `src/lib_vjet/demo/`. Display lists are in `src/lib_vjet/scene/`. A top defines one scene and includes one head. The head includes `scene/scene_*.spin`. Compile with `-L src -L src/lib_vjet`.
 

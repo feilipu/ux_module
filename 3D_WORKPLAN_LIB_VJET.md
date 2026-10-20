@@ -2,9 +2,9 @@
 
 This plan covers three stages. Stage 1 puts the known-good framebuffer on the same firmware as the UX Module text console. Stage 2 chooses the command path from CP/M-IDE. Stage 3 adds the CP/M-IDE library and tools.
 
-The live bring-up is the beam-chase slice in `src/ux_module_vjet.spin`. EEPROM holds the 16392-byte image loaded on 19 Oct 2026. The mode flag powers up clear. Stage 1 below records the framebuffer trial.
+The live bring-up is the beam-chase slice in `src/ux_module_vjet.spin`. EEPROM holds the 16460-byte hub-paint image restored on 20 Oct 2026. The mode flag powers up clear. Stage 1 below records the framebuffer trial.
 
-The repair history is `3D_PROCESS_LIB_VJET.md`. This file does not repeat those loads.
+The repair history is `3D_PROCESS_LIB_VJET.md`. This file does not repeat those loads. The picture still tears. Failed repairs of that tear are in the process file. Do not restore those loads.
 
 Product `main` stays in text mode until stage 1 passes its checks.
 
@@ -85,7 +85,8 @@ Hub is 32 KB. OpenSpin 1.00.81 measured these images.
 | `demo/vjet_fb_cube.spin` | 7520 | — | Stage 2 harness. Current source compiles to 7676. Not loaded. |
 | `ux_module_vjet.spin` | 20408 | 1148 | Framebuffer bring-up on 17 Oct. Ten content lines. |
 | `ux_module_vjet.spin` | 19772 | 1160 | EEPROM test card. 18 longs remain above the stack reserve. |
-| `ux_module_vjet.spin` | 16392 | 4520 | Stream copier and the mode flag. `openspin -u`. On EEPROM. The flag powers up clear. |
+| `ux_module_vjet.spin` | 16392 | 4520 | Stream copier and the mode flag. `openspin -u`. Earlier EEPROM. |
+| `ux_module_vjet.spin` | 16460 | — | Hub-paint from `6615776`. On EEPROM 20 Oct 2026. Known tear remains. |
 
 The accepted bitmap does not fit in the bring-up. Two bitmaps and two palettes at 80 lines are 20480 bytes. The bring-up keeps 10 content lines and one black line. Each content line needs 256 bytes.
 
@@ -107,13 +108,19 @@ The lead change is in the source. Each render cog keeps a lead of 7 logical line
 
 Cog 0 is the only `acia.tx` writer. Do not draw on Cog 0 while the ACIA stays live.
 
-The live image is the beam-chase test card. The program is 19772 bytes. Free Hub above the stack pointer is 1160 bytes. Cog 0 keeps a 256-long stack and 16 longs of free space. 18 longs remain above that pair. Each list is 296 longs, which is 1184 bytes.
+An earlier live image was the beam-chase test card. The program was 19772 bytes. Free Hub above the stack pointer is 1160 bytes. Cog 0 keeps a 256-long stack and 16 longs of free space. 18 longs remain above that pair. Each list is 296 longs, which is 1184 bytes.
 
 The 20408-byte row is the framebuffer bring-up. Ordered-work steps 3 to 5 use that wording. The next task is the streamed list in Stage 2.
 
 One shape header is 8 bytes. A flat triangle is 36 bytes. A general triangle is 48 bytes. A box is 16 bytes. A text shape is 20 bytes. The scene counts are in Capabilities.
 
 Two 300-long lists are 2400 bytes. Two 900-long lists overflow by 768 longs. The framebuffer demos use the 300-long lists. The slice bring-up lists are 160 longs each. The orbit scene fits in that list. Two 300-long lists do not fit beside the ten stored lines.
+
+## Open tear on the slice
+
+The live 16460-byte image paints Hub slots in place. VGA double-scans each logical line. A write during that double scan tears the line.
+
+Pace, a Hub edge cache, a cog-RAM line buffer, and a Hub scratch copy all failed. Detail is in `3D_PROCESS_LIB_VJET.md`. The next fix must stay general and must keep console keys and the return to text.
 
 ## Known-good mechanisms
 
@@ -308,7 +315,7 @@ A normal compile of the copier exceeds Hub by 68 longs. Compile the bring-up wit
 openspin -u -L src -L src/lib_vjet -b -o build/ux_module_vjet.binary src/ux_module_vjet.spin
 ```
 
-That compile removes 86 unused methods and saves 4068 bytes. The program is 16392 bytes. Free Hub is 4520 bytes. Do not use `-u` on `src/ux_module.spin`. EEPROM holds this image. The text console answered `ls`.
+That compile removes 86 unused methods and saves 4068 bytes. The program is 16392 bytes. Free Hub is 4520 bytes. Do not use `-u` on `src/ux_module.spin`. A later hub-paint compile is 16460 bytes. EEPROM holds that image. The text console answered `ls`.
 
 ### Scene files
 

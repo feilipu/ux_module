@@ -142,7 +142,9 @@ The draw cog does not call `gl.start` on a list Cog 0 is filling. The ACIA cog d
 
 The lead-in and the parser states are in `3D_WORKPLAN_LIB_VJET.md`. Command bytes are not frozen. The pair stays a 6850 for this trial.
 
-Compile `src/ux_module_vjet.spin` with `openspin -u`. `main` calls `font.get` so the font stays. EEPROM holds the 16460 byte image. The mode flag powers up clear. Boot is the text console. Graphics mode shows the spinning triangles on the eight-line renderer. The field is one full-screen triangle. Do not load a framebuffer image. Do not replace that triangle with a box to skip a tall trap. Do not add a hub edge cache.
+Compile `src/ux_module_vjet.spin` with `openspin -u`. `main` calls `font.get` so the font stays. EEPROM holds the 16460 byte hub-paint image from commit `6615776`. The mode flag powers up clear. Boot is the text console. Graphics mode shows the spinning triangles on the eight-line renderer. The field is one full-screen triangle. The picture still tears where VGA double-scans a slot the renderer writes.
+
+Do not load a framebuffer image. Do not replace that triangle with a box to skip a tall trap. Do not add a Hub edge cache. Do not restore `gl.pace`, a cog-RAM `linebuf`, a Hub scratch copy, skip-if-late, or paint during `:linewait`. Those loads failed. Detail is in `3D_PROCESS_LIB_VJET.md`.
 
 `startVectorjet` does not clear a list that is ready or still filling. While `listReady` is set, Cog 0 leaves the next mark in the receive ring. After `listShown` is set, the draw cog does not rebuild the test card.
 
@@ -189,6 +191,7 @@ Three render cogs write that slice ahead of the scan. The original renderer used
 8. Prose: `style-ste-writing`.
 9. Leave the six library objects in `src/lib_vjet/`. OpenSpin resolves a bare object name from the current directory, each `-L` path, and the top file's directory. Include a scene as `scene/name.spin`. Do not compile a head or a scene file.
 10. Keep the IRQsome mark on the 2020 and 2021 objects. A new file uses (C)2026 feilipu. A derived file states the IRQsome source and uses 2026. `hexfont.spin` stays the Aaron Amar font.
+11. Leave the hub-paint painter in `VJET_vUXM_rendering.spin`. A later tear fix must keep keys, single line feeds, and Control-G return to text. Do not restore `gl.pace`, a Hub edge cache, a cog-RAM `linebuf`, a Hub scratch copy, skip-if-late, or paint during `:linewait`. Detail is in `3D_PROCESS_LIB_VJET.md`.
 
 ## Related
 
