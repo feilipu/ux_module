@@ -23,7 +23,7 @@ CON
   _clkmode      = XTAL1 + PLL16X
   _xinfreq      = 7_372_800
 
-  DLIST_SIZE    = 296                                   ' longs in each list
+  DLIST_SIZE    = 296                                   ' longs in each list. The spinning triangles fit in this.
   _STACK        = 256                                   ' Cog 0 stack, in longs. Cog 0 does not draw.
 
 
@@ -176,7 +176,6 @@ VAR
   long  listCount                                       ' payload bytes still to store
   long  listAt                                          ' next Hub byte in the fill target
   long  linebuffers[(render#WIDTH * render#LINE_BUFFERS) / 4]
-  long  polyXY[20]                                      ' polygon vertices, x then y, 16.16
   long  drawStack[192]                                  ' Draw cog stack. The next Hub is the FTDI rings.
 
 
@@ -988,6 +987,7 @@ PRI restoreText
   Wait after VECTORJET stops so the pins and the PLL are free.}}
 
   stopVectorjet
+  wmf.stop                                              ' drop a partial text-VGA start
   waitcnt (clkfreq / 4 + cnt)                           ' 250 ms blank, same as enter
   screenInit
   reviveInput

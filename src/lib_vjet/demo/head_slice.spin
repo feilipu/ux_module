@@ -1,5 +1,6 @@
 '' Beam-chase program head. Compile a top in this directory.
-'' That top defines SCENE_TRIANGLES, SCENE_GRAPH, or SCENE_PROBE.
+'' That top defines SCENE_TRIANGLES, SCENE_GRAPH, SCENE_PROBE,
+'' SCENE_CARD, or SCENE_STRESS.
 '' WITH_ACIA, WITH_FTDI, and WITH_SPIN_COG add those cogs.
 '' The display list is under scene/. The library objects stay in the parent directory.
 '' Derived from the 2021 vjet_test demo, (C)2021 IRQsome Software.
@@ -15,8 +16,12 @@ CON
   DLIST_SIZE = 500
 #elseifdef SCENE_PROBE
   DLIST_SIZE = 160
+#elseifdef SCENE_CARD
+  DLIST_SIZE = 400
+#elseifdef SCENE_STRESS
+  DLIST_SIZE = 500
 #else
-#error Define SCENE_TRIANGLES, SCENE_GRAPH, or SCENE_PROBE before this file.
+#error Define SCENE_TRIANGLES, SCENE_GRAPH, SCENE_PROBE, SCENE_CARD, or SCENE_STRESS before this file.
   DLIST_SIZE = 900
 #endif
 
@@ -96,8 +101,14 @@ repeat
 #include "scene/scene_graph.spin"
 #elseifdef SCENE_PROBE
 #include "scene/scene_probe.spin"
+#elseifdef SCENE_CARD
+#include "scene/scene_card.spin"
+PRI draw
+  drawScene
+#elseifdef SCENE_STRESS
+#include "scene/scene_stress.spin"
 #else
-#error Define SCENE_TRIANGLES, SCENE_GRAPH, or SCENE_PROBE before this file.
+#error Define SCENE_TRIANGLES, SCENE_GRAPH, SCENE_PROBE, SCENE_CARD, or SCENE_STRESS before this file.
 #endif
 
 

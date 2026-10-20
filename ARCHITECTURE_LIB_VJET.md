@@ -28,7 +28,8 @@ The product top `ux_module.spin` does not link this library. The six library obj
 | `scene/scene_graph.spin` | Graph picture. Beam-chase head only. |
 | `scene/scene_probe.spin` | Orbit probe. Beam-chase head. |
 | `scene/scene_cube.spin` | Cube mesh. Framebuffer head only. |
-| `scene/scene_card.spin` | Test card. No compile top includes it. |
+| `scene/scene_card.spin` | Test card. Beam-chase head. Polygons. |
+| `scene/scene_stress.spin` | Stress picture. Polygons, scaled text, clip, stacked spans. |
 | `demo/vjet_test.spin` | Original demo. Beam chase. Spinning triangles. |
 | `demo/vjet_fb.spin` | Framebuffer demo. The same picture. |
 | `demo/vjet_acia.spin` | Beam-chase triangles plus the ACIA cog. |
@@ -37,6 +38,8 @@ The product top `ux_module.spin` does not link this library. The six library obj
 | `demo/vjet_fb_cube.spin` | Stage 2 cube harness. Not a demo. |
 | `demo/vjet_fb_probe.spin` | Stripe and glass check. Not a demo. |
 | `demo/graphtest.spin` | Graph drawing sample. Not one of the two demos. |
+| `demo/vjet_card.spin` | Beam-chase test card. |
+| `demo/vjet_stress.spin` | Beam-chase stress picture. |
 
 ## Runtime pipeline
 

@@ -27,7 +27,8 @@ Human architecture note: `ARCHITECTURE_LIB_VJET.md`. The 2020 and 2021 objects k
 | `scene/scene_graph.spin` | Graph picture. Beam-chase head only. |
 | `scene/scene_probe.spin` | Orbit probe. Beam-chase head. One box and nine triangles. |
 | `scene/scene_cube.spin` | Cube mesh. Framebuffer head only. |
-| `scene/scene_card.spin` | Test card. No compile top includes it. |
+| `scene/scene_card.spin` | Test card. Beam-chase head. Polygons. |
+| `scene/scene_stress.spin` | Stress picture. Polygons, scaled text, clip, stacked spans. |
 | `demo/vjet_test.spin` | Original demo. Defines the triangle scene. Includes the beam-chase head. |
 | `demo/vjet_fb.spin` | Framebuffer demo. The same picture. Includes the framebuffer head. |
 | `demo/vjet_acia.spin` | Beam-chase triangles plus the ACIA cog. |
@@ -37,6 +38,8 @@ Human architecture note: `ARCHITECTURE_LIB_VJET.md`. The 2020 and 2021 objects k
 | `demo/vjet_probe.spin` | Beam-chase orbit probe. Eight line slots. Do not load the framebuffer probe. |
 | `demo/vjet_fb_probe.spin` | Old framebuffer copy of the orbit probe. Do not load it. |
 | `demo/graphtest.spin` | Graph drawing sample. Not one of the two demos. |
+| `demo/vjet_card.spin` | Beam-chase test card. |
+| `demo/vjet_stress.spin` | Beam-chase stress picture. |
 
 The six library objects stay in `src/lib_vjet/`. Compile tops and both heads are in `demo/`. Display lists are in `scene/`. A top in `demo/` defines one `SCENE_*` macro and includes one head. The head includes `scene/scene_*.spin`. Compile the top with `-L src -L src/lib_vjet`.
 

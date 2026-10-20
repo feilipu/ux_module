@@ -551,6 +551,10 @@ The mode flag is in the ACIA cog and powers up clear. Command bytes are not froz
 | `.agents/skills/hw-ux-pcb/SKILL.md` | Pin map and 74HC4078 |
 | `src/lib_vjet/demo/vjet_fb.spin` | Framebuffer demo |
 | `src/lib_vjet/demo/vjet_test.spin` | Original beam-chase demo |
+| `src/lib_vjet/demo/vjet_probe.spin` | Beam-chase orbit probe |
+| `src/lib_vjet/demo/graphtest.spin` | Beam-chase graph sample |
+| `src/lib_vjet/demo/vjet_card.spin` | Beam-chase test card |
+| `src/lib_vjet/demo/vjet_stress.spin` | Beam-chase stress picture |
 | `src/lib_vjet/demo/vjet_fb_cube.spin` | Stage 2 cube harness |
 | `src/lib_vjet/demo/vjet_fb_probe.spin` | Motion and occlusion check |
 | `src/acia_rc2014.spin` | Port constants and the wait loop |

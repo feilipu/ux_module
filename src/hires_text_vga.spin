@@ -93,7 +93,7 @@ CON
 VAR long cog[2]
 
 
-PUB start(BasePin, ScreenPtr, ColorPtr, CursorPtr, SyncPtr) : okay | i, j
+PUB start(BasePin, ScreenPtr, ColorPtr, CursorPtr, SyncPtr) : okay | i, j, tries
 
 '' Start VGA driver - starts two COGs
 '' returns false if two COGs not available
@@ -149,36 +149,37 @@ PUB start(BasePin, ScreenPtr, ColorPtr, CursorPtr, SyncPtr) : okay | i, j
   reg_dira := i & j
   reg_dirb := i & !j
 
-  'implant CNT value to sync COGs to
-  sync_cnt := cnt + $10000
-
   'implant pointers
   longmove(@screen_base, @ScreenPtr, 3)
   font_base := @font
 
-  'implant unique settings and launch first COG
   pixelRate |= (pr << 2) / (clkfreq / 16_000_000)       'assuming PLL16X
-  vf_lines.byte := vf
-  vb_lines.byte := vb
-  font_third := 1
-  cog[1] := cognew(@d0, SyncPtr) + 1
 
-  'allow time for first COG to launch
-  waitcnt($2000 + cnt)
-
-  'differentiate settings and launch second COG
-  vf_lines.byte := vf+4
-  vb_lines.byte := vb-4
-  font_third := 0
-  cog[0] := cognew(@d0, SyncPtr) + 1
-
-  'if both COGs launched, return true
-  if cog[0] and cog[1]
-    return true
-
-  'else, stop any launched COG and return false
-  else
+  ' Both cogs must reach waitcnt sync_cnt before CNT passes it.
+  ' $10000 is 0.55 ms at 118 MHz. Two cognew copies plus the init
+  ' loops miss that window when ACIA and FTDI still use the Hub.
+  ' A late waitcnt wraps about 36 s. Stop and try a new meet.
+  ' Clear SyncPtr first. A leftover -1 is the last text field.
+  repeat tries from 1 to 3
+    long[SyncPtr] := 0
+    vf_lines.byte := vf
+    vb_lines.byte := vb
+    font_third := 1
+    sync_cnt := cnt + clkfreq / 100                     ' 10 ms meet
+    cog[1] := cognew(@d0, SyncPtr) + 1
+    waitcnt(clkfreq / 1000 + cnt)                       ' 1 ms
+    vf_lines.byte := vf+4
+    vb_lines.byte := vb-4
+    font_third := 0
+    cog[0] := cognew(@d0, SyncPtr) + 1
+    if cog[0] and cog[1]
+      repeat i from 1 to 4
+        if long[SyncPtr]
+          return true
+        waitcnt(clkfreq / 100 + cnt)                    ' 10 ms; one field is ~14 ms
     stop
+
+  return false
 
 
 PUB stop | i

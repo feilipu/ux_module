@@ -1,4 +1,4 @@
-'' Test card. Included by src/ux_module_vjet.spin.
+'' Test card. The beam-chase head includes this file.
 '' The circle turns clockwise. A later shape covers an earlier shape.
 '' (C)2026 feilipu.
 
@@ -7,6 +7,11 @@ CON
   CARD_X        = 128                                   ' circle centre, pixels
   CARD_Y        = 120
   CARD_R        = 84                                    ' circle radius, pixels
+
+
+VAR
+
+  long polyXY[20]
 
 
 PRI drawScene | i, a, sx, cx
