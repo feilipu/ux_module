@@ -276,3 +276,19 @@ Keep the hub-paint painter. Keep `LINE_BUFFERS` 8, `SPAN_MAX` 24, the 7-line lea
 A later fix must stay general. It must not slow the draw. It must keep FTDI keys, single line feeds, and Control-G return to text.
 
 Do not restore pace. Do not cut the scene. Do not cap slopes. Do not replace the field triangle with a box. Do not add a Hub edge cache. Do not walk a line with `movd`/`movs`. Do not paint during `:linewait`. Do not skip a late publish.
+
+## Option A — 20 Oct 2026
+
+The text painter stops a glyph write that passes `display_base + WIDTH`. A glyph near the right edge no longer writes into the next slot.
+
+`:linewait` sets `restart_ok` when the published line is not 0. The restart to `new_frame` runs only after that flag is set. Line 0 is vsync, the back porch, and the first visible line. A cog that is still on the first 0 does not restart.
+
+`render.start` waits `START_COPY` Spin loops so the next start can reuse the DAT longs.
+
+The bring-up compiles with `openspin -u`. Without `-u` it exceeds Hub by 203 longs. That is the documented compile. It is not a fault at the scene include.
+
+## Return to text — 20 Oct 2026
+
+Option A cleared the tear bands. The picture was clean. Control-G printed `Text mode` on FTDI. Text VGA did not return.
+
+`restoreText` now waits 250 ms after VECTORJET stops, the same blank as enter. It also floats P16–P23. `render.stop` skips the loop when `rendcount` is 0. EEPROM holds 16508 bytes. Clock mode is `$6F`. Control-G enters graphics. A second Control-G returns to text.

@@ -10,6 +10,7 @@ CON
   NUM_LINES = 240
   LINE_BUFFERS = 8             '' Hub slots; must match VGA tile wrap (line & 7)
   SPAN_MAX = 24                '' records kept for one scan line
+  START_COPY = 10_000          '' Spin loops. Next start overwrites the DAT longs.
 '' One box, point, line, polygon, or text shape uses one record.
 '' A shape after these 24 records on that line is skipped.
 
@@ -72,13 +73,14 @@ PUB start(cognum,totalcogs,scanbuffer,dlistPtrAdr,videoSync,readyptr)
   if result => 0
     if rendcount < 8
       rendcog[rendcount++] := result
-  repeat 10000
+  repeat START_COPY
   return result => 0
 
 PUB stop | i
 '' Stop every rendering cog this object started.
-  repeat i from 0 to rendcount-1
-    cogstop(rendcog[i])
+  if rendcount > 0
+    repeat i from 0 to rendcount-1
+      cogstop(rendcog[i])
   rendcount := 0
 
 PUB Return_Address ''used to get address where assembly code is so we can re-purpose space
@@ -111,6 +113,7 @@ if_nz   jmp #:waitloop
 
         mov currentscanline, cognumber ''reset current scanline for COG
         mov span_ready,#0
+        mov restart_ok,#0
 
         rdword dlist_base, dlist_ptr_adr  '' read adress of display list
         'wrword dlist_base, dlist_in_use
@@ -357,8 +360,11 @@ if_a    jmp #:linewait
         jmpret span_ret,#:build_spans
 :linewait
         rdword currentrequest, request_scanline wz
+        muxnz restart_ok,#1
         cmp currentscanline,#16 wc
-if_z_and_nc jmp #new_frame
+'' Line 0 is vsync, the back porch, and the first visible line.
+'' Restart only after this cog has seen a non-zero line.
+if_z_and_nc tjnz restart_ok,#new_frame
         mov d0,currentscanline
         add d0,total_cogs
         sub d0,#LINE_BUFFERS
@@ -484,8 +490,12 @@ if_b    jmp #:chrdone
 
         mov pixel_ptr,display_base
         add pixel_ptr,poly_left
+        mov d1,display_base
+        add d1,#WIDTH
 
 :tplp
+        cmps pixel_ptr,d1 wc
+if_nc   jmp #:textdone
         shr d0,#1 wc,wz
 :thewr1
 if_c    wrbyte span_color,pixel_ptr
@@ -777,6 +787,7 @@ strptr        res 1
 
 prep_line     res 1
 span_ready    res 1
+restart_ok    res 1
 span_count    res 1
 span_i        res 1
 span_ptr      res 1

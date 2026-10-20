@@ -127,9 +127,9 @@ The next bring-up load uses that slice. `demo/vjet_fb.spin` stays the accepted p
 
 ## Hub-paint and tear — 20 Oct 2026
 
-The live bring-up paints Hub slots in place. EEPROM holds 16460 bytes from commit `6615776`. Graphics mode builds `scene/scene_triangles.spin`. The field is one full-screen triangle.
+The live bring-up paints Hub slots in place. EEPROM holds 16508 bytes. Graphics mode builds `scene/scene_triangles.spin`. The field is one full-screen triangle.
 
-The picture still tears on doubled scanlines. Pace, a Hub edge cache, a cog-RAM `linebuf`, and a Hub scratch copy all failed. Those loads also broke keys, doubled line feeds, or blocked the return to text. The process file lists each load. Do not restore them.
+The tear bands are gone. The text painter clamps glyph writes to the slot. `:linewait` restarts a frame only after a non-zero published line. `restoreText` waits 250 ms after VECTORJET stops. Pace, a Hub edge cache, a cog-RAM `linebuf`, and a Hub scratch copy all failed. Those loads also broke keys, doubled line feeds, or blocked the return to text. The process file lists each load. Do not restore them.
 
 ## Display list model
 

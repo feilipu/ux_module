@@ -984,9 +984,11 @@ PRI reviveInput
 
 PRI restoreText
 {{Text VGA, the stopped input cog, one FTDI line, then DDC.
-  P5 must already be released. The VGA banner does not go to FTDI.}}
+  P5 must already be released. The VGA banner does not go to FTDI.
+  Wait after VECTORJET stops so the pins and the PLL are free.}}
 
   stopVectorjet
+  waitcnt (clkfreq / 4 + cnt)                           ' 250 ms blank, same as enter
   screenInit
   reviveInput
   if ftdiUp and term.txSpace => 12
@@ -1000,7 +1002,7 @@ PRI restoreText
 
 PRI stopVectorjet
 {{Stop the draw cog, the render cogs, and the slice VGA cog.
-  Do this before screenInit.}}
+  Do this before screenInit. Float P16–P23 after those cogs stop.}}
 
   gfxReady := 0
   drawHold := 0
@@ -1009,6 +1011,8 @@ PRI stopVectorjet
     cogstop (drawCog~ - 1)
   render.stop
   vga.stop
+  dira[23..16]~                                         ' float the VGA pins
+
 
 
 PRI startVectorjet : ok

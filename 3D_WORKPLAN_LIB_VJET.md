@@ -2,9 +2,9 @@
 
 This plan covers three stages. Stage 1 puts the known-good framebuffer on the same firmware as the UX Module text console. Stage 2 chooses the command path from CP/M-IDE. Stage 3 adds the CP/M-IDE library and tools.
 
-The live bring-up is the beam-chase slice in `src/ux_module_vjet.spin`. EEPROM holds the 16460-byte hub-paint image restored on 20 Oct 2026. The mode flag powers up clear. Stage 1 below records the framebuffer trial.
+The live bring-up is the beam-chase slice in `src/ux_module_vjet.spin`. EEPROM holds the 16508-byte image loaded on 20 Oct 2026. The mode flag powers up clear. Stage 1 below records the framebuffer trial.
 
-The repair history is `3D_PROCESS_LIB_VJET.md`. This file does not repeat those loads. The picture still tears. Failed repairs of that tear are in the process file. Do not restore those loads.
+The repair history is `3D_PROCESS_LIB_VJET.md`. This file does not repeat those loads. The tear bands are gone. Failed repairs of that tear are in the process file. Do not restore those loads.
 
 Product `main` stays in text mode until stage 1 passes its checks.
 
@@ -86,7 +86,8 @@ Hub is 32 KB. OpenSpin 1.00.81 measured these images.
 | `ux_module_vjet.spin` | 20408 | 1148 | Framebuffer bring-up on 17 Oct. Ten content lines. |
 | `ux_module_vjet.spin` | 19772 | 1160 | EEPROM test card. 18 longs remain above the stack reserve. |
 | `ux_module_vjet.spin` | 16392 | 4520 | Stream copier and the mode flag. `openspin -u`. Earlier EEPROM. |
-| `ux_module_vjet.spin` | 16460 | — | Hub-paint from `6615776`. On EEPROM 20 Oct 2026. Known tear remains. |
+| `ux_module_vjet.spin` | 16460 | — | Hub-paint from `6615776`. Earlier EEPROM. Known tear remains. |
+| `ux_module_vjet.spin` | 16508 | — | Text clamp, one-shot restart, 250 ms return wait. On EEPROM 20 Oct 2026. Tear bands gone. |
 
 The accepted bitmap does not fit in the bring-up. Two bitmaps and two palettes at 80 lines are 20480 bytes. The bring-up keeps 10 content lines and one black line. Each content line needs 256 bytes.
 
@@ -118,9 +119,9 @@ Two 300-long lists are 2400 bytes. Two 900-long lists overflow by 768 longs. The
 
 ## Open tear on the slice
 
-The live 16460-byte image paints Hub slots in place. VGA double-scans each logical line. A write during that double scan tears the line.
+The live 16508-byte image paints Hub slots in place. The tear bands are gone. VGA still double-scans each logical line.
 
-Pace, a Hub edge cache, a cog-RAM line buffer, and a Hub scratch copy all failed. Detail is in `3D_PROCESS_LIB_VJET.md`. The next fix must stay general and must keep console keys and the return to text.
+Pace, a Hub edge cache, a cog-RAM line buffer, and a Hub scratch copy all failed. Detail is in `3D_PROCESS_LIB_VJET.md`. A later change must stay general and must keep console keys and the return to text.
 
 ## Known-good mechanisms
 
@@ -315,7 +316,7 @@ A normal compile of the copier exceeds Hub by 68 longs. Compile the bring-up wit
 openspin -u -L src -L src/lib_vjet -b -o build/ux_module_vjet.binary src/ux_module_vjet.spin
 ```
 
-That compile removes 86 unused methods and saves 4068 bytes. The program is 16392 bytes. Free Hub is 4520 bytes. Do not use `-u` on `src/ux_module.spin`. A later hub-paint compile is 16460 bytes. EEPROM holds that image. The text console answered `ls`.
+That compile removes 86 unused methods and saves 4068 bytes. The program is 16392 bytes. Free Hub is 4520 bytes. Do not use `-u` on `src/ux_module.spin`. A later hub-paint compile is 16508 bytes. EEPROM holds that image. The text console answered `ls`.
 
 ### Scene files
 
