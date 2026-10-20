@@ -249,6 +249,12 @@ src/lib_vjet
       |---> scene_card
 ```
 
+This video shows the lib_vjet pictures on the UX Module.
+
+[![UX Module with lib_vjet](https://img.youtube.com/vi/gWfvbpljERk/0.jpg)](https://www.youtube.com/watch?v=gWfvbpljERk)
+<BR>
+CLICK IMAGE TO VIEW!
+
 ```
 ux_module
 |
