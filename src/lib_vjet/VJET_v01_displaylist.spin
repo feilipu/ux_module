@@ -11,7 +11,7 @@
 '' A polygon stores 24 bytes plus 12 bytes for each trapezoid.
 '' A sloped line stores 36 bytes. A horizontal line stores 16 bytes.
 '' The builder skips the 8 current-edge bytes.
-'' The beam-chase cog does not write them. The framebuffer cog writes them.
+'' The beam-chase cog does not write them.
 '' The renderer keeps 24 records on one scan line.
 '' A shape after those records on that line is skipped.
 

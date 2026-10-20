@@ -680,7 +680,7 @@ if_z    jmp draw_span_ret
 draw_span_ret
               ret
         
-'' newmult is not called. The framebuffer cog keeps it.
+'' newmult is not called.
 {
 '' See: https://forums.parallax.com/discussion/160804/slightly-faster-integer-multiplication-in-pasm
 newmult       ' setup

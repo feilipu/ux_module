@@ -1,8 +1,8 @@
 # 3D work plan — lib_vjet
 
-This plan covers three stages. Stage 1 puts the known-good framebuffer on the same firmware as the UX Module text console. Stage 2 chooses the command path from CP/M-IDE. Stage 3 adds the CP/M-IDE library and tools.
+This plan covers three stages. Stage 1 records the framebuffer trial. Those sources were removed. The live path is the eight-line scan. Stage 2 chooses the command path from CP/M-IDE. Stage 3 adds the CP/M-IDE library and tools.
 
-The live bring-up is the beam-chase slice in `src/ux_module_vjet.spin`. The EEPROM image on 20 Oct 2026 is the stress picture, 17428 bytes. The mode flag powers up clear. Stage 1 below records the framebuffer trial.
+The live bring-up is the beam-chase slice in `src/ux_module_vjet.spin`. The EEPROM image on 20 Oct 2026 is the stress picture, 17428 bytes. The mode flag powers up clear. Git history keeps the framebuffer sources. Later sections name those files as the trial record.
 
 The repair history is `3D_PROCESS_LIB_VJET.md`. This file does not repeat those loads. The tear bands are gone. Failed repairs of that tear are in the process file. Do not restore those loads.
 
@@ -14,13 +14,12 @@ Product `main` stays in text mode until stage 1 passes its checks.
 |------|---------|
 | UX Module | RC2014 board. Propeller 1 (P8X32A). Product top is `src/ux_module.spin`. |
 | Text mode | `hires_text_vga` on P16–P23. Two VGA cogs. 640×480 cells, 80×40. |
-| Graphics mode | VECTORJET on P16–P23. The live bring-up is the slice. The accepted demo is the framebuffer. |
+| Graphics mode | VECTORJET on P16–P23. The live bring-up is the eight-line slice. |
 | Slice | Beam-chase VGA cog and three render cogs. Eight line buffers. The live bring-up. |
 | Beam chase | `VJET_vUXM_vga` and `VJET_vUXM_rendering`. Demo is `demo/vjet_test.spin`. |
-| Framebuffer | `VJET_vUXM_vga_fb` and `VJET_vUXM_rendering_fb`. Demo is `demo/vjet_fb.spin`. |
 | Display list | Hub list of shapes. The render cogs read it. |
-| Library directory | `src/lib_vjet/`. The six engine objects stay here. |
-| Demo directory | `src/lib_vjet/demo/`. Compile tops and both heads. |
+| Library directory | `src/lib_vjet/`. The framebuffer objects were removed. |
+| Demo directory | `src/lib_vjet/demo/`. Compile tops and the beam-chase head. |
 | Scene directory | `src/lib_vjet/scene/`. A head includes `scene/scene_*.spin`. |
 | Draw cog | Second Spin cog. It builds the display list. |
 | Cog 0 | Product main loop. The only writer of `acia.tx`. |
@@ -89,7 +88,7 @@ Do not send `$07` while XMODEM is active. The program sends `$07` after the seal
 
 The clock stays `_clkmode = XTAL1 + PLL16X` and `_xinfreq = 7_372_800`. The system clock is 117964800 Hz. The EEPROM mode byte is $6F.
 
-P16–P23 have one owner. Text VGA and the framebuffer VGA cog do not run together. Stop `wmf.stop` and `i2c.stopCog` before the framebuffer VGA start. Stop the render cogs and that VGA cog before `wmf.init` and `i2c.startCog`.
+P16–P23 have one owner. Text VGA and the eight-line VGA cog do not run together. Stop `wmf.stop` and `i2c.stopCog` before the graphics VGA start. Stop the render cogs and that VGA cog before `wmf.init` and `i2c.startCog`.
 
 The PLL, the porches, and `VCFG` stay on the 2021 line. The NCO is 10 MHz. CTRA uses VCO/4. VCO is 160 MHz. PLLA is 40 MHz. PixelClocks is 4. FrameClocks is 16. Visible `VSCL` is `(4 << 12) + 16`. Do not copy that `VSCL` into `VJET_vUXM_vga.spin`.
 
@@ -123,9 +122,9 @@ Hub is 32 KB. OpenSpin 1.00.81 measured these images.
 | `ux_module.spin` | 12780 | 13516 | Text only. |
 | `demo/vjet_test.spin` | 6140 | — | Stored beam-chase demo. Current compile is 6156. |
 | `demo/vjet_ftdi.spin` | 8660 | — | Beam chase plus ACIA and FTDI. Clean. |
-| `demo/vjet_fb.spin` | 8044 | about 944 | Accepted file `build/vjet_fb.binary`. Current source compiles to 8216. |
-| `demo/vjet_fb_probe.spin` | 6696 | — | Stripe and glass check. Was on EEPROM. Not a demo. |
-| `demo/vjet_fb_cube.spin` | 7520 | — | Stage 2 harness. Current source compiles to 7676. Not loaded. |
+| `demo/vjet_fb.spin` | 8044 | about 944 | Removed. Recorded size. `build/vjet_fb.binary` stays an old file. |
+| `demo/vjet_fb_probe.spin` | 6696 | — | Removed. Stripe check. Was on EEPROM. |
+| `demo/vjet_fb_cube.spin` | 7520 | — | Removed. Cube harness. Was not loaded. |
 | `ux_module_vjet.spin` | 20408 | 1148 | Framebuffer bring-up on 17 Oct. Ten content lines. |
 | `ux_module_vjet.spin` | 19772 | 1160 | EEPROM test card. 18 longs remain above the stack reserve. |
 | `ux_module_vjet.spin` | 16392 | 4520 | Stream copier and the mode flag. `openspin -u`. Earlier EEPROM. |
@@ -134,7 +133,7 @@ Hub is 32 KB. OpenSpin 1.00.81 measured these images.
 
 The accepted bitmap does not fit in the bring-up. Two bitmaps and two palettes at 80 lines are 20480 bytes. The bring-up keeps 10 content lines and one black line. Each content line needs 256 bytes.
 
-1148 bytes remain above the initial stack pointer. The reserved stack is 256 longs. The current `demo/vjet_fb.spin` source compiles to 8216 bytes. The stored accepted file stays 8044 bytes.
+1148 bytes remain above the initial stack pointer. The reserved stack is 256 longs. The removed `demo/vjet_fb.spin` source compiled to 8216 bytes. The stored file `build/vjet_fb.binary` stays 8044 bytes.
 
 `wmf.stop` frees a cog. It does not free the text buffer. The text buffer is 3200 bytes. That alias does not close the gap. The ACIA and FTDI buffers stay live.
 
@@ -142,7 +141,7 @@ The 74HC4078 decodes `/IORQ` with A5–A1. The live windows are 0x00, 0x40, 0x80
 
 On 18 Oct 2026 the full bitmap is the costly store. The list and the bitmap both stay. The VGA cog scans the bitmap. The next bring-up uses the eight-line slice from `VJET_vUXM_rendering.spin`.
 
-Three render cogs write that slice ahead of the scan. The original renderer used two cogs. Three cogs must stay ahead. The accepted framebuffer demo is unchanged.
+Three render cogs write that slice ahead of the scan. The original renderer used two cogs. Three cogs must stay ahead. The accepted framebuffer demo stayed unchanged.
 
 The 18 Oct 2026 load held. The field is the blue box. Two triangles spin in the top half. The program is 18304 bytes.
 
@@ -168,7 +167,9 @@ Pace, a Hub edge cache, a cog-RAM line buffer, and a Hub scratch copy all failed
 
 ## Known-good mechanisms
 
-`demo/vjet_fb.spin` is the framebuffer demo. The user accepted that picture on 17 Oct 2026. The monitor holds 720×480 at 60 Hz. `demo/vjet_test.spin` is the original beam-chase demo of the same picture.
+The notes below record the removed framebuffer. Do not compile those files. The live bring-up is the eight-line scan.
+
+`demo/vjet_fb.spin` was the framebuffer demo. The user accepted that picture on 17 Oct 2026. The monitor held 720×480 at 60 Hz. `demo/vjet_test.spin` is the beam-chase demo of the same picture.
 
 The VGA cog scans a finished 256 by 80 bitmap. It does not wait for a render cog. A late frame repeats. The renderer stores logical lines 0, 3, 6, and so on. The VGA cog shows each stored line six times. Two bits select one of four colours in each group of 16 pixels. A fifth colour in that group uses the nearest of the four. The compare masks both bytes with `$FC`.
 
@@ -195,7 +196,7 @@ There is no depth buffer. Later shapes in the list overwrite earlier spans. A fa
 
 A crossing is that overwrite, plus the four-colour limit. Five colours in one group of 16 pixels become the nearest of the four. A muddy patch there is the palette limit.
 
-Bit 1 of the low colour byte asks for a 50 percent mix with the pixel already stored. The mix runs only when the control long `blend` is set. `demo/vjet_fb.spin` leaves that long clear, so the accepted picture stays solid. The mix is one byte at a time.
+Bit 1 of the low colour byte asks for a 50 percent mix with the pixel already stored. The mix runs only when the control long `blend` is set. `demo/vjet_fb.spin` left that long clear, so the accepted picture stayed solid. The mix is one byte at a time.
 
 A solid span returns. It does not enter the mix. The mix averages red, green, and blue as separate pairs. A right shift of the whole byte moves red into green and green into blue. A glass triangle that fills many pixels can make the renderer miss a frame. The VGA cog then repeats the last finished bitmap.
 
@@ -206,11 +207,11 @@ Vertical edges step by six screen lines, because only every third logical line i
 - The PLL, the porches, `VCFG`, and visible `VSCL` on the framebuffer VGA cog.
 - `movd` in `find_color`. `movs` stores black.
 - Cog 0 as the only top-edge fixup. The flag is the control long at offset 24.
-- The beam-chase files. They are the reference, not the bring-up.
+- The beam-chase files. They stayed in the tree during that trial. The live bring-up is those files.
 
 ### Capabilities
 
-The framebuffer demo is `demo/vjet_fb.spin`. Each frame draws 13 triangles and one text shape. The probe scene draws one box and nine triangles. Both tops keep two lists of 300 longs. One list is 1200 bytes. The two lists are 2400 bytes.
+The framebuffer demo was `demo/vjet_fb.spin`. Each frame drew 13 triangles and one text shape. The probe scene draws one box and nine triangles. Both tops keep two lists of 300 longs. One list is 1200 bytes. The two lists are 2400 bytes.
 
 A shape starts with an 8-byte header. The header holds the link word, the sync byte, the type byte, and the two scanline words. A flat triangle stores 36 bytes. A general triangle stores 48 bytes. A box stores 16 bytes. A text shape stores 20 bytes.
 
@@ -220,15 +221,17 @@ One list also holds 75 boxes or 60 text shapes. A polygon stores 24 bytes plus 1
 
 The bitmap is 256 pixels by 80 stored lines. Two bits select the colour. Each group of 16 pixels has four colours. One bitmap is 5120 bytes. One palette table is 5120 bytes. Two bitmaps and two palettes are 20480 bytes.
 
-The scratch lines are 768 bytes. The accepted file `build/vjet_fb.binary` is 8044 bytes. The variables of that scene are 23776 bytes. The current `demo/vjet_fb.spin` source compiles to 8060 bytes. `blend` stays clear in that top. The probe source compiles to 6696 bytes.
+The scratch lines are 768 bytes. The accepted file `build/vjet_fb.binary` is 8044 bytes. The variables of that scene are 23776 bytes. The removed `demo/vjet_fb.spin` source compiled to 8060 bytes. `blend` stayed clear in that top. The probe source compiled to 6696 bytes.
 
 EEPROM holds the probe loaded before this comment pass. The list check now counts the unused bytes on a box and on a text shape. Those scenes still fit, so the picture is unchanged. `blend` is set only in the probe.
 
 ## Stage 1 — Text and graphics on one firmware
 
-Goal: one binary runs the product console, enters graphics mode, shows a framebuffer scene, keeps the ACIA link, and returns to text.
+This stage records the removed framebuffer trial. Do not compile those files.
 
-The bring-up file is `src/ux_module_vjet.spin`. It links the framebuffer objects. Product `src/ux_module.spin` stays text only.
+Recorded goal. One binary ran the product console, entered graphics mode, showed a framebuffer scene, kept the ACIA link, and returned to text.
+
+That trial used `src/ux_module_vjet.spin` and the framebuffer objects. Those objects were removed. Product `src/ux_module.spin` stays text only. The live bring-up is the eight-line scan.
 
 Promote the switch into `src/ux_module.spin` only after the checks below pass. Boot still starts text mode.
 
@@ -238,9 +241,11 @@ Step 3 uses its own bitmap. Ten content lines fill the top of the picture. The V
 
 The last bright line of an even band reads the next palette. At the black line that read stays on the black line. The odd bands then stay black.
 
-That picture differs from `demo/vjet_fb.spin`. Accept it on the monitor before it replaces the accepted scene. Leave `STORED_LINES` in the accepted renderer unchanged.
+That picture differed from `demo/vjet_fb.spin`. The monitor accepted it before it replaced the accepted scene. `STORED_LINES` in that renderer stayed unchanged.
 
 ### Switch order
+
+This list records the removed trial. The live switch starts the eight-line VGA cog.
 
 1. Set a mode flag so Cog 0 stops `wmf` calls.
 2. Call `wmf.stop`.
@@ -274,28 +279,28 @@ In graphics mode, `readZ80` still drains the ACIA receive FIFO. It writes FTDI o
 Run these in order. Stop on the first failure.
 
 1. Build the current product top. Record the binary size and the Hub bytes left.
-2. Load the accepted framebuffer on the target monitor. The picture must hold 720×480 at 60 Hz.
+2. The accepted framebuffer load is recorded. Do not load that image. The picture held 720×480 at 60 Hz.
 3. Load the bring-up top. Boot must show the text banner. The 8085 must still see the console at 0x80.
 4. Enter graphics mode. The scene must hold for 60 seconds with no smear and no grey field.
 5. The 8085 must still send bytes to FTDI while the scene runs. Stage 1 leaves the pair as a 6850.
 6. Return to text mode. The banner path must run. The 8085 console must work.
 7. Repeat the switch ten times. Cog `start` must not fail for lack of a cog.
 
-`demo/vjet_fb_probe.spin` is the check that the stripe rule holds on moving triangles. It is not step 3. The bring-up still has to boot in text and switch.
+The framebuffer probe was removed. It is not step 3. The bring-up still has to boot in text and switch.
 
 ## Stage 2 — Command path
 
 The 8085 must build scenes without a new Propeller binary for each model. The Propeller does not parse STL or OBJ for each frame. A cooker on CP/M or on the Mac converts the file once.
 
-The cube harness stays the maths trial. It uses the framebuffer cogs and it is not loaded. The streamed list is in the beam-chase bring-up.
+The cube mesh stays the maths trial. The framebuffer top was removed. The streamed list is in the beam-chase bring-up.
 
 The mode flag is in the ACIA cog. It powers up clear. Control-G does not set it. A DIR test is still required. The flag read runs on every bus cycle.
 
 ### Cube harness
 
-`src/lib_vjet/demo/vjet_fb_cube.spin` uses the framebuffer cogs. The mesh has 8 vertices and 12 triangles. Far faces are drawn first. RES draws the resident mesh. STR draws the same faces from a stream table. The label switches about once a second.
+The framebuffer cube top was removed. The mesh remains in `scene/scene_cube.spin`. It has 8 vertices and 12 triangles. Far faces are drawn first. RES draws the resident mesh. STR draws the same faces from a stream table. The label switches about once a second. Equal colour bytes stay solid.
 
-The stream record is six signed pixels and one colour word. That is 14 bytes on the wire. Twelve triangles are 168 bytes. The harness keeps each pixel in a long so the sign survives. The program compiles to 7520 bytes. It is not loaded. `blend` stays clear.
+The stream record is six signed pixels and one colour word. That is 14 bytes on the wire. Twelve triangles are 168 bytes. The removed harness kept each pixel in a long so the sign survives. That program was 7520 bytes.
 
 ### Streamed lists
 
@@ -363,7 +368,7 @@ That compile removes 86 unused methods and saves 4068 bytes. An earlier copier i
 
 ### Scene files
 
-The six library objects stay in `src/lib_vjet/`. Compile tops and both heads are in `src/lib_vjet/demo/`. Display lists are in `src/lib_vjet/scene/`. A top defines one scene macro and includes one head. The head includes `scene/scene_*.spin`. Do not compile a head or a scene file.
+The library objects stay in `src/lib_vjet/`. Compile tops and the beam-chase head are in `src/lib_vjet/demo/`. Display lists are in `src/lib_vjet/scene/`. A top defines one scene macro and includes the head. The head includes `scene/scene_*.spin`. Do not compile a head or a scene file.
 
 ### Roles
 
@@ -548,8 +553,8 @@ Do the rows in order. A later row waits for the exit text of the row above.
 | Step | Work | Exit |
 |------|------|------|
 | 1 | Measure the product binary and the free Hub. | A written size note. |
-| 2 | Load the accepted framebuffer on the target monitor. | 720×480 at 60 Hz. The stripe picture accepted. |
-| 3 | Bring-up top. Text boot, Control-G into the framebuffer, draw cog, three render cogs. | 60 s stable scene. FTDI still moves. |
+| 2 | Recorded. Accepted framebuffer load. Those sources were removed. | 720×480 at 60 Hz. The stripe picture was accepted. |
+| 3 | Bring-up top on the eight-line scan. Text boot, Control-G, draw cog, three render cogs. | 60 s stable scene. FTDI still moves. |
 | 4 | Return path and Ctrl+Alt+Del back to text. Ten switches. | Text console works after each return. |
 | 5 | Promote the switch into the product top. Boot remains text. | Same checks on `ux_module.spin`. |
 | 6 | Copy a streamed list from the ACIA ring into the unpublished list. The pair stays a 6850. | The porch publishes one sealed list. The test card stops after that. |
@@ -608,12 +613,12 @@ A later start the same day used `cpm cpm` from the volume root. G: mounted at cl
 
 | Risk | What to do |
 |------|------------|
-| Grey or smeared picture | Stay in stage 1. Compare `demo/vjet_fb.spin` on the same monitor. |
+| Grey or smeared picture | Stay on the eight-line scan. Compare `demo/vjet_test.spin` on the same monitor. |
 | Hub too small for the accepted buffers | A smaller bring-up store. Do not shrink the accepted renderer to force the link. |
 | Graphics path too long for the cog | Shorten the handler. Do not add a bus cog. Do not open 0xC0. |
-| Draw cog misses the frame | Stream fewer triangles, or move projection to the 8085. A late framebuffer repeats. |
+| Draw cog misses the frame | Stream fewer triangles, or move projection to the 8085. Do not add skip-if-late. |
 | BIOS ISR during graphics | Hold `/INT` inactive. The program stays in `di` until status says text mode. |
-| Graphics mode with no exit | Return chord, Enter text, Ctrl+Alt+Del, and backplane `/RESET` stop the framebuffer before `wmf.init`. |
+| Graphics mode with no exit | Return chord, Enter text, Ctrl+Alt+Del, and backplane `/RESET` stop the eight-line scan before `wmf.init`. |
 | XMODEM mistaken for commands | Ignore the chord and the enter sequence while a transfer is active. |
 | Two writers of one list | Cog 0 writes the unpublished list. The draw cog writes the pointer on the porch. The ACIA cog writes only its receive ring. Cog 0 writes the mode flag when that flag exists. |
 | Stripe assumed for every colour pair | Only a high byte of low minus $55 stripes. Any other pair stays solid. |
@@ -624,18 +629,16 @@ A later start the same day used `cpm cpm` from the volume root. G: mounted at cl
 |----------|-----|
 | `3D_PROCESS_LIB_VJET.md` | Repair history and the probe load |
 | `ARCHITECTURE_UX_MODULE.md` | Clock, cogs, ACIA, text path |
-| `ARCHITECTURE_LIB_VJET.md` | Display list, PLL, framebuffer |
+| `ARCHITECTURE_LIB_VJET.md` | Display list, PLL, eight-line scan |
 | `.agents/skills/module-ux/SKILL.md` | Cog 0 rules, pump, XMODEM |
 | `.agents/skills/library-vjet/SKILL.md` | List layout and VGA rules |
 | `.agents/skills/hw-ux-pcb/SKILL.md` | Pin map and 74HC4078 |
-| `src/lib_vjet/demo/vjet_fb.spin` | Framebuffer demo |
 | `src/lib_vjet/demo/vjet_test.spin` | Original beam-chase demo |
 | `src/lib_vjet/demo/vjet_probe.spin` | Beam-chase orbit probe |
 | `src/lib_vjet/demo/graphtest.spin` | Beam-chase graph sample |
 | `src/lib_vjet/demo/vjet_card.spin` | Beam-chase test card |
 | `src/lib_vjet/demo/vjet_stress.spin` | Beam-chase stress picture |
-| `src/lib_vjet/demo/vjet_fb_cube.spin` | Stage 2 cube harness |
-| `src/lib_vjet/demo/vjet_fb_probe.spin` | Motion and occlusion check |
+| `scene/scene_cube.spin` | Cube mesh. The framebuffer harness was removed. |
 | `src/acia_rc2014.spin` | Port constants and the wait loop |
 | `cpu-8085` skill | 8085 opcodes and stack locals |
 | `8085-cf-acia/cpm22bios.asm` | `acia_interrupt` and the 6850 console |
@@ -660,7 +663,7 @@ An adversarial review checked this plan against the ACIA wait loop, the cog map,
 | Occlusion | List order. Far shapes are drawn first. There is no depth buffer. |
 | GSX | Polyline uses `gl.line`. The CP/M side splits or rejects a concave fill. |
 | Chord | Same XMODEM guard as Enter graphics. Handle it before `txCheck`. |
-| Recovery | Stop the framebuffer before `wmf.init`. |
+| Recovery | Stop the eight-line scan before `wmf.init`. |
 | 8085 | Test platform is CP/M-IDE v3.0 `8085-cf-acia`. |
 | Grey field | A cold accepted picture and the hot switch are separate results. |
 | Other bases | 0xC0 stays undecoded. Do not move graphics to 0x00 or 0x40. |

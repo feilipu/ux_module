@@ -18,32 +18,24 @@ Human architecture note: `ARCHITECTURE_LIB_VJET.md`. The 2020 and 2021 objects k
 | `VJET_v01_displaylist.spin` | Spin display-list builder (API) |
 | `VJET_vUXM_rendering.spin` | PASM render cog(s); beam-chase scanlines |
 | `VJET_vUXM_vga.spin` | PASM VGA output cog; beam chase |
-| `VJET_vUXM_rendering_fb.spin` | PASM render cogs; framebuffer bitmap |
-| `VJET_vUXM_vga_fb.spin` | PASM VGA cog; scans the finished bitmap |
 | `hexfont.spin` | Bitmap font for `text*` shapes |
 | `demo/head_slice.spin` | Beam-chase head. Not a compile top. |
-| `demo/head_fb.spin` | Framebuffer head. Not a compile top. |
-| `scene/scene_triangles.spin` | Spinning triangles. Both heads can include it. |
+| `scene/scene_triangles.spin` | Spinning triangles. Beam-chase head. |
 | `scene/scene_graph.spin` | Graph picture. Beam-chase head only. |
 | `scene/scene_probe.spin` | Orbit probe. Beam-chase head. One box and nine triangles. |
-| `scene/scene_cube.spin` | Cube mesh. Framebuffer head only. |
+| `scene/scene_cube.spin` | Cube mesh. Equal colour bytes. Beam-chase head. |
 | `scene/scene_card.spin` | Test card. Beam-chase head. Polygons. |
 | `scene/scene_stress.spin` | Stress picture. Polygons, scaled text, clip, stacked spans. |
 | `demo/vjet_test.spin` | Original demo. Defines the triangle scene. Includes the beam-chase head. |
-| `demo/vjet_fb.spin` | Framebuffer demo. The same picture. Includes the framebuffer head. |
 | `demo/vjet_acia.spin` | Beam-chase triangles plus the ACIA cog. |
 | `demo/vjet_ftdi.spin` | Beam-chase triangles plus the ACIA cog and the FTDI cog. |
 | `demo/vjet_spin.spin` | Beam-chase triangles plus one extra Spin cog. The picture tears. |
-| `demo/vjet_fb_cube.spin` | Stage 2 cube harness. Not a demo. |
-| `demo/vjet_probe.spin` | Beam-chase orbit probe. Eight line slots. Do not load the framebuffer probe. |
-| `demo/vjet_fb_probe.spin` | Old framebuffer copy of the orbit probe. Do not load it. |
-| `demo/graphtest.spin` | Graph drawing sample. Not one of the two demos. |
+| `demo/vjet_probe.spin` | Beam-chase orbit probe. Eight line slots. |
+| `demo/graphtest.spin` | Graph drawing sample. Not the beam-chase demo. |
 | `demo/vjet_card.spin` | Beam-chase test card. |
 | `demo/vjet_stress.spin` | Beam-chase stress picture. |
 
-The six library objects stay in `src/lib_vjet/`. Compile tops and both heads are in `demo/`. Display lists are in `scene/`. A top in `demo/` defines one `SCENE_*` macro and includes one head. The head includes `scene/scene_*.spin`. Compile the top with `-L src -L src/lib_vjet`.
-
-`demo/head_fb.spin` defines `SCENE_FB` before the triangle scene. That branch drops two unused local names. The framebuffer image then matches the earlier compile.
+The library objects stay in `src/lib_vjet/`. Compile tops and the beam-chase head are in `demo/`. Display lists are in `scene/`. A top in `demo/` defines one `SCENE_*` macro and includes the head. The head includes `scene/scene_*.spin`. Compile the top with `-L src -L src/lib_vjet`. The framebuffer sources were removed. Git history keeps them.
 
 ## Pipeline
 
@@ -101,7 +93,7 @@ WORD  end scanline
 | 2 | `SHP_BOX` | left, right, colours, unused | 16 |
 | 3 | `SHP_TEXT` | scale, font, string, colours, x, unused | 20 |
 
-A polygon is a trap stack. It stores 24 bytes plus 12 bytes for each trapezoid. A trap height of 0 ends the shape. When two chains meet on one scanline, the builder advances both chains. It does not store a height of 0. The last trapezoid includes the bottom scanline. A sloped line stores 36 bytes. A horizontal line stores 16 bytes. The builder skips the 8 current-edge bytes. The beam-chase cog does not write them. The framebuffer cog writes them while it walks.
+A polygon is a trap stack. It stores 24 bytes plus 12 bytes for each trapezoid. A trap height of 0 ends the shape. When two chains meet on one scanline, the builder advances both chains. It does not store a height of 0. The last trapezoid includes the bottom scanline. A sloped line stores 36 bytes. A horizontal line stores 16 bytes. The builder skips the 8 current-edge bytes. The beam-chase cog does not write them.
 
 Coordinates in the Spin API often use **16.16** fixed point (shift `<<16`). Colours are packed words consumed by the renderer/VGA path (two paint colours common in demos, e.g. `$ECEC`).
 
@@ -127,9 +119,9 @@ Catch overflow with `\` and call `done`. `done` seals the list. One cog calls th
 
 `start` writes the first link to `$8080`. That address is ROM. Publish the pointer passed to `start`.
 
-On the beam-chase path, an even line uses the low colour byte. An odd line uses the high byte. Equal bytes are a solid colour. The VGA cog sets the low two bits of each byte. This path has no 50 percent mix. A framebuffer stripe pair is a different picture.
+On the eight-line scan, an even line uses the low colour byte. An odd line uses the high byte. Equal bytes are a solid colour. An unequal pair stripes. The VGA cog sets the low two bits of each byte. This path has no 50 percent mix.
 
-The text string stays outside the list. `text_inline` copies it in. The font stays in Hub for the whole frame. Pair `VJET_vUXM_vga.spin` with `VJET_vUXM_rendering.spin`. The framebuffer files are the other engine.
+The text string stays outside the list. `text_inline` copies it in. The font stays in Hub for the whole frame. Pair `VJET_vUXM_vga.spin` with `VJET_vUXM_rendering.spin`.
 
 ## Double buffering
 
@@ -147,7 +139,7 @@ The lead-in and the parser states are in `3D_WORKPLAN_LIB_VJET.md`. Command byte
 
 Compile `src/ux_module_vjet.spin` with `openspin -u`. `main` calls `font.get` so the font stays. The mode flag powers up clear. Boot is the text console. The local picture is the stress scene until a sealed list arrives. The tear bands are gone. `restoreText` waits 250 ms after VECTORJET stops.
 
-Do not load a framebuffer image. Do not replace that triangle with a box to skip a tall trap. Do not add a Hub edge cache. Do not restore `gl.pace`, a cog-RAM `linebuf`, a Hub scratch copy, skip-if-late, or paint during `:linewait`. Those loads failed. Detail is in `3D_PROCESS_LIB_VJET.md`.
+Do not restore the framebuffer sources. Do not replace that triangle with a box to skip a tall trap. Do not add a Hub edge cache. Do not restore `gl.pace`, a cog-RAM `linebuf`, a Hub scratch copy, skip-if-late, or paint during `:linewait`. Those loads failed. Detail is in `3D_PROCESS_LIB_VJET.md`.
 
 `startVectorjet` does not clear a list that is ready or still filling. While `listReady` is set, Cog 0 leaves the next mark in the receive ring. After `listShown` is set, the draw cog does not rebuild the test card.
 
@@ -158,27 +150,13 @@ Do not load a framebuffer image. Do not replace that triangle with a box to skip
 - Writes phase codes into `statusLong` (front porch / vsync / back porch / active). The front porch low word is 240. Vsync and the back porch use a low word of 0.
 - Visible pixels: prime one group, then `WAITVID`, then read the next group while that group shifts. The last group of the line has no read past the line. Keep `visibleScale` at `(4 << 12) + 16`.
 
-## Framebuffer path
+## Eight-line scan
 
-`demo/vjet_fb.spin` does not chase the beam. The VGA cog scans a finished 256×80 bitmap, two bits per pixel. Each group of 16 pixels has four colours. The cog shows each stored line six times. The renderer stores lines 0, 3, 6, and so on. Two buffers. A late frame repeats. The PLL, the porches, and `VCFG` stay on the 2021 line. PixelClocks for the visible pixels is 4. Visible FrameClocks stays 16.
+The live path is `VJET_vUXM_vga.spin` with `VJET_vUXM_rendering.spin`. `LINE_BUFFERS` is 8. The slice is 2048 bytes. Three render cogs write that slice ahead of the scan.
 
-Bit 0 of a colour byte marks a stripe. The dark lines of that band show the colour $55 lower. The flag is set only when the high byte is the low byte minus $55. Any other pair stays solid.
+A flat triangle is 36 bytes. A general triangle is 48 bytes. A box is 16 bytes. A text shape is 20 bytes. The spinning-triangle list uses at most 632 bytes. The stress bring-up lists are 500 longs. Commit `2d52f35` keeps 296 longs for the spinning triangles.
 
-Bit 1 of that byte asks for a 50 percent mix when the control long `blend` (after `fixup`) is set. A clear `blend` leaves the span solid. A solid span returns. It does not enter the mix. The mix averages red, green, and blue as separate pairs.
-
-Even stored lines are bright, bright, dark, dark, bright, bright. Odd stored lines use the inverse order. The user accepted this picture on 17 Oct 2026. It is the known-good image. The forward plan is `3D_WORKPLAN_LIB_VJET.md`. The repair record is `3D_PROCESS_LIB_VJET.md`.
-
-The accepted scene draws 13 triangles and one text shape. That list uses at most 632 bytes. A flat triangle is 36 bytes. A general triangle is 48 bytes. A box is 16 bytes and a text shape is 20 bytes.
-
-Each framebuffer list is 1200 bytes. That holds 33 flat triangles or 25 general triangles. Each beam-chase demo list is 3600 bytes. That holds 100 flat triangles or 75 general triangles. The larger list adds 67 flat triangles or 50 general triangles. The stress bring-up lists are 500 longs. Commit `2d52f35` keeps 296 longs for the spinning triangles.
-
-The live bring-up scene is the stress picture. The demo does not call `set_lines`.
-
-`VJET_vUXM_vga.spin` and `VJET_vUXM_rendering.spin` stay the beam-chase pair. Do not copy the framebuffer `VSCL` into those files.
-
-The 80-line bitmap pair is 20480 bytes. The list stays allocated beside it. The bring-up no longer keeps that pair. `LINE_BUFFERS` is 8. The slice is 2048 bytes.
-
-Three render cogs write that slice ahead of the scan. The original renderer used two cogs. Leave `STORED_LINES` at 80. Leave `demo/vjet_fb.spin` as the accepted picture.
+The framebuffer build was removed. Git history keeps those sources. Do not restore them. The repair record is `3D_PROCESS_LIB_VJET.md`.
 
 ## Agent rules
 
@@ -192,7 +170,7 @@ Three render cogs write that slice ahead of the scan. The original renderer used
 
    The FTDI arm calls `termToZ80`. The PS/2 arm calls `kbdToZ80`. The final build keeps the keyboard on the FTDI cog and calls `kbdToZ80` in that branch. The shared driver is not in the tree. Do not load a guess. On the beam-chase path, a second tight Spin loop tears the picture.
 8. Prose: `style-ste-writing`.
-9. Leave the six library objects in `src/lib_vjet/`. OpenSpin resolves a bare object name from the current directory, each `-L` path, and the top file's directory. Include a scene as `scene/name.spin`. Do not compile a head or a scene file.
+9. Leave the library objects in `src/lib_vjet/`. OpenSpin resolves a bare object name from the current directory, each `-L` path, and the top file's directory. Include a scene as `scene/name.spin`. Do not compile a head or a scene file.
 10. Keep the IRQsome mark on the 2020 and 2021 objects. A new file uses (C)2026 feilipu. A derived file states the IRQsome source and uses 2026. `hexfont.spin` stays the Aaron Amar font.
 11. Leave the hub-paint painter in `VJET_vUXM_rendering.spin`. Keep the text clamp, the one-shot restart, and the 250 ms return-to-text wait. A later change must keep keys, single line feeds, and Control-G return to text. Do not restore `gl.pace`, a Hub edge cache, a cog-RAM `linebuf`, a Hub scratch copy, skip-if-late, or paint during `:linewait`. Detail is in `3D_PROCESS_LIB_VJET.md`.
 

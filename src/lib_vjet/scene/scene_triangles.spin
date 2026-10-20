@@ -1,13 +1,8 @@
 '' Spinning triangles and one text shape. The beam-chase head and the bring-up include this file.
-'' Beam chase and the framebuffer use this same picture.
 '' Derived from the 2021 vjet_test demo, (C)2021 IRQsome Software.
 '' (C)2026 feilipu.
 
-#ifdef SCENE_FB
-PRI draw
-#else
 PRI draw | cx,cy
-#endif
 
 gl.set_clip(0,HEIGHT<<16,0,WIDTH<<16)
 
@@ -60,11 +55,7 @@ gl.triangle(128<<16 + sin(0000+framecount<<5)*100,90<<16 + sin(2048+framecount<<
 
 gl.text_centered(WIDTH>>1,192 + sin(0000+framecount<<6)~>12,0,2,string(" WOOO! SPINNING TRIANGLES!"),font.get,$FFFF)
 
-#ifdef SCENE_FB
-PUB sin(angle) : s
-#else
 PUB sin(angle) : s | c,z
-#endif
               'angle: 0..8192 = 360deg
   s := angle
   if angle & $800

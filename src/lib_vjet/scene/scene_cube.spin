@@ -1,5 +1,6 @@
-'' Eight vertices and twelve triangles. Included by the framebuffer head.
+'' Eight vertices and twelve triangles. The beam-chase head includes this file.
 '' RES draws the resident mesh. STR draws the same faces from a stream table.
+'' Equal colour bytes stay solid on the eight-line scan.
 '' (C)2026 feilipu.
 
 CON
@@ -144,5 +145,5 @@ fi byte 4, 5, 6,  4, 6, 7
     byte 3, 7, 6,  3, 6, 2
     byte 0, 1, 5,  0, 5, 4
 
-fc word $C0C0, $C0C0, $55AA, $55AA, $80C0, $80C0
-    word $AAFF, $AAFF, $0055, $0055, $ECEC, $ECEC
+fc word $C0C0, $C0C0, $5555, $5555, $8080, $8080
+    word $AAAA, $AAAA, $FFFF, $FFFF, $ECEC, $ECEC

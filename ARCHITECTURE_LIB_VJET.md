@@ -10,7 +10,7 @@ VECTORJET builds a display list in Spin, renders scanlines with one or more PASM
 
 The 2020 and 2021 objects keep the IRQsome mark. A new file uses (C)2026 feilipu. A file derived from an IRQsome object states that source and uses 2026. `hexfont.spin` is the Aaron Amar font.
 
-The product top `ux_module.spin` does not link this library. The six library objects stay in `src/lib_vjet/`. Compile tops and both heads are in `src/lib_vjet/demo/`. Display lists are in `src/lib_vjet/scene/`. The two demos are `src/lib_vjet/demo/vjet_test.spin` and `src/lib_vjet/demo/vjet_fb.spin`. Compile a demo with `-L src -L src/lib_vjet`.
+The product top `ux_module.spin` does not link this library. The library objects stay in `src/lib_vjet/`. Compile tops and the beam-chase head are in `src/lib_vjet/demo/`. Display lists are in `src/lib_vjet/scene/`. The beam-chase demo is `src/lib_vjet/demo/vjet_test.spin`. Compile a demo with `-L src -L src/lib_vjet`. The framebuffer sources were removed. Git history keeps them.
 
 ## Files
 
@@ -20,24 +20,18 @@ The product top `ux_module.spin` does not link this library. The six library obj
 | `VJET_vUXM_rendering.spin` | PASM renderer cog program |
 | `VJET_vUXM_vga.spin` | PASM VGA output cog |
 | `hexfont.spin` | Font blob for text shapes |
-| `VJET_vUXM_rendering_fb.spin` | Framebuffer solution. PASM render cogs. |
-| `VJET_vUXM_vga_fb.spin` | Framebuffer solution. PASM VGA cog. |
 | `demo/head_slice.spin` | Beam-chase head. A top includes it. Not a compile top. |
-| `demo/head_fb.spin` | Framebuffer head. A top includes it. Not a compile top. |
-| `scene/scene_triangles.spin` | Spinning triangles. Both heads can include it. |
+| `scene/scene_triangles.spin` | Spinning triangles. Beam-chase head. |
 | `scene/scene_graph.spin` | Graph picture. Beam-chase head only. |
 | `scene/scene_probe.spin` | Orbit probe. Beam-chase head. |
-| `scene/scene_cube.spin` | Cube mesh. Framebuffer head only. |
+| `scene/scene_cube.spin` | Cube mesh. Equal colour bytes. Beam-chase head. |
 | `scene/scene_card.spin` | Test card. Beam-chase head. Polygons. |
 | `scene/scene_stress.spin` | Stress picture. Polygons, scaled text, clip, stacked spans. |
 | `demo/vjet_test.spin` | Original demo. Beam chase. Spinning triangles. |
-| `demo/vjet_fb.spin` | Framebuffer demo. The same picture. |
 | `demo/vjet_acia.spin` | Beam-chase triangles plus the ACIA cog. |
 | `demo/vjet_ftdi.spin` | Beam-chase triangles plus the ACIA cog and the FTDI cog. |
 | `demo/vjet_spin.spin` | Beam-chase triangles plus one extra Spin cog. The picture tears. |
-| `demo/vjet_fb_cube.spin` | Stage 2 cube harness. Not a demo. |
-| `demo/vjet_fb_probe.spin` | Stripe and glass check. Not a demo. |
-| `demo/graphtest.spin` | Graph drawing sample. Not one of the two demos. |
+| `demo/graphtest.spin` | Graph drawing sample. |
 | `demo/vjet_card.spin` | Beam-chase test card. |
 | `demo/vjet_stress.spin` | Beam-chase stress picture. |
 
@@ -100,7 +94,7 @@ Display lists are Hub longs. The beam-chase demos use two lists of 900 longs. Th
 
 ## Framebuffer
 
-`demo/vjet_fb.spin` is the framebuffer demo. The user accepted that picture on 17 Oct 2026. The VGA cog scans a finished 256 by 80 bitmap. Two bits select one of four colours in each group of 16 pixels. The renderer stores lines 0, 3, 6, and so on. The VGA cog shows each stored line six times.
+The framebuffer sources were removed. Git history keeps them. This section is the record. The user accepted that picture on 17 Oct 2026. The demo was `demo/vjet_fb.spin`. The VGA cog scans a finished 256 by 80 bitmap. Two bits select one of four colours in each group of 16 pixels. The renderer stores lines 0, 3, 6, and so on. The VGA cog shows each stored line six times.
 
 Bit 0 of a colour byte marks a stripe. Dark lines of that band show the colour $55 lower. Even stored lines are bright, bright, dark, dark, bright, bright. Odd stored lines use the inverse order. The colours `$0055`, `$55AA`, and `$AAFF` stripe. Equal bytes stay solid.
 
@@ -126,7 +120,7 @@ The beam-chase path keeps eight line slots. The slice is 2048 bytes. Each slot i
 
 The demo source starts three render cogs. A trial on 16 Oct 2026 used two render cogs. That picture tore. The original renderer used two cogs. Three cogs on this slice must stay ahead of the scan.
 
-The next bring-up load uses that slice. `demo/vjet_fb.spin` stays the accepted picture. `STORED_LINES` stays 80.
+The live bring-up uses that slice. The framebuffer demo was removed.
 
 ## Hub-paint and tear — 20 Oct 2026
 
@@ -201,7 +195,7 @@ Do **not** build the display list on Cog 0 if the ACIA pump must stay live. Cog 
 Recommended product split:
 
 1. **Text mode** — current `ux_module` path. Z80 console on VGA text.
-2. **Graphics mode** — stop text VGA and DDC. Start the framebuffer VGA cog and three render cogs. Start a second Spin cog for the display list. Cog 0 keeps the ACIA pump. Keep PS/2 on the FTDI cog. That uses all eight cogs.
+2. **Graphics mode** — stop text VGA and DDC. Start the eight-line VGA cog and three render cogs. Start a second Spin cog for the display list. Cog 0 keeps the ACIA pump. Keep PS/2 on the FTDI cog. That uses all eight cogs.
 3. **Standalone demo** — `vjet_test` / `graphtest` as now (no ACIA). Three render cogs on Cog 0 as the draw loop.
 
 The product top has no graphics hooks. `PORT_VJET` remains a reserved ACIA base. Serial tests use the text boot path.
@@ -214,8 +208,8 @@ Hub cost for the beam chase is the scan buffer and the lists. Eight line slots a
 
 Useful work while keeping the architecture intact:
 
-1. When graphics work resumes, start a Spin draw cog (not Cog 0). The accepted picture is the framebuffer demo `demo/vjet_fb.spin`. The bring-up path is in `3D_WORKPLAN_LIB_VJET.md`. The repair record is `3D_PROCESS_LIB_VJET.md`.
-2. The framebuffer demos keep lists of 300 longs. The bring-up lists are 64 longs, because ten stored lines fill the Hub. Two 900-long lists overflow the bring-up by 768 longs.
+1. The bring-up draw cog is already in `src/ux_module_vjet.spin`. The live picture is the eight-line scan. The plan is `3D_WORKPLAN_LIB_VJET.md`. The repair record is `3D_PROCESS_LIB_VJET.md`.
+2. The bring-up lists hold the stress picture. Two 900-long lists overflow that image. Do not restore the framebuffer bitmap.
 3. Drive the back list from Z80 I/O at `PORT_VJET` (needs a command protocol)
 4. Tune render cog count against available cogs and fill rate
 5. Keep display-list field layouts documented in one place (builder comments ↔ renderer reads)
@@ -228,4 +222,4 @@ Useful work while keeping the architecture intact:
 | `pcb/P8X32A-Propeller-Datasheet-v1.4.0_0.pdf` §4.10 | Video generator, WAITVID |
 | `docs/Propeller Quick Reference v1.7.pdf` | PASM opcodes |
 | `ARCHITECTURE_UX_MODULE.md` | Board cog and pin budget |
-| Demo sources | `src/lib_vjet/demo/vjet_test.spin`, `src/lib_vjet/demo/vjet_fb.spin` |
+| Demo sources | `src/lib_vjet/demo/vjet_test.spin` |

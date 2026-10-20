@@ -216,9 +216,9 @@ The only (at this stage) special PASM functions written for the UX Module are in
 
 `ddc_i2c.spin` also runs a Spin cog after boot. It talks to the monitor on the VGA DDC pins (swapped vs the boot EEPROM). It reads EDID at `0x50` and, if the display answers, DDC/CI at `0x37`. It does not change VGA timing.
 
-VECTORJET (`src/lib_vjet`) is not linked from the product top. Boot is text VGA only. The two demos are `src/lib_vjet/demo/vjet_test.spin` and `src/lib_vjet/demo/vjet_fb.spin`. The bring-up top is `src/ux_module_vjet.spin`. Failed tear repairs on the eight-line slice are in `3D_PROCESS_LIB_VJET.md`.
+VECTORJET (`src/lib_vjet`) is not linked from the product top. Boot is text VGA only. The beam-chase demo is `src/lib_vjet/demo/vjet_test.spin`. The bring-up top is `src/ux_module_vjet.spin`. The live picture is the eight-line scan. Failed tear repairs are in `3D_PROCESS_LIB_VJET.md`. The framebuffer sources were removed. Git history keeps them.
 
-The six library objects stay in `src/lib_vjet/`. Compile tops and both heads are in `src/lib_vjet/demo/`. Display lists are in `src/lib_vjet/scene/`. A top defines one scene and includes one head. The head includes `scene/scene_*.spin`. Compile with `-L src -L src/lib_vjet`.
+The library objects stay in `src/lib_vjet/`. Compile tops and the beam-chase head are in `src/lib_vjet/demo/`. Display lists are in `src/lib_vjet/scene/`. A top defines one scene and includes the head. The head includes `scene/scene_*.spin`. Compile with `-L src -L src/lib_vjet`.
 
 ```
 src/lib_vjet
@@ -226,21 +226,15 @@ src/lib_vjet
 |---> VJET_v01_displaylist
 |---> VJET_vUXM_rendering
 |---> VJET_vUXM_vga
-|---> VJET_vUXM_rendering_fb
-|---> VJET_vUXM_vga_fb
 |---> hexfont
 |---> demo/
 |     |---> head_slice          beam-chase head
-|     |---> head_fb             framebuffer head
 |     |---> vjet_test           beam-chase demo
 |     |---> vjet_probe          beam-chase orbit probe
-|     |---> vjet_fb             framebuffer demo
 |     |---> graphtest           graph sample
 |     |---> vjet_acia           ACIA check
 |     |---> vjet_ftdi           FTDI check
 |     |---> vjet_spin           extra Spin cog check
-|     |---> vjet_fb_probe       stripe check
-|     |---> vjet_fb_cube        cube harness
 |---> scene/
       |---> scene_triangles
       |---> scene_graph

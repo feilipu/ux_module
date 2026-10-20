@@ -2,9 +2,9 @@
 
 This file records the repairs from 11 Sep 2026 through 20 Oct 2026. The forward plan is `3D_WORKPLAN_LIB_VJET.md`.
 
-Compile tops now live in `src/lib_vjet/demo/`. Display lists live in `src/lib_vjet/scene/`. Names in this record are the files from those dates.
+Compile tops now live in `src/lib_vjet/demo/`. Display lists live in `src/lib_vjet/scene/`. Names in this record are the files from those dates. The framebuffer sources were removed. Git history keeps them. The live path is the eight-line scan.
 
-The beam-chase bring-up did not hold a stable picture. The framebuffer demo did. That file is now `demo/vjet_fb.spin`. The user accepted that picture on 17 Oct 2026. The eight-line slice later ran the spinning triangles. A remaining tear is open.
+The beam-chase bring-up did not hold a stable picture. The framebuffer demo did. That file was `demo/vjet_fb.spin`. The user accepted that picture on 17 Oct 2026. The eight-line slice later ran the spinning triangles. A remaining tear is open.
 
 ## What failed on 11 Sep 2026
 
@@ -125,13 +125,13 @@ Bit 0 of the stored colour byte means the dark lines are $55 lower. The VGA cog 
 
 Even stored lines show bright, bright, dark, dark, bright, bright. Odd stored lines show the inverse. Across two stored lines the pattern is bright, bright, dark, dark, repeated. The program is 8044 bytes. About 944 bytes remain for the stack. The user accepted this picture on 17 Oct 2026.
 
-`VJET_vUXM_vga.spin` and `VJET_vUXM_rendering.spin` stay on the 2021 path. The framebuffer cogs are `VJET_vUXM_vga_fb.spin` and `VJET_vUXM_rendering_fb.spin`. The demo of that picture is `demo/vjet_fb.spin`.
+`VJET_vUXM_vga.spin` and `VJET_vUXM_rendering.spin` stay on the 2021 path. The framebuffer cogs were `VJET_vUXM_vga_fb.spin` and `VJET_vUXM_rendering_fb.spin`. The demo of that picture was `demo/vjet_fb.spin`.
 
 ## Probe — 17 Oct 2026
 
-`vjet_fb_probe.spin` uses those framebuffer cogs and a new scene. The program is 6676 bytes. The stripe rule is unchanged.
+`vjet_fb_probe.spin` used those framebuffer cogs and a new scene. The program is 6676 bytes. The stripe rule is unchanged.
 
-The scene has a horizontal mover, a vertical mover, a diagonal mover, a crossing pair, and four triangles on a shallow ellipse. Far triangles are drawn first. EEPROM holds this image so the rule can be watched while the triangles move. `demo/vjet_fb.spin` stays the accepted scene. `build/vjet_fb.binary` is that image.
+The scene has a horizontal mover, a vertical mover, a diagonal mover, a crossing pair, and four triangles on a shallow ellipse. Far triangles are drawn first. EEPROM holds this image so the rule can be watched while the triangles move. `demo/vjet_fb.spin` stayed the accepted scene. `build/vjet_fb.binary` is that image.
 
 The bring-up `ux_module_vjet.spin` still links the beam-chase objects. It compiles to 19552 bytes with 2200 bytes free. It was not loaded for this probe.
 
@@ -141,11 +141,11 @@ The probe set `blend` and gave bit 1 to five colours. The picture froze. It was 
 
 A solid span of six pixels or fewer drew, then entered the mix loop. The loop count was already 0. `djnz` then walked every Hub byte. The VGA cog kept the last bytes it could scan.
 
-The solid span now reaches the return. The mix loop sits after that return and jumps back when it finishes. `demo/vjet_fb.spin` still leaves `blend` clear.
+The solid span now reaches the return. The mix loop sits after that return and jumps back when it finishes. `demo/vjet_fb.spin` left `blend` clear.
 
 The repaired probe showed the triangles in motion. Black under a semi-transparent red became yellow. The mix shifted the whole colour byte. Red bits moved into green. The mix now averages bits 7:6, bits 5:4, and bits 3:2 as separate pairs. That program is 6696 bytes.
 
-The accepted picture now lives in `src/lib_vjet/demo/vjet_fb.spin`, beside `demo/vjet_test.spin`. Those two files are the demos. The framebuffer cogs stay the solution.
+The accepted picture lived in `src/lib_vjet/demo/vjet_fb.spin`, beside `demo/vjet_test.spin`. Those two files were the demos. The framebuffer cogs were the solution for that picture.
 
 The accepted scene draws 13 triangles and one text shape. The probe draws one box and nine triangles. A full accepted frame stores up to 632 bytes. The probe stores 340 bytes. Those sizes are in `3D_WORKPLAN_LIB_VJET.md`.
 
