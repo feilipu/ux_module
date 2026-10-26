@@ -25,7 +25,10 @@ Product `main` stays in text mode until stage 1 passes its checks.
 | Cog 0 | Product main loop. The only writer of `acia.tx`. |
 | Console pair | 0x80 and 0x81. Text mode is the 6850. Graphics mode keeps this pair and changes the meaning. |
 | Text shape | Glyphs on the graphics raster. Shape type 3 and `hexfont.spin`. Not the 80×40 console. |
-| Cooked mesh | Vertices and faces after a one-time STL or OBJ convert. |
+| Cooked mesh | Int16 object coordinates and indexes after one STL or OBJ convert. The convert does not build slopes. |
+| Triangle record | Six signed screen pixels and one colour word. 14 bytes. The draw cog calls `gl.triangle`. |
+| Line record | Four signed screen pixels and one colour word. 10 bytes. The draw cog calls `gl.line`. |
+| List blob | One sealed display list, plus the words the sender must fix. No `$1C` and no `$07`. |
 
 Use these names only. Clock, pins, and the ACIA model stay as in `ARCHITECTURE_UX_MODULE.md` and `ARCHITECTURE_LIB_VJET.md`.
 
@@ -338,19 +341,19 @@ On this beam-chase image, a solid face uses two equal colour bytes. The framebuf
 
 #### Parser
 
-Idle is state 0. The list states are 8, 9, 10, and 11.
+Idle is state 0. The list states are 8, 9, 10, and 11. States 12, 13, and 14 discard a second list.
 
 State 8 stores the low count byte. State 9 stores the high count byte. State 11 waits until the draw cog has left `gl.start`. State 10 stores the payload bytes. The draw cog sets `drawHold` when it will not call `gl.start`. Cog 0 clears the fill target only after that, or before graphics starts.
 
-`listFill` is 0 for `dlist1` and 1 for `dlist2`. A finished list sets `listReady` and returns to idle. The draw cog flips `listFill` only after it publishes.
+`listFill` is 0 for `dlist1` and 1 for `dlist2`. A finished list sets `listReady` only when every link stays inside that list. A bad chain stays unpublished. The parser returns to idle. The draw cog flips `listFill` only after it publishes.
 
-When `listReady` is set, leave the next mark in the ring. The 512-byte ring then stops the 8085. The porch publishes one new list in a frame.
+In graphics, Cog 0 leaves the next mark in the ring while `listReady` is set. That hold ends after 250 ms. Text mode discards the extra list and keeps the sealed one. A list state with no byte for 250 ms returns to idle. The parser discards a known remainder until another 250 ms gap. A full ring can stop the 8085 for at most 250 ms.
 
 The porch order is fixed. Publish the buffer that `listFill` names. Then flip `listFill`. Then clear `listReady`. Then set `listShown`.
 
 While a list parse is open, or after `listShown` is set, hold the published pointer. Do not call `drawScene` in that case. The test card runs only when no list has started.
 
-`ftdiNeed` returns 0 from state 8 onward. A full FTDI transmit buffer does not stall the payload. The mark is still idle, so that first byte can wait.
+`ftdiNeed` returns 0 from state 8 onward. A full FTDI transmit buffer does not stall the payload. The mark does not wait on that buffer, except during XMODEM.
 
 A reset that sets the parser to idle drops an open list. It does not clear `listReady` for a list that is already sealed.
 
@@ -374,15 +377,49 @@ The library objects stay in `src/lib_vjet/`. Compile tops and the beam-chase hea
 
 | Option | Role in this plan |
 |--------|-------------------|
-| STL | Authoring file for triangles. ASCII or binary. No colour in the file. The cooker assigns one colour byte per solid or per facet. |
-| OBJ | Authoring file when a face is a convex quad. One convex face becomes one `gl.polygon`. |
-| Cooked mesh | The bytes that move to the UX Module. Int16 object-space vertices. Faces are indexes plus a colour byte. Weld duplicate STL corners. |
+| STL | Filled-triangle authoring file. Binary STL. The tool writes triangles. One colour word for the file. |
+| OBJ | Line authoring file, and a convex face of three or four vertices. The convert refuses any other face. |
+| Cooked mesh | Int16 object coordinates and indexes. The Mac convert writes this file once. It does not build slopes. |
 | Command FIFO | The ACIA receive ring. Cog 0 copies a sealed list into the unpublished display list. The ACIA cog writes only that ring. Graphics status is a separate Hub long, not `acia_status`. |
 | Console pair | The only command path. Text mode is the 6850. Graphics mode changes the meaning of 0x80 and 0x81. |
 | Text shape | Labels on the graphics raster. The 80×40 console is stopped for the whole graphics session. |
 | GSX | Later CP/M compatibility layer for 2D programs. It calls the same port commands. |
 | ReGIS | 2D text grammar for experiments on a host terminal. The 3D matrix helpers in that library stay on the sender. |
 | Master System / MSX VDP | Pattern for a control port plus a data port. The tile and sprite engine is a different machine. |
+
+### Authoring file
+
+A tool writes the authoring file. Blender writes binary STL and OBJ. OpenSCAD writes binary STL. FreeCAD writes both. The Mac convert packs that file once.
+
+The 8085 does not parse STL or OBJ. The Propeller does not parse STL or OBJ.
+
+Binary STL is the filled-triangle file. The tool applies the scale and writes triangles only. The file has no colour. The convert stores one colour word for every facet.
+
+OBJ is the line file for a vector game. An OBJ line element becomes one line record. A convex face of three or four vertices stays one face. The convert refuses a concave face. It also refuses a face with more than four vertices. The tool splits those faces before it writes the file.
+
+The convert scales each coordinate to a signed 16-bit value. It writes the vertex count, the record count, and the indexes. It does not weld vertices, clip a face, or build a slope. The command line sets the one colour word.
+
+The cooked mesh is that packed file. A `.COM` reads it from the CP/M disk. Stage 2 still records the Hub limit. The convert refuses a mesh above that limit.
+
+On 26 Oct 2026 the bench has no hardware. This section does not change the firmware.
+
+### Two streams
+
+The sealed list is the trial stream. The mark is `$1C`, then a little-endian count, then display-list bytes. `SPINTRI`, `ORBIT`, `TVTEST`, and `TESTART` use this stream. The Mac builds those bytes before the transfer. A game does not use the sealed list, because the 8085 would have to write slopes.
+
+The game stream sends screen records. The draw cog calls `gl.line` or `gl.triangle`. One triangle record is six signed pixels and one colour word, which is 14 bytes. The cube harness already stores that record. One line record is four signed pixels and one colour word, which is 10 bytes.
+
+The draw cog shifts each pixel to 16.16. The 8085 rotates the cooked mesh and projects it to those pixels. It does not write a display-list header. Command bytes stay open until step 10. One payload is either a sealed list or screen records.
+
+### Vector game
+
+The raster is 256 by 240 logical pixels. VGA shows each logical line twice. The stress image holds a list of 2000 bytes. A sloped line in that list stores 36 bytes. A horizontal line stores 16 bytes. Twenty sloped lines use 720 bytes.
+
+`SPAN_MAX` is 24 records on one scan line. The renderer skips a later shape on that line. A wireframe puts fewer shapes on one line than a stack of filled faces. An Elite-style ship and an Asteroids-style field use line records. Filled triangles remain for a small solid. Forty general triangles use 1920 bytes and sit near the list limit.
+
+The 8085 sends one frame and waits for the porch. The ACIA receive ring holds 512 bytes. Cog 0 copies bytes from that ring. The porch publishes one new list in a frame. Each rock stays in 8085 RAM as a cooked mesh. One `Set pose` remains the step 9 trial for a single cube.
+
+The accepted scan pictures are the spinning triangles, the orbit probe, and the test card. The stress picture ran and was not accepted. The sealed-list white box ran. `vjet_cube.spin` does not compile. The mesh in `scene_cube.spin` stays the maths trial. Do not add `SCENE_CUBE`.
 
 ### One address pair
 
@@ -444,7 +481,7 @@ Try both paths on one cube. The cube is 8 vertices and 12 faces.
 
 On a miss, skip the flip and set the overflow bit. Record which path meets the frame for 12 faces and for a larger cooked file.
 
-The product library will expose both. The default for a small file is the resident mesh. The default for a file that does not fit is the stream frame.
+The product library will expose both. The default for a small file is the resident mesh. The default for a file that does not fit is the stream frame. A vector game uses the screen-record stream, because many rocks do not fit one `Set pose`.
 
 ### GSX
 
@@ -497,16 +534,171 @@ These checks stay open. The streamed-list trial does not close them. The mode fl
 7. Issue Enter text from 0x80 and from the key chord. Both must restore the 6850 and the text console.
 8. Start an `XMODEM.COM` receive on 0x80. The mode must stay text until the transfer ends.
 
+## Three pieces
+
+The path from a tool file to the VGA picture is three pieces. Piece 1 writes a list blob. Piece 2 sends that blob. Piece 3 stores the payload and the porch shows it. A piece does not do the next piece's work.
+
+### Piece 1 — Cook
+
+The cooker runs on macOS, Linux, and Windows. It reads binary STL, OBJ, or a scene script. It writes one list blob. It does not open the ACIA. It does not emit `$1C` or `$07`.
+
+The blob is little-endian.
+
+| Field | Bytes | Meaning |
+|-------|------:|---------|
+| Payload length | 2 | Display-list bytes. This length skips the header. |
+| Reloc count | 2 | Words the sender must fix. |
+| Font hub | 2 | Absolute font address. Zero when the list has no text. |
+| Payload | N | The display list. A link to the next shape is an offset into this payload. |
+| Reloc offsets | 2 each | Byte offset of one word in the payload. |
+
+The last link word stays 0. Each earlier link word is an offset into the payload. A text shape stores the font hub as an absolute word. A string pointer is an offset when the string sits in the payload. The sender adds the destination Hub address to each reloc word.
+
+The cooker rejects a chain it cannot walk. A coordinate that is not finite is an error.
+
+One blob has three containers. The bytes match. A short list is `DEFB` and `DEFW` in a z88dk asm file. A long list is a binary include of the same file. A CP/M file holds the same bytes. The 8.3 name uses letters and digits.
+
+A C array is a fourth container of those bytes. `mkscenes.py` splits one frame into parallel arrays. The new cooker keeps one blob per frame. A moving picture is several blobs. The cooker does not build a `.COM`.
+
+The cooked mesh in Authoring file is a second output of this piece. A sealed list is the output that piece 3 can show. The mesh waits for the game stream.
+
+### Piece 2 — Send
+
+The library runs on the 8085 and on the Z80. One C89 source builds both. The package name is `vjet` in z88dk-libraries. Read `cpu-8085` before the 8085 build.
+
+Two loaders feed one send. A program loader uses a linked blob. A file loader reads a CP/M file into RAM. Both call the same send. A file that does not fit in the buffer returns -1.
+
+The send copies the payload. It adds the destination Hub address to each reloc word. It then writes `$1C`, the payload length, and the payload. A bad link returns before the first byte. The destination is `dlist1` or `dlist2` of the image the blob names.
+
+A blob font of 0 skips the check. The program calls `vjet_font` with the image font when the blob stores a font. A hub of 0 also skips the check. The send returns `VJET_FONT` when the two fonts differ.
+
+On the 6850 path the library writes the data port through BDOS. `$FF` uses function 2. Every other byte uses function 6. Function 2 expands TAB `$09`. Lists contain `$09`.
+
+Function 6 treats `$FF` as a read. The exit key is `q`. Function 11 sees a stored key. Function 1 takes it. Function 6 does not.
+
+The first send can run while text mode is up. The program then writes `$07` once. Later frames do not write `$07`. A second `$07` returns to text. The program does not write `$07` during XMODEM. `vjet_open` and the 0x80 command set wait until step 10.
+
+This send does not wait for step 10. The library does not parse STL or OBJ. It does not build a slope. It does not write the VGA pins.
+
+### Piece 3 — Show
+
+The bring-up in `src/ux_module_vjet.spin` is this piece. Cog 0 reads the ACIA ring. The mark is `$1C`. The next word is the payload length. Cog 0 copies that many bytes into the unpublished list. The draw cog publishes that list on the front porch.
+
+The local scene stops. Render cogs read the published list. The copy stores the bytes as they arrive. It does not add a Hub base. Piece 2 has already fixed the reloc words. A count of 0 is rejected.
+
+A list that arrives in text mode is stored at `dlist1`. The first `vjet_send_list` uses that address. A later list uses the other list. A return to text selects `dlist1` again when no list is waiting.
+
+A count above `DLIST_SIZE * 4` is rejected. The payload is not echoed. `$07` is the graphics switch. It is not a list byte. `gfx_flag` stays clear, so the pair stays a 6850.
+
+A bad chain stays unpublished. Text mode discards an extra list and keeps the sealed one. In graphics the next mark waits at most 250 ms. A list state with no byte for 250 ms returns to idle. The parser discards a known remainder until another 250 ms gap.
+
+`G:TESTART` showed one white box on this path. That box has no reloc word. A list with two or more shapes needs the reloc fix from piece 2. The product top does not have this parser. Step 5 stays open. Step 8 stays open.
+
+A screen record is a different payload. The draw cog builds slopes for a screen record. That builder is the game stream. It is not part of these three pieces.
+
+### Bounds
+
+Piece 1 does not send. Piece 2 does not cook. Piece 3 does not relocate. These pieces do not freeze the command bytes. They do not set `gfx_flag`. They do not change the 2021 PLL, `visibleScale`, `LINE_BUFFERS`, `SPAN_MAX`, the 7-line lead, or `linepause`.
+
+## Solution
+
+Three languages. Python 3 cooks the list. C89 sends it. Spin shows it. The PASM renderer and the VGA cog stay as they are.
+
+### Cook language and workflow
+
+Python 3 is the cooker. Use the standard library only. `python3` is enough on macOS, Linux, and Windows. Do not add a pip package. A C cooker would need a build on each OS.
+
+The script is `tools/vjet_cook.py` in this repository. It stays next to `VJET_v01_displaylist.spin`. z88dk-libraries does not hold the cooker. `mkscenes.py` is the prototype. The new script replaces its output.
+
+The file suffix for one list blob is `.vjb`. One command writes one frame. A moving picture is one command per frame.
+
+1. Export STL or OBJ from the tool. Apply the scale. Write triangles, or OBJ lines.
+2. Run the cooker. Pass the font hub of the firmware image.
+3. Take the `.vjb` file when the `.COM` will load it from disk.
+4. Pass `--asm` when a short list will be `DEFB` and `DEFW` in the program.
+5. Pass `--inc` when a long list will be a binary include of the same bytes.
+6. Match one known `mkscenes.py` frame before a new scene is trusted.
+
+```
+python3 tools/vjet_cook.py --stl ship.stl --colour FFFF --font 17236 --out ship.vjb
+python3 tools/vjet_cook.py --obj ship.obj --colour FFFF --font 17236 --asm ship.asm
+```
+
+The cooker reads ASCII STL and binary STL. Sample files are `tools/vjet/triangle.stl`, `tools/vjet/triangle.obj`, `tools/vjet/square.obj`, `tools/vjet/quad.stl`, and `tools/vjet/quad.obj`. The builder matches `mkscenes.py` for a flat triangle, a general triangle, a horizontal line, a vertical line, and one convex quad.
+
+The cooker does not build a `.COM`. It does not call BDOS.
+
+### Send language and workflow
+
+C89 is the library. One source list builds every product. sccz80 builds the 8085 library and the Z80 new library. zsdcc builds `sdcc_ix` and `sdcc_iy`. Do not use 80cc for this library. The old generated COMs stay on 80cc until that demo is retired.
+
+The package is `vjet/` in z88dk-libraries. The layout matches `th02/` and `3d/`: `source/`, `demo/`, `vjet.lst`, and a README. The library uses integer adds only. It does not link a math library.
+
+| Call | Action |
+|------|--------|
+| `vjet_font(hub)` | Set the image font. 0 skips the check. |
+| `vjet_send_list(blob, dest)` | Fix reloc words. Write `$1C`, the length, and the payload. |
+| `vjet_load(name, buf, max)` | Read one CP/M file into RAM. The send then uses that buffer. |
+| `vjet_graphics()` | Write one `$07`. |
+| `vjet_key()` | Return a stored key, or 0. The program exits on `q`. |
+
+`dest` is the Hub address of `dlist1` or `dlist2`. The blob does not store that address. The same payload can fill either list. `vjet_load` uses BDOS file calls, so classic and newlib share one loader.
+
+Build from `source/` with the same shape as the `3d` package. Leave out the math flags.
+
+```
+zcc +cpm -clib=new -x -O2 --opt-code-speed=all @vjet.lst -o ../cpm/lib/newlib/sccz80/vjet
+zcc +cpm -clib=sdcc_ix -x -SO3 --max-allocs-per-node400000 @vjet.lst -o ../cpm/lib/newlib/sdcc_ix/vjet
+zcc +cpm -clib=sdcc_iy -x -SO3 --max-allocs-per-node400000 @vjet.lst -o ../cpm/lib/newlib/sdcc_iy/vjet
+zcc +cpm -clib=8085 -x -O2 --opt-code-speed=all @vjet.lst -o ../cpm/lib/newlib/sccz80/vjet_8085
+```
+
+The same Z80 lines with `+rc2014` and `+yaz180` write those trees. The 8085 library stays on `+cpm`. The package holds the sccz80 libraries. The sdcc lines need `z88dk-zsdcc` on PATH.
+
+`z88dk-lib +cpm vjet` installs the newlib products. Copy `vjet_8085.lib` by the same path used for `3d_8085`. The demos link inside the Ubuntu container. Run them from `demo/`.
+
+```
+zcc +cpm -clib=8085 -O2 --opt-code-speed=all -I../source -L../cpm/lib/newlib/sccz80 -lvjet_8085 vjet_box.c -o vjetbox -create-app
+zcc +cpm -clib=new -O2 --opt-code-speed=all -I../source -L../cpm/lib/newlib/sccz80 -lvjet vjet_box.c -o vjetbox -create-app
+```
+
+1. Cook the blob.
+2. Link the blob into the program, or call `vjet_load`.
+3. Call `vjet_send_list` with the Hub address of `dlist1`. Call `vjet_graphics` once.
+4. Send later frames to `dlist1` and `dlist2` in turn. Do not send `$07` for those frames.
+5. Call `vjet_key`. On `q`, call `vjet_graphics` and return to the CCP.
+6. Put the `.COM` on drive G with XMODEM. The pair stays a 6850 during that transfer.
+
+The 17700-byte image uses 17752 and 19752. The 18136-byte source uses 18188 and 20188. Load the image that matches the program. The font table in that source is at 17672.
+
+### Show language and workflow
+
+Spin is the show code. Cog 0 already parses `$1C` in `src/ux_module_vjet.spin`. The porch publishes the sealed list. Leave that parser in Spin. Do not move it into PASM.
+
+An in-built demonstration is retired only as a send/show pair. Cook its frames. Send them with the library. The parser already in the bring-up shows them. Remove the scene from the firmware after the VGA picture is accepted.
+
+Retire the scenes in this order.
+
+1. Spinning triangles, `scene/scene_triangles.spin`, top `demo/vjet_test.spin`.
+2. Orbit probe, `scene/scene_probe.spin`, top `demo/vjet_probe.spin`.
+3. Test card, `scene/scene_card.spin`, top `demo/vjet_card.spin`.
+4. Stress picture, `scene/scene_stress.spin`. This is the scene `ux_module_vjet.spin` includes now.
+
+After the stress pair is accepted, delete `drawScene` and the scene include. The draw cog then publishes a sealed list and does not build a local picture. `vjet_cube.spin` is outside this retirement. It does not compile.
+
+Move the parser into `src/ux_module.spin` only after that deletion, and only as step 5. Do not delete the last scene and promote the product top in one edit. `gfx_flag` stays clear until step 8.
+
 ## Stage 3 — CP/M-IDE
 
-Start this stage in `/Users/phillip/Container/ubuntu-data/CPM-IDE` only after the stage 2 command bytes are frozen. The UX Module tree keeps the Propeller code. The CP/M tree keeps the 8085 code for the `8085-cf-acia` build.
+The UX Module tree keeps the cooker and piece 3. z88dk-libraries keeps piece 2. CP/M-IDE keeps the drive G test files. The 0x80 command set waits until step 10. The sealed-list send on the 6850 path can start before that freeze.
 
 ### Library
 
-A small 8085 library is the interface programmers call. Read `cpu-8085` before the first function.
+`vjet_send_list` is the sealed-list send from Three pieces. The calls below are the later port API. Read `cpu-8085` before the first 8085 function.
 
 | Call | Port use |
 |------|----------|
+| `vjet_send_list` | 6850 path. Fix reloc words. Write `$1C`, the length, and the payload. |
 | `vjet_open` | `di`, then the enter sequence. Read 0x80 until the mode flag is set. |
 | `vjet_close` | Enter text. `ei` only after status says text mode. |
 | `vjet_load` | Load mesh from a memory block. |
@@ -519,18 +711,18 @@ The first demo is a `.COM` that loads one cooked cube, opens graphics, spins the
 
 ### Cooker
 
-Accept ASCII STL, binary STL, and OBJ. Write a cooked mesh file the `.COM` can read from the CP/M disk.
+Follow Authoring file for the cooked mesh. Follow Three pieces for the list blob. The mesh rules below stay for the game stream. The blob is the output that piece 3 can show.
 
-Rules for the cooker:
+Rules for the convert:
 
-- STL facets become triangles.
-- A convex OBJ face becomes one polygon record. A concave face is split on the host.
-- Weld vertices that share the same coordinates.
-- Attach the colour byte from the solid name, the OBJ group, or a command-line value.
-- Print the vertex count, the face count, and the cooked size.
+- A binary STL facet becomes one triangle in the cooked mesh.
+- An OBJ line becomes one line in the cooked mesh.
+- A convex OBJ face of three or four vertices stays one face. Refuse any other face.
+- Use the colour word from the command line.
+- Print the vertex count, the record count, and the cooked size.
 - Refuse a file that exceeds the Hub limit recorded in stage 2.
 
-The Propeller never sees the STL text.
+The convert does not weld, clip, or build slopes. The Propeller never sees the STL text. The 8085 never sees it.
 
 ### Transfer
 
@@ -566,6 +758,10 @@ Do the rows in order. A later row waits for the exit text of the row above.
 | 12 | GSX subset driver. | Open, clear, bar, convex fill, close. |
 
 Status on 20 Oct 2026. Steps 1 and 2 are done. Steps 3 and 4 pass on the beam-chase bring-up. Text boots. Control-G shows a clean eight-line picture. Control-G returns to text. The product top does not have this switch. Do not mark step 5 passed.
+
+On 26 Oct 2026 the bench has no hardware. Authoring file is the rule for the convert and for the game stream. Three pieces is the cut for the sealed list. The cooker is `tools/vjet_cook.py`. The send library is `vjet/` in z88dk-libraries. The show path is `src/ux_module_vjet.spin`. A text-mode list is stored at `dlist1`.
+
+The show compile on 26 Oct 2026 is 18136 bytes. This compile does not write EEPROM. Variable space starts at 18136. The font table is at 17672. The lists are at 18188 and 20188. The 17700-byte image stays the clean point until a load.
 
 The live source picture is `scene/scene_stress.spin`. `DLIST_SIZE` is 500. A sealed list replaces that picture. The clean point is the handoff in `3D_PROCESS_LIB_VJET.md`.
 

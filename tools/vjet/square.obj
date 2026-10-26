@@ -1,0 +1,9 @@
+# Four OBJ line records. A tool writes these for a wireframe.
+v -1 -1 0
+v 1 -1 0
+v 1 1 0
+v -1 1 0
+l 1 2
+l 2 3
+l 3 4
+l 4 1

@@ -46,6 +46,20 @@ The other compile tops and the beam-chase head are in that same directory. Displ
 openspin -L src -L src/lib_vjet -b -o build/vjet_test.binary src/lib_vjet/demo/vjet_test.spin
 ```
 
+## Cook a list blob
+
+`tools/vjet_cook.py` reads ASCII STL, binary STL, or OBJ. It writes one `.vjb` list blob. Python 3 is enough. There is no pip package. Sample files are in `tools/vjet/`.
+
+```sh
+python3 tools/vjet_cook.py --check
+python3 tools/vjet_cook.py --stl tools/vjet/triangle.stl --colour FFFF --font 17236 --out triangle.vjb
+python3 tools/vjet_cook.py --obj tools/vjet/square.obj --colour C0C0 --asm square.asm
+```
+
+`--asm` writes `DEFB` and `DEFW`. `--inc` writes a binary include of the `--out` file. The font value is accepted. A list with no text stores font 0.
+
+The send library is `vjet/` in z88dk-libraries. It adds the destination Hub address, then writes `$1C`, the length, and the payload. A bad link returns before the first byte. The bring-up stores a text-mode list at `dlist1`. It does not add a Hub base. A bad chain stays unpublished.
+
 ## Console keys (`tools/ux-screen.sh`)
 
 | Key | Action |

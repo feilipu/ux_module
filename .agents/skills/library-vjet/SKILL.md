@@ -131,7 +131,7 @@ Demos flip `dlist_ptr` each frame and rebuild the inactive buffer. Render cogs r
 
 The ACIA receive ring is the pipe. Cog 0 is its only reader. A complete list is written into the display list that `dlist_ptr` does not name. `dlist1` and `dlist2` are that pair. Each list is `DLIST_SIZE` longs. The stress bring-up uses 500 longs (2000 bytes).
 
-The first list is copied there before `enterGraphics`. Later lists use the same pair. Cog 0 appends bytes as the ring drains. The draw cog publishes the filled pointer on the front porch, then the other list is the next fill target. A list that is still filling stays unpublished. The published list stays on screen.
+The first list is copied there before `enterGraphics`. A list that arrives in text mode is stored at `dlist1`. Later lists use the other list. A return to text selects `dlist1` again when no list is waiting. Cog 0 appends bytes as the ring drains. The draw cog publishes the filled pointer on the front porch, then the other list is the next fill target. A list that is still filling stays unpublished. The published list stays on screen.
 
 The draw cog does not call `gl.start` on a list Cog 0 is filling. The ACIA cog does not write either list.
 
@@ -143,7 +143,7 @@ Compile `src/ux_module_vjet.spin` with `openspin -u`. `main` calls `font.get` so
 
 Do not restore the framebuffer sources. Do not replace that triangle with a box to skip a tall trap. Do not add a Hub edge cache. Do not restore `gl.pace`, a cog-RAM `linebuf`, a Hub scratch copy, skip-if-late, or paint during `:linewait`. Those loads failed. Detail is in `3D_PROCESS_LIB_VJET.md`.
 
-`startVectorjet` does not clear a list that is ready or still filling. While `listReady` is set, Cog 0 leaves the next mark in the receive ring. After `listShown` is set, the draw cog does not rebuild the test card.
+`startVectorjet` does not clear a list that is ready or still filling. In graphics, Cog 0 leaves the next mark in the receive ring while `listReady` is set. That hold ends after 250 ms. Text mode discards an extra list. A bad chain stays unpublished. After `listShown` is set, the draw cog does not rebuild the test card.
 
 ## VGA cog (`VJET_vUXM_vga.spin`)
 

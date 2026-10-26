@@ -13,6 +13,9 @@
 '' Graphics keeps the input that requested it and stops the other input.
 '' Eight line slots. Three render cogs. The picture is scene/scene_stress.spin.
 '' A streamed list replaces that picture. Cog 0 copies it from the ACIA ring.
+'' A list that arrives in text mode is stored at dlist1. The copy adds no Hub base.
+'' A bad chain stays unpublished. Text mode discards an extra list.
+'' A 250 ms gap returns the parser to idle.
 '' The stress picture moves. Cog 0 keeps the ACIA pump. The draw cog has its own stack.
 '' Compile this file with -u so the copier fits. Keep the font.get call below.
 '' openspin -u -L src -L src/lib_vjet -b -o build/ux_module_vjet.binary src/ux_module_vjet.spin
@@ -108,6 +111,9 @@ CON
   PARSE_LIST_HI   = 9                                   ' list count, high byte
   PARSE_LIST      = 10                                  ' list payload bytes
   PARSE_LIST_ARM  = 11                                  ' wait until the draw cog leaves gl.start
+  PARSE_SKIP_LO   = 12                                  ' discard a second list. Keep the sealed one.
+  PARSE_SKIP_HI   = 13
+  PARSE_SKIP      = 14
 
   LIST_MARK       = $1C                                 ' list lead-in. Trial only. Not an XMODEM byte.
 
@@ -177,6 +183,9 @@ VAR
   byte  drawHold                                        ' 1: the draw cog will not call gl.start
   long  listCount                                       ' payload bytes still to store
   long  listAt                                          ' next Hub byte in the fill target
+  long  listBase                                        ' first byte of the list being stored
+  long  listBytes                                       ' accepted payload length
+  long  listStamp                                       ' cnt of the last list byte
   long  linebuffers[(render#WIDTH * render#LINE_BUFFERS) / 4]
   long  drawStack[192]                                  ' Draw cog stack. The next Hub is the FTDI rings.
 
@@ -360,11 +369,26 @@ PRI reportDdc
 PUB readZ80 | char, n, need
 {{Drain Z80 TDR bytes to VGA and FTDI. Never blocks on acia.rx or term.tx.
   Bytes with ftdiNeed 0 (LF) still drain when FTDI TX is full.
-  A list mark stays in the ring while listReady is set.
+  In graphics, a list mark stays in the ring while listReady is set.
+  That hold ends after 250 ms. Text mode discards the extra list.
+  A list state with no byte for 250 ms returns to idle.
+  When the length is known, the rest is discarded until the next gap.
+  A bad chain does not set listReady.
   TDRE is allowed only when the next byte fits in FTDI TX.}}
+
+    if (z80Parse => PARSE_LIST_LO) and ((cnt - listStamp) => (clkfreq / 4))
+      if z80Parse < PARSE_SKIP_LO
+        listReady := 0
+      if (z80Parse == PARSE_LIST) or (z80Parse == PARSE_LIST_ARM)
+        listStamp := cnt
+        z80Parse := PARSE_SKIP
+      else
+        z80Parse := PARSE_IDLE
+        listCount := 0
 
     if z80Parse == PARSE_LIST_ARM and ((not gfxMode) or drawHold)
       claimList
+      listStamp := cnt
       z80Parse := PARSE_LIST
 
     n := 0
@@ -372,8 +396,10 @@ PUB readZ80 | char, n, need
       if z80Parse == PARSE_LIST_ARM
         quit
       char := acia.rxPeek
-      if listReady and z80Parse == PARSE_IDLE and char == LIST_MARK
-        quit
+      if gfxMode and listReady and z80Parse == PARSE_IDLE and char == LIST_MARK
+        if (cnt - listStamp) < (clkfreq / 4)
+          quit
+        listReady := 0
       need := ftdiNeed (char)
       if need > 0 and term.txSpace < need
         quit
@@ -414,6 +440,9 @@ PRI ftdiNeed(char) : n
         n := 0
       ASCII_CR:
         n := 2                                          ' term.newLine sends CR then LF
+      LIST_MARK:
+        ifnot (inXmodem or hostXmodem)
+          n := 0                                        ' a full FTDI buffer must not hold the 8085
 
 
 PRI hostTx(c)
@@ -437,6 +466,9 @@ PRI hostXmodem : truefalse
 
 PRI takeZ80Byte(char)
 {{One byte from the ACIA RX FIFO. Advances PARSE_* without waiting for more input.}}
+
+  if z80Parse => PARSE_LIST_LO
+    listStamp := cnt
 
   case z80Parse
 
@@ -504,18 +536,39 @@ PRI takeZ80Byte(char)
       listCount := listCount | (char << 8)
       if (listCount == 0) or (listCount > constant(DLIST_SIZE * 4))
         z80Parse := PARSE_IDLE                          ' reject. Leave listReady as it is.
-      elseif (not gfxMode) or drawHold
-        claimList
-        z80Parse := PARSE_LIST
       else
-        z80Parse := PARSE_LIST_ARM
+        listBytes := listCount
+        if (not gfxMode) or drawHold
+          claimList
+          z80Parse := PARSE_LIST
+        else
+          z80Parse := PARSE_LIST_ARM
 
     PARSE_LIST:                                         ' payload. Do not echo.
       byte[listAt] := char
       listAt++
       listCount--
       if listCount == 0
-        listReady := 1
+        if listChainOk
+          listReady := 1
+        else
+          listReady := 0
+        z80Parse := PARSE_IDLE
+
+    PARSE_SKIP_LO:                                      ' second list, low count. Do not store.
+      listCount := char
+      z80Parse := PARSE_SKIP_HI
+
+    PARSE_SKIP_HI:
+      listCount := listCount | (char << 8)
+      if (listCount == 0) or (listCount > constant(DLIST_SIZE * 4))
+        z80Parse := PARSE_IDLE                          ' leave the sealed list ready
+      else
+        z80Parse := PARSE_SKIP
+
+    PARSE_SKIP:
+      listCount--
+      if listCount == 0
         z80Parse := PARSE_IDLE
 
     other:                                              ' PARSE_IDLE
@@ -553,7 +606,11 @@ PRI takeZ80Idle(char)
       if inXmodem or hostXmodem
         hostTx (char)
         echoPrintable (char)
+      elseif listReady and not gfxMode
+        listStamp := cnt
+        z80Parse := PARSE_SKIP_LO                       ' keep the sealed list. Drain this one.
       elseif not listReady
+        listStamp := cnt
         z80Parse := PARSE_LIST_LO
 
     ASCII_BELL:                                         ' Control-G from the Z80. Same switch as FTDI.
@@ -1017,7 +1074,9 @@ PRI stopVectorjet
 
   gfxReady := 0
   drawHold := 0
-  listShown := 0                                        ' the next entry can show the triangles
+  listShown := 0                                        ' the next entry can show the local scene
+  if not listReady
+    listFill := 0                                       ' the next text-mode list uses dlist1
   if drawCog
     cogstop (drawCog~ - 1)
   render.stop
@@ -1146,9 +1205,15 @@ PRI settleDrain | t
 
 
 PRI claimList
-{{Clear the list that dlist_ptr does not name. Cog 0 then stores the payload there.}}
+{{Clear the list that will take this payload.
+  Text mode stores the list at dlist1. The sender's first dest is that address.
+  Graphics stores the list the render cogs are not reading.
+  The copy does not add a Hub base.}}
 
-  if dlist_ptr == @dlist1
+  if not gfxMode
+    listFill := 0
+    listAt := @dlist1
+  elseif dlist_ptr == @dlist1
     listFill := 1
     listAt := @dlist2
   elseif dlist_ptr == @dlist2
@@ -1158,7 +1223,38 @@ PRI claimList
     listAt := @dlist2
   else
     listAt := @dlist1
+  listBase := listAt
   longfill (listAt, 0, DLIST_SIZE)
+
+
+PRI listChainOk : ok | p, nxt, kind, y0, y1, n, lim
+{{1 when every link stays inside this list and moves forward.
+  Each scanline is from 0 to 240. A failed chain stays unpublished.}}
+
+  p := listBase
+  lim := listBase + listBytes
+  n := 0
+  repeat
+    if (p + 7) => lim
+      return 0
+    if byte[p + 2] <> $FF
+      return 0
+    kind := byte[p + 3]
+    if (kind < 1) or (kind > 3)
+      return 0
+    y0 := byte[p + 4] | (byte[p + 5] << 8)
+    y1 := byte[p + 6] | (byte[p + 7] << 8)
+    if (y0 > render#NUM_LINES) or (y1 > render#NUM_LINES) or (y1 < y0)
+      return 0
+    nxt := byte[p] | (byte[p + 1] << 8)
+    if nxt == 0
+      return 1
+    if (nxt & 1) or (nxt =< p) or ((nxt + 7) => lim)
+      return 0
+    p := nxt
+    n++
+    if n == 250
+      return 0
 
 
 PRI pumpGraphics
