@@ -25,8 +25,6 @@ CON
    BUFFER_LENGTH    = 512                               'Recommended as 64 or higher, but can be 2, 4, 8, 16, 32, 64, 128, 256 or 512.
    BUFFER_MASK      = BUFFER_LENGTH - 1
 
-   MAXSTR_LENGTH    = 255                               'Maximum length of received numerical string (not including zero terminator).
-
    NL   = 13                                            ' NL: New Line
    LF   = 10                                            ' LF: Line Feed
 
@@ -47,8 +45,6 @@ VAR
 
   byte  rx_buffer[BUFFER_LENGTH]                        'Receive and transmit buffers
   byte  tx_buffer[BUFFER_LENGTH]
-
-  byte  str_buffer[MAXSTR_LENGTH+1]                     'String buffer for numerical strings
 
 
 PUB start(baudrate) : okay
@@ -305,14 +301,6 @@ PUB dec(value) | i, x
     i /= 10                                                                     'Update divisor
 
 
-PUB decIn : value
-{{Receive carriage return terminated string of characters representing a decimal value.
-  Returns: the corresponding decimal value.}}
-
-  strInMax(@str_buffer, MAXSTR_LENGTH)
-  value := strToBase(@str_buffer, 10)
-
-
 PUB bin(value, digits)
 {{Send value as binary characters up to digits in length.
   Parameters:
@@ -324,14 +312,6 @@ PUB bin(value, digits)
     tx((value <-= 1) & 1 + "0")
 
 
-PUB binIn : value
-{{Receive carriage return terminated string of characters representing a binary value.
- Returns: the corresponding binary value.}}
-
-  strInMax(@str_buffer, MAXSTR_LENGTH)
-  value := strToBase(@str_buffer, 2)
-
-
 PUB hex(value, digits)
 {{Send value as hexadecimal characters up to digits in length.
   Parameters:
@@ -341,27 +321,6 @@ PUB hex(value, digits)
   value <<= (8 - digits) << 2
   repeat digits
     tx(lookupz((value <-= 4) & $F : "0".."9", "A".."F"))
-
-
-PUB hexIn : value
-{{Receive carriage return terminated string of characters representing a hexadecimal value.
-  Returns: the corresponding hexadecimal value.}}
-
-  strInMax(@str_buffer, MAXSTR_LENGTH)
-  value := strToBase(@str_buffer, 16)
-
-
-PRI strToBase(stringptr, base) : value | chr, index
-{Converts a zero terminated string representation of a number to a value in the designated base.
-Ignores all non-digit characters (except negative (-) when base is decimal (10)).}
-
-  value := index := 0
-  repeat until ((chr := byte[stringptr][index++]) == 0)
-    chr := -15 + --chr & %11011111 + 39*(chr > 56)                              'Make "0"-"9","A"-"F","a"-"f" be 0 - 15, others out of range
-    if (chr > -1) and (chr < base)                                              'Accumulate valid values into result; ignore others
-      value := value * base + chr
-  if (base == 10) and (byte[stringptr] == "-")                                  'If decimal, address negative sign; ignore otherwise
-    value := - value
 
 
 DAT

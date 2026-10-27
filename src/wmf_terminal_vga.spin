@@ -234,8 +234,7 @@ OBJ
 
 
 VAR
-  long  gVideoBuffer[VGACOLS * VGAROWS / 4]     ' video buffer - could be bytes, but longs allow more efficient scrolling
-  long  gVideoBufferPtr                         ' pointer to video buffer
+  long  gVideoBufferPtr                         ' caller Hub. First 3200 bytes are the 80 by 40 screen. Long aligned.
   long  gBackBufferPtr                          ' user can send a "back buffer" to hold screen space overwritten by menuing system
                                                 ' this way application doensn't need to refresh screen when menu events occur
                                                 ' however, in a really tight application, the user might not be able to spare
@@ -256,7 +255,7 @@ CON
 ' INITIALIZATION ENTRY POINT FOR TERMINAL SERVICES DRIVER
 ' -----------------------------------------------------------------------------
 
-PUB init( pVGABasePin, pTextCursXPtr ) | retVal
+PUB init( pVGABasePin, pTextCursXPtr, pScreenPtr ) | retVal
 {{
 DESCRIPTION: Initializes the VGA and Keyboard Drivers as well as basic terminal parameters
 
@@ -267,6 +266,7 @@ PARMS:
                     and "mouse" cursor. The selection of which is text and which is mouse is arbitrary since
                     the driver doesn't know the difference, but we will use the convention that the cursors
                     are text, mouse in that order.
+   pScreenPtr     - long-aligned Hub for the 80 by 40 screen (3200 bytes)
 
 RETURNS:  Returns the screen geometry in high WORD of 32-bit return value
           low byte  = number of character columns
@@ -274,7 +274,7 @@ RETURNS:  Returns the screen geometry in high WORD of 32-bit return value
 }}
 
   ' initialize any variables here...
-  gVideoBufferPtr := @gVideoBuffer
+  gVideoBufferPtr := pScreenPtr
 
   ' initial terminal settings
   gScreenCol       := 0
@@ -284,7 +284,7 @@ RETURNS:  Returns the screen geometry in high WORD of 32-bit return value
   gScreenFlag      := 0
 
   ' start the VGA driver, send VGA base pins, video buffer, color buffer, pointer to cursors, and vsync global
-  vga.start(pVGABasePin, @gVideoBuffer, @gColors, pTextCursXPtr, @gVsync)
+  vga.start(pVGABasePin, pScreenPtr, @gColors, pTextCursXPtr, @gVsync)
 
   ' ---------------------------------------------------------------------------
   ' setup screen colors
@@ -303,7 +303,7 @@ RETURNS:  Returns the screen geometry in high WORD of 32-bit return value
   clearFrame( CTHEME_DEFAULT_FG, CTHEME_DEFAULT_BG )
 
   ' finally return the screen geometry in the format [video_buffer:16 | vga_colums:8 | vga_rows]
-  retVal :=   (@gVideoBuffer << 16 ) | ( VGAROWS << 8 ) | VGACOLS
+  retVal :=   (pScreenPtr << 16 ) | ( VGAROWS << 8 ) | VGACOLS
 
   return ( retVal )
 

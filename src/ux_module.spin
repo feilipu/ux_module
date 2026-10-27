@@ -11,11 +11,12 @@
 '' Product top. Boot is the text console.
 '' A good list in text mode starts graphics.
 '' Graphics keeps the input that requested it and stops the other input.
-'' Eight line slots. Three render cogs. The local picture is scene/scene_stress.spin.
+'' Eight line slots. Three render cogs. The local picture is scene/scene_card.spin.
 '' A sealed list replaces that picture. Cog 0 copies the list from the ACIA ring.
-'' A text-mode list is stored at dlist1. The copy adds no Hub base.
-'' A count of 0 is ignored. A count above 2000 is discarded and is not printed.
-'' A bad chain stays unpublished. Text mode discards an extra list.
+'' A text-mode list is stored at dlist1. That Hub is also the text screen.
+'' The copy adds no Hub base. The first 3200 bytes are the 80 by 40 console.
+'' A count of 0 is ignored. A count above the list is discarded and is not printed.
+'' A bad chain stays unpublished. Text mode draws the banner again.
 '' A 250 ms gap returns the parser to idle.
 '' settleDrain ignores the next Control-G. A later Control-G returns to text.
 '' Compile with -u so the copier fits. Keep the font.get call below.
@@ -26,8 +27,8 @@ CON
   _clkmode      = XTAL1 + PLL16X
   _xinfreq      = 7_372_800
 
-  DLIST_SIZE    = 500                                   ' longs in each list. The stress picture fits in this.
-  _STACK        = 256                                   ' Cog 0 stack, in longs. Cog 0 does not draw.
+  DLIST_SIZE    = 1149                                  ' longs in each list. 4596 bytes. 4 bytes remain.
+  _STACK        = 128                                   ' Cog 0 stack, in longs. Cog 0 does not draw.
 
 
 CON
@@ -175,8 +176,8 @@ VAR
   long  framecount
   long  vga_status                                      ' VECTORJET VGA phase. VGA cog writes it.
   long  dlist_ptr                                       ' Draw cog writes it. Render cogs read it.
-  long  dlist1[DLIST_SIZE]                              ' list A
-  long  dlist2[DLIST_SIZE]                              ' list B
+  long  dlist1[DLIST_SIZE]                              ' list A. Text screen is the first 3200 bytes.
+  long  dlist2[DLIST_SIZE]                              ' list B. Keep this array next to list A.
   byte  listFill                                        ' 0 fills dlist1. 1 fills dlist2.
   byte  listReady                                       ' 1: the fill target is complete
   byte  listShown                                       ' 1: a streamed list is on screen
@@ -187,7 +188,7 @@ VAR
   long  listBytes                                       ' accepted payload length
   long  listStamp                                       ' cnt of the last list byte
   long  linebuffers[(render#WIDTH * render#LINE_BUFFERS) / 4]
-  long  drawStack[192]                                  ' Draw cog stack. The next Hub is the FTDI rings.
+  long  drawStack[128]                                  ' Draw cog stack. The next Hub is the FTDI rings.
 
 
 OBJ
@@ -293,7 +294,7 @@ PUB screenInit | retVal
 
 
   ' now start the VGA driver and terminal services
-  retVal := wmf.init (VGA_BASE_PIN, @gTextCursX)
+  retVal := wmf.init (VGA_BASE_PIN, @gTextCursX, @dlist1)
 
   ' rows encoded in upper 8-bits. columns in lower 8-bits of return value, redundant code really
   ' since we pull it in with a constant in the first CON section, but up to you!
@@ -303,8 +304,7 @@ PUB screenInit | retVal
   ' VGA buffer encoded in upper 16-bits of return value
   gScreenBufferPtr := retVal >> 16
 
-  wmf.strScreenLn (string("UX Module Initialised"))
-  syncCurs
+  paintBanner
 
   ' return to caller
   return
@@ -372,14 +372,16 @@ PUB readZ80 | char, n, need
   In graphics, a list mark stays in the ring while listReady is set.
   That hold ends after 250 ms. Text mode discards the extra list.
   A list state with no byte for 250 ms returns to idle.
-  A count of 0 is ignored. A count above 2000 is discarded and is not printed.
-  A bad chain does not set listReady.
+  A count of 0 is ignored. A count above the list is discarded and is not printed.
+  A bad chain does not set listReady. Text mode draws the banner again.
   TDRE is allowed only when the next byte fits in FTDI TX.}}
 
     if (z80Parse => PARSE_LIST_LO) and ((cnt - listStamp) => (clkfreq / 4))
       if z80Parse < PARSE_SKIP_LO
         listReady := 0
       if (z80Parse == PARSE_LIST) or (z80Parse == PARSE_LIST_ARM)
+        if (not gfxMode) and (z80Parse == PARSE_LIST)
+          paintBanner
         listStamp := cnt
         z80Parse := PARSE_SKIP
       else
@@ -557,6 +559,8 @@ PRI takeZ80Byte(char)
           enterGraphics (GFX_ARM_FTDI)                 ' text mode starts graphics. The next Control-G is not a switch.
         else
           listReady := 0
+          if not gfxMode
+            paintBanner
 
     PARSE_SKIP_LO:                                      ' second list, low count. Do not store.
       listCount := char
@@ -673,6 +677,15 @@ PRI clampCurs(v, maxv) : r
     r := maxv - 1
   else
     r := v
+
+
+PRI paintBanner
+{{Clear the console and draw the boot line. Text VGA is already running.
+  A text-mode list uses this Hub. A bad list leaves those cells dirty.}}
+
+  wmf.outScreen (wmf#CS)
+  wmf.strScreenLn (string("UX Module Initialised"))
+  syncCurs
 
 
 PRI syncCurs
@@ -1138,8 +1151,8 @@ PRI startVectorjet : ok
 
 PRI drawLoop
 {{Publish a streamed list on the front porch.
-  Otherwise hold that picture, or build the stress picture.
-  Stack is drawStack. Text VGA is stopped.}}
+  Otherwise hold that picture, or build the test card.
+  Stack is drawStack, 128 longs. Text VGA is stopped.}}
 
   repeat
     vblank
@@ -1190,7 +1203,7 @@ PRI showSealed
 PRI settleDrain | t
 {{250 ms blank after a VGA stop. Read the ACIA so a full ring cannot drop a byte.
   Publish a sealed list before the next mark. A Control-G here is not a switch.
-  Cog 0 is already inside readZ80. _STACK is 256 longs.}}
+  Cog 0 is already inside readZ80. _STACK is 128 longs.}}
 
   gfxNest := 1
   z80Pump := PUMP_LIMIT
@@ -1319,13 +1332,7 @@ PRI vblank
     waitcnt (clkfreq / 20000 + cnt)
 
 
-PRI drawScene
-{{Build the stress picture. The draw cog calls this while graphics is on.}}
-
-  draw
-
-
-#include "scene/scene_stress.spin"
+#include "scene/scene_card.spin"
 DAT
 
 {{

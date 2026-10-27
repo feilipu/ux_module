@@ -209,7 +209,7 @@ Hub cost for the beam chase is the scan buffer and the lists. Eight line slots a
 Useful work while keeping the architecture intact:
 
 1. The draw cog is in `src/ux_module.spin`. The live picture is the eight-line scan. The plan is `3D_WORKPLAN_LIB_VJET.md`. The repair record is `3D_PROCESS_LIB_VJET.md`.
-2. The bring-up lists hold the stress picture. Two 900-long lists overflow that image. Do not restore the framebuffer bitmap.
+2. The product lists hold the test card. Each list is 1149 longs. The text screen is the first 3200 bytes of list A. Do not restore the framebuffer bitmap.
 3. Drive the back list from Z80 I/O at `PORT_VJET` (needs a command protocol)
 4. Tune render cog count against available cogs and fill rate
 5. Keep display-list field layouts documented in one place (builder comments ↔ renderer reads)

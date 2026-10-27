@@ -15,7 +15,7 @@ VAR
 
 
 PRI drawScene | i, a, sx, cx
-{{Grey field, grid, pillars, then the circle. A later shape covers an earlier one.}}
+{{Grey field, grid, pillars, then the circle. The title stays at the screen centre.}}
 
   gl.set_clip (0, render#NUM_LINES << 16, 0, render#WIDTH << 16)
   gl.box (0, 0, render#WIDTH, render#NUM_LINES, $5757)
@@ -47,6 +47,7 @@ PRI drawScene | i, a, sx, cx
   bandQuad(-2, 18, 0, 1, 1, $ABAB, sx, cx)
   drawBase(sx, cx)
   drawRed(sx, cx)
+  gl.text_centered(render#WIDTH >> 1, (render#NUM_LINES - 16) >> 1, 1, 1, string("UX Module"), font.get, $FFFF)
 
 
 PRI drawCap(sx, cx) | a, b, c, d

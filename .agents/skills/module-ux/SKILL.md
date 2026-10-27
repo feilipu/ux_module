@@ -19,7 +19,7 @@ ux_module.spin                 ' top object — compile/upload this
 ├── keyboard_ps2.spin          ' PS/2 on P27/P26
 ├── acia_rc2014.spin           ' MC6850 bus emulator (PASM cog)
 ├── ddc_i2c.spin               ' DDC EDID / DDC/CI Spin cog (P29 SCL, P28 SDA)
-└── wmf_terminal_vga.spin      ' terminal services + screen buffer
+└── wmf_terminal_vga.spin      ' terminal services. The screen is list A.
     └── hires_text_vga.spin    ' dual-cog VGA text (Chip Gracey)
 ```
 
@@ -108,7 +108,7 @@ Hub writers and open IDs: [references/remaining-errors.md](references/remaining-
 
 ## VGA text path
 
-- `wmf.init(VGA_BASE_PIN, @gTextCursX)` allocates screen/colour/cursor buffers and starts `hires_text_vga`. Overlay `gTextCursX/Y` copies WMF after text ops (`syncCurs`). Idle BS-space-BS runs only if column > 0. Do not guess a prompt width.
+- `wmf.init(VGA_BASE_PIN, @gTextCursX, @dlist1)` starts `hires_text_vga`. The 80 by 40 screen is the first 3200 bytes of list A. Keep list B next to list A. Overlay `gTextCursX/Y` copies WMF after text ops (`syncCurs`). Idle BS-space-BS runs only if column > 0. Do not guess a prompt width.
 - Default timing block in `hires_text_vga.spin` is selected by which CON section is uncommented; pixel rate `pr` is tuned for ~118 MHz.
 - Active table: 640×480 at about 70 Hz (80×40). EDID is reported only. DDC/CI does not set resolution.
 - Screen bytes: bit7 = inverse; bits6..0 = glyph. Row colours are words `%%RRGGBB` style.

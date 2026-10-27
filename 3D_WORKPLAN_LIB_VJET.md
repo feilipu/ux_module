@@ -123,7 +123,8 @@ Hub is 32 KB. OpenSpin 1.00.81 measured these images.
 | Top | File | Free above the stack | Note |
 |-----|------|----------------------|------|
 | `ux_module.spin` | 12780 | 13516 | Text only. 16 Oct 2026. |
-| `ux_module.spin` | 18272 | 0 | 27 Oct 2026. Text boot. A good list starts graphics. Not loaded. |
+| `ux_module.spin` | 17340 | 916 | 27 Oct 2026. Text boot. Test card. Not loaded. |
+| `ux_module.spin` | 17284 | 4 | 27 Oct 2026. Lists 4596 bytes. Screen is list A. Not loaded. |
 | `demo/vjet_test.spin` | 6140 | — | Stored beam-chase demo. Current compile is 6156. |
 | `demo/vjet_ftdi.spin` | 8660 | — | Beam chase plus ACIA and FTDI. Clean. |
 | `demo/vjet_fb.spin` | 8044 | about 944 | Removed. Recorded size. `build/vjet_fb.binary` stays an old file. |
@@ -330,9 +331,9 @@ The mark is `$1C`. Do not use `$01`, `$02`, `$04`, `$06`, `$15`, `$17`, `$18`, o
 
 Do not start a list while `z80XmSess` or `hostXm` is set. Test `SOH` and `STX` before the mark.
 
-The next two bytes are a little-endian count. Then that many list bytes follow. Reject a count of 0. Reject a count above `DLIST_SIZE * 4`. Any other count is valid. The stress image uses 500 longs, so that limit is 2000 bytes. The triangle image uses 296 longs, so that limit is 1184 bytes.
+The next two bytes are a little-endian count. Then that many list bytes follow. Reject a count of 0. Reject a count above `DLIST_SIZE * 4`. Any other count is valid. The product limit is 4596 bytes. The stress image used 500 longs, so that limit was 2000 bytes. The triangle image uses 296 longs, so that limit is 1184 bytes.
 
-On a good count, clear only the fill target. Then store those bytes as the display list. The first word is the link. Do not echo those bytes to FTDI or to the text screen. A count of 0 returns the parser to idle. A count above the limit is discarded and is not printed.
+On a good count, clear only the fill target. Then store those bytes as the display list. The first word is the link. Do not echo those bytes through the terminal. In text mode the fill target is the console Hub, so the cells change until the banner returns. A count of 0 returns the parser to idle. A count above the limit is discarded and is not printed.
 
 A data byte of `$03` is payload. It does not reset the console FIFOs. A control-port write of `$03` still resets them. The graphics program writes the data port only.
 
@@ -368,7 +369,7 @@ A normal compile of the copier exceeds Hub by 68 longs. Compile the bring-up wit
 openspin -u -L src -L src/lib_vjet -b -o build/ux_module.binary src/ux_module.spin
 ```
 
-The product compile needs `-u`. On 27 Oct 2026 that command removes 78 methods and saves 2936 bytes. The image is 18272 bytes. Hub has no spare bytes. The EEPROM image on 20 Oct 2026 is 17428 bytes. The size note is under Measurements on 20 Oct 2026.
+The product compile needs `-u`. On 27 Oct 2026 that command removes 79 methods and saves 3756 bytes. The image is 17284 bytes. The EEPROM image on 20 Oct 2026 is 17428 bytes. The size note is under Measurements on 20 Oct 2026.
 
 ### Scene files
 
@@ -683,7 +684,7 @@ Retire the scenes in this order.
 1. Spinning triangles, `scene/scene_triangles.spin`, top `demo/vjet_test.spin`.
 2. Orbit probe, `scene/scene_probe.spin`, top `demo/vjet_probe.spin`.
 3. Test card, `scene/scene_card.spin`, top `demo/vjet_card.spin`.
-4. Stress picture, `scene/scene_stress.spin`. This is the scene `ux_module.spin` includes now.
+4. Stress picture, `scene/scene_stress.spin`. The product top includes `scene/scene_card.spin`.
 
 After the stress pair is accepted, delete `drawScene` and the scene include. The draw cog then publishes a sealed list and does not build a local picture. `vjet_cube.spin` is outside this retirement. It does not compile.
 
@@ -764,9 +765,9 @@ On 27 Oct 2026 the show path is `src/ux_module.spin`. A good list in text mode s
 
 On 26 Oct 2026 the bench has no hardware. Authoring file is the rule for the convert and for the game stream. Three pieces is the cut for the sealed list. The cooker is `tools/vjet_cook.py`. The send library is `vjet/` in z88dk-libraries. A text-mode list is stored at `dlist1`.
 
-The show compile on 27 Oct 2026 is 18272 bytes. This compile does not write EEPROM. Variable space starts at 18272. The font table is at 17808. The lists are at 18324 and 20324. Hub has no spare bytes. The 17700-byte image stays the clean point until a load. The 26 Oct compile was 18136 bytes, with the font at 17672 and the lists at 18188 and 20188.
+The show compile on 27 Oct 2026 is 17284 bytes. This compile does not write EEPROM. Variable space starts at 17284. The font table is at 16820. The lists are at 17364 and 21960. Each list is 4596 bytes. The text screen is the first 3200 bytes of the first list. The local picture is the test card. The 17700-byte image stays the clean point until a load. The earlier 27 Oct compile was 17340 bytes, with the font at 16876 and the lists at 17420 and 19420. The 26 Oct compile was 18136 bytes, with the font at 17672 and the lists at 18188 and 20188.
 
-The live source picture is `scene/scene_stress.spin`. `DLIST_SIZE` is 500. A sealed list replaces that picture. The clean point is the handoff in `3D_PROCESS_LIB_VJET.md`.
+The live source picture is `scene/scene_card.spin`. The centre title is `UX Module`. `DLIST_SIZE` is 1149. A sealed list replaces that picture. The clean point is the handoff in `3D_PROCESS_LIB_VJET.md`.
 
 Step 6 is in the bring-up. Cog 0 copies a sealed list into the unpublished list. The draw cog publishes that pointer. On 20 Oct 2026 `G:TESTART.COM` sent one white box, then `$07`. The VGA picture was that box. The local stress picture stopped. Control-G on FTDI returns to text.
 
