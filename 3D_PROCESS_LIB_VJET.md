@@ -4,7 +4,7 @@ This file records the repairs from 11 Sep 2026 through 20 Oct 2026. The forward 
 
 Compile tops now live in `src/lib_vjet/demo/`. Display lists live in `src/lib_vjet/scene/`. Names in this record are the files from those dates. The framebuffer sources were removed. Git history keeps them. The live path is the eight-line scan. On 27 Oct 2026 the product top is `src/ux_module.spin`.
 
-The beam-chase bring-up did not hold a stable picture. The framebuffer demo did. That file was `demo/vjet_fb.spin`. The user accepted that picture on 17 Oct 2026. The eight-line slice later ran the spinning triangles. A remaining tear is open.
+The beam-chase bring-up did not hold a stable picture. The framebuffer demo did. That file was `demo/vjet_fb.spin`. The user accepted that picture on 17 Oct 2026. The eight-line slice later ran the spinning triangles. The 20 Oct handoff cleared the tear bands. That record is at the end of this file.
 
 ## What failed on 11 Sep 2026
 

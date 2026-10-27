@@ -212,13 +212,13 @@ Propeller SPIN works with modules which help to mask details from driver code fr
 
 To implement the functions required for the UX Module several SPIN/PASM modules previously written for Propeller by Parallax have been used. This means that the pretested modules from the Parallax "Object Exchange" are used, and that we can focus on how these modules are integrated.
 
-The only (at this stage) special PASM functions written for the UX Module are in the implementation of the ACIA MC6850 Serial Interface. These are in the [ACIA module](https://github.com/feilipu/ux_module/blob/main/src/acia_rc2014.spin).
+The ACIA bus cog is PASM written for this board. It is in the [ACIA module](https://github.com/feilipu/ux_module/blob/main/src/acia_rc2014.spin). VECTORJET adds the slice VGA cog and the render cogs under `src/lib_vjet`. The text VGA cog is the Parallax hires text driver.
 
 `ddc_i2c.spin` also runs a Spin cog after boot. It talks to the monitor on the VGA DDC pins (swapped vs the boot EEPROM). It reads EDID at `0x50` and, if the display answers, DDC/CI at `0x37`. It does not change VGA timing.
 
 VECTORJET (`src/lib_vjet`) is linked from the product top. Boot is the text console. A good sealed list starts graphics. The beam-chase demo is `src/lib_vjet/demo/vjet_test.spin`. The live picture is the eight-line scan. Failed tear repairs are in `3D_PROCESS_LIB_VJET.md`. The framebuffer sources were removed. Git history keeps them.
 
-The library objects stay in `src/lib_vjet/`. Compile tops and the beam-chase head are in `src/lib_vjet/demo/`. Display lists are in `src/lib_vjet/scene/`. A top defines one scene and includes the head. The head includes `scene/scene_*.spin`. Compile with `-L src -L src/lib_vjet`.
+The library objects stay in `src/lib_vjet/`. Compile tops and the beam-chase head are in `src/lib_vjet/demo/`. Display lists are in `src/lib_vjet/scene/`. A top defines one scene and includes the head. The head includes that scene file. It does not include `scene_cube.spin`. Compile with `-L src -L src/lib_vjet`.
 
 ```
 src/lib_vjet
@@ -228,9 +228,11 @@ src/lib_vjet
 |---> VJET_vUXM_vga
 |---> hexfont
 |---> demo/
-|     |---> head_slice          beam-chase head
-|     |---> vjet_test           beam-chase demo
-|     |---> vjet_probe          beam-chase orbit probe
+|     |---> head_slice          included by a top. Not a compile top.
+|     |---> vjet_test           triangles
+|     |---> vjet_card           test card
+|     |---> vjet_stress         stress picture
+|     |---> vjet_probe          orbit probe
 |     |---> graphtest           graph sample
 |     |---> vjet_acia           ACIA check
 |     |---> vjet_ftdi           FTDI check
@@ -239,21 +241,29 @@ src/lib_vjet
       |---> scene_triangles
       |---> scene_graph
       |---> scene_probe
-      |---> scene_cube
       |---> scene_card
+      |---> scene_stress
+      |---> scene_cube          mesh only. The head does not include it.
 ```
 
 ```
-ux_module
+ux_module.spin
 |
-|---> terminal_ftdi 
+|---> terminal_ftdi
 |---> keyboard_ps2
 |---> acia_rc2014
-|---> ddc_i2c
-|---> wmf_terminal_vga
-      |
-      |---> hires_text_vga
+|---> ddc_i2c                 text mode only
+|---> wmf_terminal_vga        the screen is the first 3200 bytes of list A
+|     |
+|     |---> hires_text_vga
+|---> VJET_vUXM_vga           graphics mode
+|---> VJET_vUXM_rendering
+|---> VJET_v01_displaylist
+|---> hexfont
+|---> scene/scene_card        included picture
 ```
+
+Three programs make one moving picture. The author writes one sealed list. The host transfers that list on the ACIA console. The Propeller presents it on the front porch. The names and the game loop are under Frames in `ARCHITECTURE_LIB_VJET.md`.
 
 ## Usage Notes
 

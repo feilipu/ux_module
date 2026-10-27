@@ -540,9 +540,11 @@ These checks stay open. The streamed-list trial does not close them. The mode fl
 
 The path from a tool file to the VGA picture is three pieces. Piece 1 writes a list blob. Piece 2 sends that blob. Piece 3 stores the payload and the porch shows it. A piece does not do the next piece's work.
 
+The architecture note uses three names for these pieces. Author the list is piece 1. Transfer the list is piece 2. Present the list is piece 3. The game loop is under Frames in `ARCHITECTURE_LIB_VJET.md`.
+
 ### Piece 1 — Cook
 
-The cooker runs on macOS, Linux, and Windows. It reads binary STL, OBJ, or a scene script. It writes one list blob. It does not open the ACIA. It does not emit `$1C` or `$07`.
+The cooker runs on macOS, Linux, and Windows. It reads ASCII STL, binary STL, or OBJ. It writes one list blob. It does not open the ACIA. It does not emit `$1C` or `$07`.
 
 The blob is little-endian.
 
@@ -622,9 +624,11 @@ The file suffix for one list blob is `.vjb`. One command writes one frame. A mov
 6. Match one known `mkscenes.py` frame before a new scene is trusted.
 
 ```
-python3 tools/vjet_cook.py --stl ship.stl --colour FFFF --font 17236 --out ship.vjb
-python3 tools/vjet_cook.py --obj ship.obj --colour FFFF --font 17236 --asm ship.asm
+python3 tools/vjet_cook.py --stl ship.stl --colour FFFF --font 16820 --out ship.vjb
+python3 tools/vjet_cook.py --obj ship.obj --colour FFFF --font 16820 --asm ship.asm
 ```
+
+Font 16820 belongs to the 17284-byte compile. EEPROM still holds the 17700-byte image, and that image uses font 17236. Pass the font of the image you will load.
 
 The cooker reads ASCII STL and binary STL. Sample files are `tools/vjet/triangle.stl`, `tools/vjet/triangle.obj`, `tools/vjet/square.obj`, `tools/vjet/quad.stl`, and `tools/vjet/quad.obj`. The builder matches `mkscenes.py` for a flat triangle, a general triangle, a horizontal line, a vertical line, and one convex quad.
 
@@ -671,7 +675,7 @@ zcc +cpm -clib=new -O2 --opt-code-speed=all -I../source -L../cpm/lib/newlib/sccz
 5. Call `vjet_key`. On `q`, call `vjet_graphics` and return to the CCP.
 6. Put the `.COM` on drive G with XMODEM. The pair stays a 6850 during that transfer.
 
-The 17700-byte image uses 17752 and 19752. The 18136-byte source uses 18188 and 20188. Load the image that matches the program. The font table in that source is at 17672.
+The 17284-byte compile uses font 16820 and lists 17364 and 21960. That compile is not in EEPROM. The 17700-byte image uses 17752 and 19752. The 18136-byte source uses 18188 and 20188, and its font table is at 17672. Load the image that matches the program.
 
 ### Show language and workflow
 
@@ -791,9 +795,9 @@ The mode flag is in the ACIA cog and powers up clear. Command bytes are not froz
 
 The shell, the yash functions, and the drive G: steps are under Test platform.
 
-The 8085 does not send STL or OBJ. It sends console bytes. BDOS function 2 writes one byte to the ACIA data port. Cog 0 reads that byte from the receive ring.
+The 8085 does not send STL or OBJ. It sends console bytes. `$FF` uses BDOS function 2. Every other byte uses function 6. Cog 0 reads each byte from the receive ring.
 
-Send the list first. Then send `$07`. The parser stores the list while text mode is still up. `$07` then calls `enterGraphics` with the FTDI arm. `startVectorjet` keeps a list that is already ready. The porch shows that list. The local scene stops. A second `$07` from the 8085, or Control-G on FTDI, returns to text.
+Send the list first. A good chain in text mode calls `enterGraphics` with the FTDI arm. The following `$07` falls inside `settleDrain` and is not a leave. `startVectorjet` keeps a list that is already ready. The porch shows that list. The test card stops. A later `$07` from the 8085, or Control-G on FTDI, returns to text.
 
 Do not send `$07` while `z80XmSess` or `hostXm` is set. `xget` and `XMODEM.COM` stay in text mode.
 

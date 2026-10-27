@@ -23,7 +23,7 @@ Human architecture note: `ARCHITECTURE_LIB_VJET.md`. The 2020 and 2021 objects k
 | `scene/scene_triangles.spin` | Spinning triangles. Beam-chase head. |
 | `scene/scene_graph.spin` | Graph picture. Beam-chase head only. |
 | `scene/scene_probe.spin` | Orbit probe. Beam-chase head. One box and nine triangles. |
-| `scene/scene_cube.spin` | Cube mesh. Equal colour bytes. Beam-chase head. |
+| `scene/scene_cube.spin` | Cube mesh. The head does not include it. |
 | `scene/scene_card.spin` | Test card. Beam-chase head. Polygons. |
 | `scene/scene_stress.spin` | Stress picture. Polygons, scaled text, clip, stacked spans. |
 | `demo/vjet_test.spin` | Original demo. Defines the triangle scene. Includes the beam-chase head. |
@@ -128,6 +128,8 @@ The text string stays outside the list. `text_inline` copies it in. The font sta
 Demos flip `dlist_ptr` each frame and rebuild the inactive buffer. Render cogs read `dlist_ptr` through `dlistPtrAdr` at frame start, when the VGA low word is 0. Wait until bit 16 rises (front porch), publish the pointer, then call `gl.start` on the other list. The front porch low word is 240. Vertical sync and the back porch use a low word of 0.
 
 ## Streamed lists
+
+The frame path is in `ARCHITECTURE_LIB_VJET.md` under Frames. The plan names are cook, send, and show. The note names are Author the list, Transfer the list, and Present the list.
 
 The ACIA receive ring is the pipe. Cog 0 is its only reader. A complete list is written into the display list that `dlist_ptr` does not name. `dlist1` and `dlist2` are that pair. Each list is `DLIST_SIZE` longs. The product lists are 1149 longs (4596 bytes). The first 3200 bytes of list A are the text screen. The stress bring-up used 500 longs (2000 bytes).
 

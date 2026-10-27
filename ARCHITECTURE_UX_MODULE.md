@@ -24,15 +24,22 @@ The board uses a 7.3728 MHz oscillator. Firmware sets `XTAL1 + PLL16X`, so the s
 
 ```
 ux_module.spin
-├── terminal_ftdi.spin      Full-duplex UART on P31/P30 (Prop Plug pins)
-├── keyboard_ps2.spin       PS/2 decode on P27 data / P26 clock
-├── acia_rc2014.spin        6850 register and bus timing emulator
-├── ddc_i2c.spin            DDC EDID / DDC/CI Spin cog (P29 SCL / P28 SDA, swapped)
-└── wmf_terminal_vga.spin   Screen buffer, colours, terminal print helpers
-    └── hires_text_vga.spin Dual-cog VGA text engine (Parallax / Chip Gracey)
+├── terminal_ftdi.spin           Full-duplex UART on P31/P30
+├── keyboard_ps2.spin            PS/2 on P27 data / P26 clock
+├── acia_rc2014.spin             6850 register and bus timing emulator
+├── ddc_i2c.spin                 DDC cog. Text mode only. P29 SCL / P28 SDA
+├── wmf_terminal_vga.spin        Terminal print. The screen is list A.
+│   └── hires_text_vga.spin      Dual-cog VGA text (Parallax / Chip Gracey)
+├── VJET_vUXM_vga.spin           Slice VGA cog. Graphics mode.
+├── VJET_vUXM_rendering.spin     Three render cogs
+├── VJET_v01_displaylist.spin    List builder for the test card
+├── hexfont.spin                 Font table
+└── scene/scene_card.spin        Included picture. Not a separate object.
 ```
 
-Compile and upload with `ux_module.spin` as the top object. Use `openspin -u -L src -L src/lib_vjet`. The VECTORJET library objects stay in `src/lib_vjet/`. The product top links them. Boot is the text console. A good sealed list starts graphics. Demo tops and the beam-chase head are in `src/lib_vjet/demo/`. Display lists are in `src/lib_vjet/scene/`.
+Compile and upload with `ux_module.spin` as the top object. Use `openspin -u -L src -L src/lib_vjet`. The VECTORJET objects stay in `src/lib_vjet/`. Boot is the text console. A good sealed list starts graphics. Demo tops and the beam-chase head are in `src/lib_vjet/demo/`. Display lists are in `src/lib_vjet/scene/`. The head does not include `scene/scene_cube.spin`.
+
+Text mode runs the objects above the VECTORJET block, plus `ddc_i2c`. Graphics stops text VGA, DDC, and the input that did not request entry. The frame path is in `ARCHITECTURE_LIB_VJET.md` under Frames.
 
 ## Pin roles (summary)
 
@@ -61,6 +68,15 @@ Typical production start order in `ux_module.main`:
 6. 1 ms Z80 `/RESET` pulse. Discard FTDI RX and restart the ACIA cog while held. A backplane `/RESET` button is sampled on P5 (1 ms debounce) and uses the same wipe. It does not reset the Propeller.
 7. Cog 0 remains in the main Spin loop (`kbdToZ80`, `termToZ80`, `readZ80`)
 
+Graphics mode uses all eight cogs:
+
+- Cog 0 stays in the pump (`pumpGraphics`)
+- ACIA cog
+- The input that requested graphics (FTDI or PS/2). The other input stops.
+- One slice VGA cog
+- Render cog 0, render cog 1, and render cog 2
+- One draw cog
+
 Text mode uses seven of eight cogs. I2C is a Spin cog, not PASM. It reads EDID and DDC/CI. It does not change VGA timing. The spare cog is unused. Only the main cog calls `acia.tx`. Main skips `kbdToZ80` during a Z80→host XMODEM session (`z80XmSess`, including the ACK gap) and a host→Z80 packet session (`hostXm <> OFF`). Trailer bytes are counted, not sniffed. DDC still runs while the 8085 is live. Do not hold `/RESET` across DDC.
 
 ## Data paths
@@ -71,6 +87,8 @@ Keyboard  →  kbdToZ80  ─┐
 FTDI RX   →  termToZ80 ─┘
 Z80 OUT data  →  ACIA receive FIFO  →  readZ80  →  VGA + FTDI TX
 ```
+
+A sealed list uses the same ACIA receive FIFO. Cog 0 copies `$1C`, the length, and the payload into the idle display list. That path is under Frames in `ARCHITECTURE_LIB_VJET.md`.
 
 `readZ80` is a non-blocking parser. It pumps bytes already in the FIFO. LF still drains when FTDI TX is full. Other bytes wait for FTDI room. If the next byte will not fit, `readZ80` holds ACIA `TDRE`. There is no XON/XOFF on FTDI. The FTDI RX cog drops inbound bytes when its FIFO is full. The 6-pin header does not wire CTS or RTS to the Propeller, so the host cannot be paused in hardware.
 
@@ -121,7 +139,7 @@ The bring-up keeps the input that requested graphics and stops the other input. 
 
 ## VGA text path
 
-`wmf_terminal_vga` owns the character buffer, per-row colours, and cursor bytes. `hires_text_vga` reads those Hub structures and generates VGA with two cogs. Resolution and character grid depend on which timing `CON` block is active in `hires_text_vga.spin` (for example 640×480 with 80×40 characters).
+`wmf_terminal_vga` prints into caller Hub. The product passes `@dlist1`. Those 3200 bytes are the 80 by 40 screen and the start of list A. Row colours and the cursor bytes stay in `wmf_terminal_vga`. `hires_text_vga` reads those Hub structures and generates VGA with two cogs. Resolution and character grid depend on which timing `CON` block is active in `hires_text_vga.spin` (for example 640×480 with 80×40 characters).
 
 The active block is 640×480 at about 70 Hz (VGA 60 Hz 800×525 totals, `pr=28`). EDID preferred timing is reported at boot. It does not retune this table. DDC/CI does not set resolution.
 
@@ -129,7 +147,7 @@ Cursors are six bytes: text X/Y/mode and mouse X/Y/mode. The UX Module uses the 
 
 ## Relation to VECTORJET
 
-The product top links `src/lib_vjet`. Graphics stops text VGA before the eight-line scan starts. Pins P16–P23 have one owner. Demo tops use `-L src -L src/lib_vjet`. Those tops and the beam-chase head are in `src/lib_vjet/demo/`. Display lists are in `src/lib_vjet/scene/`. See `ARCHITECTURE_LIB_VJET.md`.
+The product top links `src/lib_vjet`. Graphics stops text VGA before the eight-line scan starts. Pins P16–P23 have one owner. Demo tops use `-L src -L src/lib_vjet`. Those tops and the beam-chase head are in `src/lib_vjet/demo/`. Display lists are in `src/lib_vjet/scene/`. The author, the transfer, and the present path are under Frames in `ARCHITECTURE_LIB_VJET.md`.
 
 The product firmware writes an eight-line slice ahead of the scan. The framebuffer sources were removed. Git history keeps them.
 

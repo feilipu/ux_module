@@ -18,9 +18,14 @@ ux_module.spin                 ' top object — compile/upload this
 ├── terminal_ftdi.spin         ' FullDuplex serial on P31/P30
 ├── keyboard_ps2.spin          ' PS/2 on P27/P26
 ├── acia_rc2014.spin           ' MC6850 bus emulator (PASM cog)
-├── ddc_i2c.spin               ' DDC EDID / DDC/CI Spin cog (P29 SCL, P28 SDA)
-└── wmf_terminal_vga.spin      ' terminal services. The screen is list A.
-    └── hires_text_vga.spin    ' dual-cog VGA text (Chip Gracey)
+├── ddc_i2c.spin               ' DDC cog. Text mode only. P29 SCL, P28 SDA
+├── wmf_terminal_vga.spin      ' terminal services. The screen is list A.
+│   └── hires_text_vga.spin    ' dual-cog VGA text (Chip Gracey)
+├── VJET_vUXM_vga.spin         ' slice VGA cog. Graphics mode.
+├── VJET_vUXM_rendering.spin   ' three render cogs
+├── VJET_v01_displaylist.spin  ' list builder for the test card
+├── hexfont.spin               ' font table
+└── scene/scene_card.spin      ' included picture. Not a separate object.
 ```
 
 Boot is the text console. A good sealed list, FTDI Control-G, or Ctrl+Alt+G starts VECTORJET. Graphics stops text VGA, DDC, and the input that did not request it. The objects are `VJET_vUXM_vga.spin`, `VJET_vUXM_rendering.spin`, `VJET_v01_displaylist.spin`, and `hexfont.spin`. Compile with `openspin -u` and `-L src/lib_vjet`. Demos keep their own tops under `src/lib_vjet/demo/`. Display lists are in `src/lib_vjet/scene/`.

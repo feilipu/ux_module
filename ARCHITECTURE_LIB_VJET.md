@@ -24,12 +24,13 @@ The product top `ux_module.spin` links this library. Boot is the text console. A
 | `scene/scene_triangles.spin` | Spinning triangles. Beam-chase head. |
 | `scene/scene_graph.spin` | Graph picture. Beam-chase head only. |
 | `scene/scene_probe.spin` | Orbit probe. Beam-chase head. |
-| `scene/scene_cube.spin` | Cube mesh. Equal colour bytes. Beam-chase head. |
+| `scene/scene_cube.spin` | Cube mesh. The head does not include it. |
 | `scene/scene_card.spin` | Test card. Beam-chase head. Polygons. |
 | `scene/scene_stress.spin` | Stress picture. Polygons, scaled text, clip, stacked spans. |
 | `demo/vjet_test.spin` | Original demo. Beam chase. Spinning triangles. |
 | `demo/vjet_acia.spin` | Beam-chase triangles plus the ACIA cog. |
 | `demo/vjet_ftdi.spin` | Beam-chase triangles plus the ACIA cog and the FTDI cog. |
+| `demo/vjet_probe.spin` | Beam-chase orbit probe. |
 | `demo/vjet_spin.spin` | Beam-chase triangles plus one extra Spin cog. The picture tears. |
 | `demo/graphtest.spin` | Graph drawing sample. |
 | `demo/vjet_card.spin` | Beam-chase test card. |
@@ -37,23 +38,30 @@ The product top `ux_module.spin` links this library. Boot is the text console. A
 
 ## Runtime pipeline
 
+The product top has two picture sources. A sealed list from the host replaces the local test card. With no sealed list, the draw cog builds `scene/scene_card.spin`.
+
 ```
-Application (Spin top object)
-    │
-    │  build display list into back buffer
-    │  publish pointer in dlist_ptr
-    │
-    ├───────────────► Render cog 0 ──┐
-    ├───────────────► Render cog 1 ──┼──► shared scanline buffer (Hub)
-    └───────────────► Render cog N ──┘              │
-                                                    ▼
-                                            VGA cog (WAITVID)
-                                                    │
-                                                    ▼
-                                            pins P16–P23 (group 2)
+Host console ($1C, length, payload)
+        |
+        v
+Cog 0 stores the payload in the idle list
+        |
+        | good chain
+        v
+Draw cog publishes that list on the front porch
+        |
+        +-------> Render cog 0 --+
+        +-------> Render cog 1 --+--> eight line slots (Hub)
+        +-------> Render cog 2 --+
+                                 |
+                                 v
+                           VGA cog (WAITVID)
+                                 |
+                                 v
+                           pins P16–P23 (group 2)
 ```
 
-`demo/vjet_test.spin` starts three render cogs and one VGA cog. It waits for vertical blank through `vga_status`, publishes the completed list, waits for vsync so the render cogs copy the pointer, then rebuilds the other list.
+`demo/vjet_test.spin` has no host list. Cog 0 builds one list and then builds the other. It starts three render cogs and one VGA cog. It waits for the front porch through `vga_status`, publishes the finished list, and lets the render cogs copy that pointer at the next line 0.
 
 ## Scanline handshake (tear / flicker)
 
@@ -88,9 +96,13 @@ Rendering constants in `VJET_vUXM_rendering.spin`:
 - Width: 256 pixels
 - Height: 240 scanlines
 
-The VGA cog repeats each logical line (tile counter) so the analogue timing fills a taller raster. The Hub scan buffer is `linebuffers[(WIDTH*LINE_BUFFERS)/4]` longs (eight line slots).
+The VGA cog repeats each logical line so the analogue timing fills a taller raster. The Hub scan buffer is eight line slots, 2048 bytes.
 
-Display lists are Hub longs. The beam-chase demos use two lists of 900 longs. That size does not fit beside the UX text buffers. The framebuffer tops use two lists of 300 longs. Each of those lists is 1200 bytes.
+The product top keeps two lists of 1149 longs. Each list is 4596 bytes. The text screen is the first 3200 bytes of list A. List B stays next to list A.
+
+`demo/head_slice.spin` sets the demo list size. Triangles use 900 longs. The graph and the stress picture use 500. The card uses 400. The orbit probe uses 160.
+
+The removed framebuffer tops used two lists of 300 longs. That record is in the next section.
 
 ## Framebuffer
 
@@ -124,9 +136,13 @@ The live bring-up uses that slice. The framebuffer demo was removed.
 
 ## Hub-paint and tear — 20 Oct 2026
 
-The live bring-up paints Hub slots in place. The EEPROM image at the 20 Oct 2026 clean point is 17700 bytes. The font table is at 17236. The lists are at 17752 and 19752. A sealed list from CP/M replaces the local stress picture. A list that arrives in text mode is stored at `dlist1`. The copy does not add a Hub base. The handoff is in `3D_PROCESS_LIB_VJET.md`. The shell steps are in `3D_WORKPLAN_LIB_VJET.md`.
+The live picture paints Hub slots in place. The tear bands from the earlier loads are gone. The handoff is in `3D_PROCESS_LIB_VJET.md`. The shell steps are in `3D_WORKPLAN_LIB_VJET.md`.
 
-The tear bands are gone. The text painter clamps glyph writes to the slot. `:linewait` restarts a frame only after a non-zero published line. `restoreText` waits 250 ms after VECTORJET stops. Pace, a Hub edge cache, a cog-RAM `linebuf`, and a Hub scratch copy all failed. Those loads also broke keys, doubled line feeds, or blocked the return to text. The process file lists each load. Do not restore them.
+The 27 Oct 2026 compile is 17284 bytes. It is not in EEPROM. The font table is at 16820. The lists are at 17364 and 21960. Each list is 4596 bytes. A sealed list replaces the test card. A text-mode list is stored at `dlist1`. The copy does not add a Hub base.
+
+EEPROM still holds the 20 Oct clean point until the next load. That image is 17700 bytes. The font table is at 17236. The lists are at 17752 and 19752. Each of those lists is 2000 bytes. A host program must use the pair that matches the image in the chip.
+
+The text painter clamps glyph writes to the slot. `:linewait` restarts a frame only after a non-zero published line. `restoreText` waits 250 ms after VECTORJET stops. Pace, a Hub edge cache, a cog-RAM `linebuf`, and a Hub scratch copy all failed. Those loads also broke keys, doubled line feeds, or blocked the return to text. The process file lists each load. Do not restore them.
 
 ## Display list model
 
@@ -186,23 +202,147 @@ Pins P16–P23 have one owner. `hires_text_vga` (two cogs, 640×480 cells) and `
 | Text | 2 (`hires_text_vga`) + 1 I2C DDC | Spin, FTDI, ACIA, PS/2 (4) | 1 |
 | Graphics | 1 slice VGA + 3 render + 1 draw | Spin, ACIA, and the input that requested graphics. The other input stops. | 0 |
 
-The product firmware does not call `enterGraphics`. When graphics work resumes, stop the text pair and `i2c.stopCog` before VECTORJET VGA. Stop VECTORJET, then `wmf.init` and `i2c.startCog`. After `cogstop`, those cogs leave the pins. Then start the other driver.
+`enterGraphics` stops text VGA, DDC, and the input that did not request graphics. It then starts the slice VGA cog, three render cogs, and the draw cog. `restoreText` stops VECTORJET, then starts text VGA and DDC. After `cogstop`, those cogs leave the pins.
 
-The final graphics build keeps the PS/2 keyboard. Graphics has no free cog. The keyboard shares the FTDI cog. Detail is in `ARCHITECTURE_UX_MODULE.md`. The shared driver is not in the tree. The bring-up keeps the input that requested graphics and stops the other input.
+Graphics runs one input cog. Control-G keeps the FTDI cog. The PS/2 chord keeps the keyboard cog. A shared keyboard and FTDI driver is not in the tree. Detail is in `ARCHITECTURE_UX_MODULE.md`.
 
-Do **not** build the display list on Cog 0 if the ACIA pump must stay live. Cog 0 is the only `acia.tx` writer. `vjet_test` blocks Cog 0 in `Vblank` + `draw`. That starves keyboard, FTDI, and Z80 I/O.
+Cog 0 stays on the ACIA pump. Cog 0 is the only `acia.tx` writer. The draw cog builds the test card, or it publishes a sealed list. `vjet_test` blocks Cog 0 in the draw loop. That demo has no ACIA pump.
 
-Recommended product split:
+The product split is:
 
-1. **Text mode** — current `ux_module` path. Z80 console on VGA text.
-2. **Graphics mode** — stop text VGA and DDC. Start the eight-line VGA cog and three render cogs. Start a second Spin cog for the display list. Cog 0 keeps the ACIA pump. Keep PS/2 on the FTDI cog. That uses all eight cogs.
-3. **Standalone demo** — `vjet_test` / `graphtest` as now (no ACIA). Three render cogs on Cog 0 as the draw loop.
+1. **Text mode.** The Z80 console is on VGA text. Boot stays in this mode.
+2. **Graphics mode.** A good sealed list, `$07`, FTDI Control-G, or Ctrl+Alt+G starts it. The request input stays. This mode uses all eight cogs.
+3. **Standalone demo.** `vjet_test` and `graphtest` have no ACIA. Cog 0 is the draw loop.
 
-The product top starts graphics from a good sealed list, from `$07`, or from Ctrl+Alt+G. `PORT_VJET` remains a reserved ACIA base. The sealed list uses the text console. Boot is that console.
+`PORT_VJET` stays a reserved base at `acia#PORT_C0`. The sealed list uses the text console.
 
-Hub cost for the beam chase is the scan buffer and the lists. Eight line slots are 2 KB. Two lists of 900 longs are about 7 KB. The framebuffer store is the larger cost. Two bitmaps and two palettes are 20480 bytes. The two 300-long lists are 2400 bytes.
+Hub cost for the product picture is the scan buffer and the two lists. Eight line slots are 2048 bytes. The two lists are 9192 bytes. The text screen sits inside list A.
 
-`PORT_VJET = acia#PORT_C0` is reserved for a later Z80 command port. There is no I/O protocol in-tree yet. A first protocol can be: command byte, then words that Spin copies into the back list, then a flip at vblank.
+## Frames
+
+Three programs make one picture. The plan names are cook, send, and show. This note uses the work each program does.
+
+```
+STL or OBJ
+    |
+    v
+Author the list          tools/vjet_cook.py writes one .vjb blob
+    |
+    v
+Transfer the list        the host adds the Hub address and writes $1C
+    |
+    v
+Present the list         Cog 0 stores the payload. The porch publishes it.
+    |
+    v
+Render cogs and VGA cog  the published list stays until the next porch
+```
+
+A program does its own work. The author does not open the ACIA. The host does not build a slope. The Propeller does not read STL or OBJ.
+
+### Author the list
+
+`tools/vjet_cook.py` writes one sealed display list from an STL file or an OBJ file. Python 3 and the standard library are enough. The script runs on macOS, Linux, and Windows.
+
+The view is orthographic. Model Y points up. Screen Y points down. Low Z is drawn first. The script does not weld vertices.
+
+The file suffix is `.vjb`. One command writes one picture. `--asm` writes `DEFB` and `DEFW`. `--inc` writes a binary include of the `--out` file.
+
+The blob is little-endian.
+
+| Field | Bytes | Meaning |
+|-------|------:|---------|
+| Payload length | 2 | Display-list bytes. This length skips the header. |
+| Reloc count | 2 | Words the host must fix. |
+| Font hub | 2 | Font address. Zero when the list has no text. |
+| Payload | N | The display list. A link is an offset into this payload. |
+| Reloc offsets | 2 each | Byte offset of one word in the payload. |
+
+The last link stays 0. A text shape stores the font hub as an absolute word. A string pointer is an offset when the string sits in the payload.
+
+The script refuses a chain it cannot walk. A coordinate that is not finite is an error. The script refuses a payload above 2000 bytes. Each product list holds 4596 bytes. Keep the script limit until a larger payload is tested.
+
+Pass `--font 16820` for the 17284-byte compile. EEPROM still uses 17236 until the next load. A list with no text stores font 0. The font argument is then unused.
+
+```sh
+python3 tools/vjet_cook.py --check
+python3 tools/vjet_cook.py --stl tools/vjet/triangle.stl --colour FFFF --font 16820 --out triangle.vjb
+python3 tools/vjet_cook.py --obj tools/vjet/square.obj --colour C0C0 --font 16820 --asm square.asm
+```
+
+### Transfer the list
+
+The host library is `vjet` in z88dk-libraries. One C89 source builds the 8085 library and the Z80 library.
+
+`vjet_send_list(blob, dest, size)` adds `dest` to each reloc word. It then writes `$1C`, the payload length, and the payload. A bad link returns before the first byte. `size` is the full blob length.
+
+`dest` is the Hub address of `dlist1` or `dlist2`. The same payload can fill either list. The first picture uses `dlist1`.
+
+On the 6850 path, `$FF` uses BDOS function 2. Every other byte uses function 6. Function 2 expands TAB `$09`. A list can contain `$09`. Those bytes use function 6.
+
+`vjet_graphics` writes one `$07`. A good list already starts graphics. A `$07` in the next 250 ms is not a return to text. A later `$07` returns to text. Pictures after the first do not write `$07`.
+
+`vjet_load` reads one CP/M file into RAM. A file above the buffer returns -1. `vjet_font` sets the image font. A font of 0 skips the check.
+
+| Image | Where it runs | Font | List A | List B | List bytes |
+|-------|---------------|-----:|-------:|-------:|-----------:|
+| 17284-byte compile | not in EEPROM | 16820 | 17364 | 21960 | 4596 |
+| 17700-byte clean point | EEPROM until the next load | 17236 | 17752 | 19752 | 2000 |
+
+A host program must use the row for the image in the chip. `G:SPINTRI`, `G:ORBIT`, `G:TVTEST`, `G:STRESS`, and `G:TESTART` use the 17700-byte row.
+
+### Present the list
+
+`src/ux_module.spin` stores the list and the porch shows it. Cog 0 reads the ACIA ring. The mark is `$1C`. The next word is the payload length. Cog 0 copies that many bytes into the idle list.
+
+The copy stores the bytes as they arrive. The host has already fixed the reloc words. A count of 0 is ignored. The parser discards a count above 4596 bytes. It leaves that payload off the screen.
+
+`listChainOk` walks the links. The sync byte must be `$FF`. A box is at least 16 bytes. Text is at least 20 bytes. A trap stack is at least 36 bytes. The trap heights cover the shape.
+
+The walk stops at 250 shapes. The porch leaves a bad chain unpublished. Text mode then draws the banner again. The list and the console share Hub.
+
+A good chain sets `listReady`. In text mode that call starts graphics. The draw cog publishes the list on the front porch. The local test card stops. Three render cogs scan the published list on every frame.
+
+Text mode stores the list at `dlist1`. Graphics stores the list that `dlist_ptr` does not name. A return to text uses `dlist1` again when no list is waiting.
+
+`gfx_flag` stays clear, so the pair stays a 6850. Control-G on FTDI and Ctrl+Alt+G use the same switch. A `$07` with no list shows the test card. The title on that card is `UX Module`.
+
+### A stream of pictures
+
+A game sends one sealed list for each new picture. The previous picture stays on the screen until the porch publishes the next list. The VGA frame is about 60 Hz. The picture changes when a full list arrives.
+
+```
+picture N                         picture N+1
+    |                                 |
+    v                                 v
+author one sealed list            author one sealed list
+    |                                 |
+    v                                 v
+transfer into the idle list       transfer into the idle list
+    |                                 |
+    v                                 v
+porch publishes that list         porch publishes that list
+    |
+    +---- the render cogs keep the published list on every frame
+```
+
+1. Author the first list. For the 17284-byte compile, pass font 16820.
+2. Load the program and the `.vjb` file with XMODEM. The console stays a 6850 during that transfer.
+3. Call `vjet_send_list` with the address of `dlist1`.
+4. Wait until the porch shows that list. The test card stops after that publish.
+5. Author or select the next pose.
+6. Call `vjet_send_list` with the address of `dlist2`. The reloc words must name `dlist2`.
+7. On the next front porch the draw cog publishes `dlist2`. `dlist1` is then free.
+8. Alternate the two addresses. Send the next list only after the previous publish.
+9. Write one `$07` to return to text. The next list uses `dlist1` again.
+
+Cog 0 copies 16 bytes while the blanking bit is set. On a visible line it copies 2 bytes and then waits 1 ms. The copy writes the idle list. The render cogs keep the published list, so the shown picture stays whole during the transfer.
+
+Text mode discards a second `$1C` that arrives before the publish. In graphics that mark waits at most 250 ms. A gap of 250 ms with no list byte returns the parser toward idle. Text mode draws the banner again when the abandoned state was the payload.
+
+One list of 2000 bytes holds 55 flat triangles, 41 general triangles, or 125 boxes. One list of 4596 bytes holds 127 flat triangles, 95 general triangles, or 287 boxes. The author stops at 2000 bytes. A flat triangle is 36 bytes. A general triangle is 48 bytes. A box is 16 bytes. A text shape is 20 bytes.
+
+The 8085 sends bytes that are already a sealed list. A mesh that stays in 8085 RAM, and a screen record that the draw cog slopes, are later work in `3D_WORKPLAN_LIB_VJET.md`.
 
 ## Extension points
 
@@ -210,7 +350,7 @@ Useful work while keeping the architecture intact:
 
 1. The draw cog is in `src/ux_module.spin`. The live picture is the eight-line scan. The plan is `3D_WORKPLAN_LIB_VJET.md`. The repair record is `3D_PROCESS_LIB_VJET.md`.
 2. The product lists hold the test card. Each list is 1149 longs. The text screen is the first 3200 bytes of list A. Do not restore the framebuffer bitmap.
-3. Drive the back list from Z80 I/O at `PORT_VJET` (needs a command protocol)
+3. A command port at `PORT_VJET` is still open. The console path in Frames already stores a sealed list.
 4. Tune render cog count against available cogs and fill rate
 5. Keep display-list field layouts documented in one place (builder comments ↔ renderer reads)
 6. Link `hexfont.spin` only when text shapes are required. The product `main` keeps the `font.get` call so the font stays in the image.
