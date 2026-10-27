@@ -48,7 +48,7 @@ Directory name in older notes may say `doc`; this repo uses **`docs/`**.
 1. **Propeller 1 only (P8X32A).** Different ISA from Propeller 2. No PASM2/Spin2, smart pins, `WAITX`, `DRVL`, `##imm`, `HUBSET`, Streamer, or CORDIC (`hw-propeller`, `lang-pasm`, `lang-spin`). Skill doc index: `.agents/skills/lang-pasm/references/p1-sources.md`.
 2. **Pin `P2` ≠ Propeller 2.** In board/firmware text, `P2` means I/O pin 2 unless the words “Propeller 2” appear.
 3. **Prose in STE.** New or rewritten documentation, architecture notes, PR text, error strings, and non-code comments follow **`style-ste-writing`** (STE-flavored unless the user asks for strict). Do not apply STE to code, identifiers, or command syntax.
-4. **Top object for upload** is `src/ux_module.spin` for the product firmware. lib_vjet demos use their own top objects under `src/lib_vjet/demo/`. Tools: `tool-propeller`.
+4. **Top object for upload** is `src/ux_module.spin` for the product firmware. Default compile is `openspin -u -L src -L src/lib_vjet -b -o build/ux_module.binary src/ux_module.spin`. Boot stays the text console. A good sealed list starts graphics. lib_vjet demos use their own top objects under `src/lib_vjet/demo/`. Tools: `tool-propeller`.
 5. **Clock:** `_clkmode = XTAL1 + PLL16X`, `_xinfreq = 7_372_800` unless the task is deliberately retuning the oscillator (`hw-propeller`, `module-ux`).
 6. **Cog budget is scarce.** Count running cogs before `cognew`. Full UX text path uses most of the eight cogs; VECTORJET needs its own set (`module-ux`, `library-vjet`).
 7. **Pin constants** live in the owning module and are imported with `object#CONST` (`hw-ux-pcb`).

@@ -10,12 +10,12 @@ Two consoles: `ux-screen` is SparkFun FTDI on the UX Module (DTR is `/RES`, rela
 
 ## Product firmware
 
-Top object: `src/ux_module.spin`. Search path: `-L src` only.
+Top object: `src/ux_module.spin`. Search path: `-L src -L src/lib_vjet`. The compile needs `-u`.
 
 ```sh
 cd /path/to/ux_module
 mkdir -p build
-openspin -L src -b -o build/ux_module.binary src/ux_module.spin
+openspin -u -L src -L src/lib_vjet -b -o build/ux_module.binary src/ux_module.spin
 tools/ux-load.sh
 tools/ux-screen.sh
 ```
@@ -58,7 +58,7 @@ python3 tools/vjet_cook.py --obj tools/vjet/square.obj --colour C0C0 --asm squar
 
 `--asm` writes `DEFB` and `DEFW`. `--inc` writes a binary include of the `--out` file. The font value is accepted. A list with no text stores font 0.
 
-The send library is `vjet/` in z88dk-libraries. It adds the destination Hub address, then writes `$1C`, the length, and the payload. A bad link returns before the first byte. The bring-up stores a text-mode list at `dlist1`. It does not add a Hub base. A bad chain stays unpublished.
+The send library is `vjet/` in z88dk-libraries. It adds the destination Hub address, then writes `$1C`, the length, and the payload. A bad link returns before the first byte. The product top stores a text-mode list at `dlist1`. It does not add a Hub base. A good list starts graphics. A bad chain stays unpublished.
 
 ## Console keys (`tools/ux-screen.sh`)
 

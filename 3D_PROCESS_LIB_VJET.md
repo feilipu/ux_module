@@ -2,7 +2,7 @@
 
 This file records the repairs from 11 Sep 2026 through 20 Oct 2026. The forward plan is `3D_WORKPLAN_LIB_VJET.md`.
 
-Compile tops now live in `src/lib_vjet/demo/`. Display lists live in `src/lib_vjet/scene/`. Names in this record are the files from those dates. The framebuffer sources were removed. Git history keeps them. The live path is the eight-line scan.
+Compile tops now live in `src/lib_vjet/demo/`. Display lists live in `src/lib_vjet/scene/`. Names in this record are the files from those dates. The framebuffer sources were removed. Git history keeps them. The live path is the eight-line scan. On 27 Oct 2026 the product top is `src/ux_module.spin`.
 
 The beam-chase bring-up did not hold a stable picture. The framebuffer demo did. That file was `demo/vjet_fb.spin`. The user accepted that picture on 17 Oct 2026. The eight-line slice later ran the spinning triangles. A remaining tear is open.
 
@@ -295,7 +295,7 @@ Option A cleared the tear bands. The picture was clean. Control-G printed `Text 
 
 ## Handoff — 20 Oct 2026
 
-The live EEPROM image is `src/ux_module_vjet.spin`. The file is 17700 bytes. The clock is 117964800 Hz. The mode byte is `$6F`. Variable space starts at 17700. The font table is at 17236. The two lists are at 17752 and 19752. Each list is 500 longs.
+The EEPROM image from this handoff was built from `src/ux_module_vjet.spin`. That source later moved into `src/ux_module.spin`. The image is 17700 bytes. The clock is 117964800 Hz. The mode byte is `$6F`. Variable space starts at 17700. The font table is at 17236. The two lists are at 17752 and 19752. Each list is 500 longs.
 
 Cog 0 drains the 8085 while graphics is on. Blanking takes up to 16 bytes. A visible pass takes two bytes, then sleeps 1 ms. A tight loop on the visible lines tears the picture. A drain that runs only on the front porch fills the receive ring. A full ring drops a byte and holds `/WAIT`. The draw cog sleeps between porch tests.
 
@@ -310,4 +310,4 @@ Each scene program sends one sealed list, then `$07`, then the later frames. A h
 | `TVTEST.COM` | 16 | 25406 | 199 | On G:. Accepted after the settle drain. Each stored pose is 22.5 degrees. Not run here yet. |
 | `STRESS.COM` | 24 | 41448 | 324 | On G:. Started once. The picture is not accepted. Motion is one BDOS call per byte. |
 
-`G:TESTART.COM` still sends one white box. Do not run a COM built for an older font address or list address. Product `src/ux_module.spin` stays text only. Steps 5 and 8 stay open. The next pass runs `SPINTRI`, then `ORBIT`, then `TVTEST`, on this image. The per-byte pace stays for a later pass.
+`G:TESTART.COM` still sends one white box. Do not run a COM built for an older font address or list address. The 27 Oct source is `src/ux_module.spin`. That compile is 18272 bytes and is not this EEPROM image. Step 5 source is in the product top. The bench checks are not run. Step 8 stays open. The next pass runs `SPINTRI`, then `ORBIT`, then `TVTEST`, on the image that matches the COM. The per-byte pace stays for a later pass.

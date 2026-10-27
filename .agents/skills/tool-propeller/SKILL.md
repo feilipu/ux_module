@@ -86,13 +86,13 @@ Copy from [`tools/README.md`](../../../tools/README.md). Top object must be the 
 
 ```bash
 mkdir -p build
-openspin -L src -b -o build/ux_module.binary src/ux_module.spin
+openspin -u -L src -L src/lib_vjet -b -o build/ux_module.binary src/ux_module.spin
 ```
 
-Product search path is `-L src` only. EEPROM-sized image file (still load with `proploader -e` or `tools/ux-load.sh`):
+The product compile needs `-u` and both search paths. EEPROM-sized image file (still load with `proploader -e` or `tools/ux-load.sh`):
 
 ```bash
-openspin -L src -e -o build/ux_module.eeprom src/ux_module.spin
+openspin -u -L src -L src/lib_vjet -e -o build/ux_module.eeprom src/ux_module.spin
 ```
 
 Useful flags: `-L`/`-I` object search path, `-b` binary, `-e` eeprom file, `-v` verbose, `-u` unused-method elimination.

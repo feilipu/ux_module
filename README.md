@@ -183,12 +183,12 @@ Copy this block. Quit GNU `screen` first (`C-a k`). The serial port must be free
 
 ```sh
 mkdir -p build
-openspin -L src -b -o build/ux_module.binary src/ux_module.spin
+openspin -u -L src -L src/lib_vjet -b -o build/ux_module.binary src/ux_module.spin
 tools/ux-load.sh
 tools/ux-screen.sh
 ```
 
-Top object is `src/ux_module.spin`. Product search path is `-L src` only. Add `-L src/lib_vjet` only for a VECTORJET demo top. A VECTORJET top is in `src/lib_vjet/demo/`.
+Top object is `src/ux_module.spin`. The product compile needs `-u`, `-L src`, and `-L src/lib_vjet`. A VECTORJET demo top is in `src/lib_vjet/demo/` and uses the same search path.
 
 `tools/ux-load.sh` writes EEPROM then runs. It uses DTR reset (SparkFun FTDI Basic pin 6). It refuses USB CDC (`/dev/cu.usbmodem*`). CDC is console only.
 
@@ -216,7 +216,7 @@ The only (at this stage) special PASM functions written for the UX Module are in
 
 `ddc_i2c.spin` also runs a Spin cog after boot. It talks to the monitor on the VGA DDC pins (swapped vs the boot EEPROM). It reads EDID at `0x50` and, if the display answers, DDC/CI at `0x37`. It does not change VGA timing.
 
-VECTORJET (`src/lib_vjet`) is not linked from the product top. Boot is text VGA only. The beam-chase demo is `src/lib_vjet/demo/vjet_test.spin`. The bring-up top is `src/ux_module_vjet.spin`. The live picture is the eight-line scan. Failed tear repairs are in `3D_PROCESS_LIB_VJET.md`. The framebuffer sources were removed. Git history keeps them.
+VECTORJET (`src/lib_vjet`) is linked from the product top. Boot is the text console. A good sealed list starts graphics. The beam-chase demo is `src/lib_vjet/demo/vjet_test.spin`. The live picture is the eight-line scan. Failed tear repairs are in `3D_PROCESS_LIB_VJET.md`. The framebuffer sources were removed. Git history keeps them.
 
 The library objects stay in `src/lib_vjet/`. Compile tops and the beam-chase head are in `src/lib_vjet/demo/`. Display lists are in `src/lib_vjet/scene/`. A top defines one scene and includes the head. The head includes `scene/scene_*.spin`. Compile with `-L src -L src/lib_vjet`.
 
@@ -283,9 +283,7 @@ The UX Module emulates an ACIA interface on base port `0x80`, as per the standar
 
 The UX Module can be alternately located on ports `0x40`, `0x41` or on `0xC0`, `0xC1`.
 
-It will (enhancement plan) be possible to implement a graphics interface (VJET library). It is likely that the graphics interface will use the `0xC0` and `0xC1` ports, and may be configured by settings on other ports.
-
-`PORT_VJET` in `ux_module.spin` is that reserved `0xC0` base. There is no Z80 command protocol in the tree yet. Boot remains the ACIA text console.
+The sealed-list path uses the ACIA console. The mark is `$1C`. `$07` switches graphics. Ports `0xC0` and `0xC1` stay reserved. `PORT_VJET` in `ux_module.spin` is that base. Boot remains the ACIA text console.
 
 ### Video VGA
 

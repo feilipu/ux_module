@@ -10,7 +10,7 @@ VECTORJET builds a display list in Spin, renders scanlines with one or more PASM
 
 The 2020 and 2021 objects keep the IRQsome mark. A new file uses (C)2026 feilipu. A file derived from an IRQsome object states that source and uses 2026. `hexfont.spin` is the Aaron Amar font.
 
-The product top `ux_module.spin` does not link this library. The library objects stay in `src/lib_vjet/`. Compile tops and the beam-chase head are in `src/lib_vjet/demo/`. Display lists are in `src/lib_vjet/scene/`. The beam-chase demo is `src/lib_vjet/demo/vjet_test.spin`. Compile a demo with `-L src -L src/lib_vjet`. The framebuffer sources were removed. Git history keeps them.
+The product top `ux_module.spin` links this library. Boot is the text console. A good sealed list starts graphics. The library objects stay in `src/lib_vjet/`. Compile tops and the beam-chase head are in `src/lib_vjet/demo/`. Display lists are in `src/lib_vjet/scene/`. The beam-chase demo is `src/lib_vjet/demo/vjet_test.spin`. Compile a demo with `-L src -L src/lib_vjet`. The framebuffer sources were removed. Git history keeps them.
 
 ## Files
 
@@ -198,7 +198,7 @@ Recommended product split:
 2. **Graphics mode** — stop text VGA and DDC. Start the eight-line VGA cog and three render cogs. Start a second Spin cog for the display list. Cog 0 keeps the ACIA pump. Keep PS/2 on the FTDI cog. That uses all eight cogs.
 3. **Standalone demo** — `vjet_test` / `graphtest` as now (no ACIA). Three render cogs on Cog 0 as the draw loop.
 
-The product top has no graphics hooks. `PORT_VJET` remains a reserved ACIA base. Serial tests use the text boot path.
+The product top starts graphics from a good sealed list, from `$07`, or from Ctrl+Alt+G. `PORT_VJET` remains a reserved ACIA base. The sealed list uses the text console. Boot is that console.
 
 Hub cost for the beam chase is the scan buffer and the lists. Eight line slots are 2 KB. Two lists of 900 longs are about 7 KB. The framebuffer store is the larger cost. Two bitmaps and two palettes are 20480 bytes. The two 300-long lists are 2400 bytes.
 
@@ -208,12 +208,12 @@ Hub cost for the beam chase is the scan buffer and the lists. Eight line slots a
 
 Useful work while keeping the architecture intact:
 
-1. The bring-up draw cog is already in `src/ux_module_vjet.spin`. The live picture is the eight-line scan. The plan is `3D_WORKPLAN_LIB_VJET.md`. The repair record is `3D_PROCESS_LIB_VJET.md`.
+1. The draw cog is in `src/ux_module.spin`. The live picture is the eight-line scan. The plan is `3D_WORKPLAN_LIB_VJET.md`. The repair record is `3D_PROCESS_LIB_VJET.md`.
 2. The bring-up lists hold the stress picture. Two 900-long lists overflow that image. Do not restore the framebuffer bitmap.
 3. Drive the back list from Z80 I/O at `PORT_VJET` (needs a command protocol)
 4. Tune render cog count against available cogs and fill rate
 5. Keep display-list field layouts documented in one place (builder comments ↔ renderer reads)
-6. Link `hexfont.spin` only when text shapes are required. Do not start VECTORJET from product `main` until that draw cog exists.
+6. Link `hexfont.spin` only when text shapes are required. The product `main` keeps the `font.get` call so the font stays in the image.
 
 ## External references
 

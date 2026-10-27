@@ -23,7 +23,7 @@ ux_module.spin                 ' top object — compile/upload this
     └── hires_text_vga.spin    ' dual-cog VGA text (Chip Gracey)
 ```
 
-Boot is text VGA only. There is no DIAG_ switch. VECTORJET stays under `src/lib_vjet`. Compile tops and both heads are in `src/lib_vjet/demo/`. Display lists are in `src/lib_vjet/scene/`. Do not link it from `ux_module.spin` until graphics work resumes (`library-vjet`).
+Boot is the text console. A good sealed list, FTDI Control-G, or Ctrl+Alt+G starts VECTORJET. Graphics stops text VGA, DDC, and the input that did not request it. The objects are `VJET_vUXM_vga.spin`, `VJET_vUXM_rendering.spin`, `VJET_v01_displaylist.spin`, and `hexfont.spin`. Compile with `openspin -u` and `-L src/lib_vjet`. Demos keep their own tops under `src/lib_vjet/demo/`. Display lists are in `src/lib_vjet/scene/`.
 
 Archive demos under `archive/` are not part of the production tree.
 
@@ -112,25 +112,25 @@ Hub writers and open IDs: [references/remaining-errors.md](references/remaining-
 - Default timing block in `hires_text_vga.spin` is selected by which CON section is uncommented; pixel rate `pr` is tuned for ~118 MHz.
 - Active table: 640×480 at about 70 Hz (80×40). EDID is reported only. DDC/CI does not set resolution.
 - Screen bytes: bit7 = inverse; bits6..0 = glyph. Row colours are words `%%RRGGBB` style.
-- `textOut` always writes WMF. Product build does not switch to VECTORJET.
+- `textOut` writes WMF while text mode owns the screen. Graphics stops WMF before VECTORJET starts.
 
 ## Build / upload
 
 Copy from [`tools/README.md`](../../../tools/README.md).
 
 ```sh
-openspin -L src -b -o build/ux_module.binary src/ux_module.spin
+openspin -u -L src -L src/lib_vjet -b -o build/ux_module.binary src/ux_module.spin
 tools/ux-load.sh
 tools/ux-screen.sh
 ```
 
-1. PropellerIDE (or compatible) with **`ux_module.spin` in the foreground**. Product objects live under `src/`. Add `src/lib_vjet` only when you compile a VECTORJET demo.
+1. PropellerIDE (or compatible) with **`ux_module.spin` in the foreground**. Product objects live under `src/` and `src/lib_vjet/`. The product compile needs `-u` and both search paths. A demo top uses the same `-L` pair.
 2. Program with an **FT232** Prop Plug (`tools/ux-load.sh` or `proploader` on `/dev/cu.usbserial-*`, DTR reset). SparkFun FTDI Basic: DTR is pin 6 from GND (GRN). See `tool-propeller`. USB CDC (`/dev/cu.usbmodem*`, 8086net 5 V stick) is console only. Download on CDC was tried and failed (ROM handshake).
 3. Toggle DTR on the FT232 to reboot stand-alone. CDC pin 1 is RTS, not DTR. CP/M on the USB-C CDC stick uses `rc-screen` (`tool-rc-screen`), not the FTDI relay.
 
 ## Agent rules
 
-1. Do not start lib_vjet VGA from `ux_module.spin`. `hires_text_vga` owns P16–P23 for the product build. When graphics work resumes, stop text VGA and the I2C DDC cog before `VJET_vUXM_vga.start` (`library-vjet`).
+1. Do not run text VGA and VECTORJET VGA at the same time. `enterGraphics` stops text VGA and the I2C DDC cog before `VJET_vUXM_vga.start`. `restoreText` stops VECTORJET before `wmf.init` (`library-vjet`).
 2. Keep ACIA base selection in one place (`PORT_DEFAULT` / `PORT_ROMWBW` in `ux_module.spin`).
 3. Preserve non-blocking main loop behaviour; long work belongs in other cogs.
 4. New shared Hub structures need a stated single writer. Only Cog 0 calls `acia.tx`. `req_master` is Spin→PASM. `req_parse_idle` is PASM→Spin.
@@ -142,7 +142,7 @@ tools/ux-screen.sh
 
    A polled driver can share the cog. It is not in the tree. Do not load a merged driver until that driver exists. The bring-up keeps one input cog. Control-G keeps the FTDI cog and stops the PS/2 cog. The PS/2 chord keeps the keyboard cog and stops the FTDI cog. Cog 0 polls only that input. It does not call `term.tx` while the FTDI cog is stopped.
 
-   The bring-up top meters `readZ80` in graphics. Blanking uses `PUMP_LIMIT`. A visible pass uses two bytes and a 1 ms sleep. Text mode and XMODEM keep `PUMP_LIMIT`. The product top does not have this path. A tight loop on the visible lines tears the picture. A porch-only drain fills the ACIA ring and holds `/WAIT`.
+   The product top meters `readZ80` in graphics. Blanking uses `PUMP_LIMIT`. A visible pass uses two bytes and a 1 ms sleep. Text mode and XMODEM keep `PUMP_LIMIT`. A tight loop on the visible lines tears the picture. A porch-only drain fills the ACIA ring. A full ring drops a byte and releases `/WAIT`.
 8. Prose: `style-ste-writing`.
 
 ## Related

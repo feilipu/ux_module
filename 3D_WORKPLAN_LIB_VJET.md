@@ -2,7 +2,7 @@
 
 This plan covers three stages. Stage 1 records the framebuffer trial. Those sources were removed. The live path is the eight-line scan. Stage 2 chooses the command path from CP/M-IDE. Stage 3 adds the CP/M-IDE library and tools.
 
-The live bring-up is the beam-chase slice in `src/ux_module_vjet.spin`. The EEPROM image on 20 Oct 2026 is the stress picture, 17428 bytes. The mode flag powers up clear. Git history keeps the framebuffer sources. Later sections name those files as the trial record.
+The product firmware is the beam-chase slice in `src/ux_module.spin`. The EEPROM image on 20 Oct 2026 is the stress picture, 17428 bytes. The mode flag powers up clear. Git history keeps the framebuffer sources. Later sections name `ux_module_vjet.spin` as the trial record. That file is removed.
 
 The repair history is `3D_PROCESS_LIB_VJET.md`. This file does not repeat those loads. The tear bands are gone. Failed repairs of that tear are in the process file. Do not restore those loads.
 
@@ -122,7 +122,8 @@ Hub is 32 KB. OpenSpin 1.00.81 measured these images.
 
 | Top | File | Free above the stack | Note |
 |-----|------|----------------------|------|
-| `ux_module.spin` | 12780 | 13516 | Text only. |
+| `ux_module.spin` | 12780 | 13516 | Text only. 16 Oct 2026. |
+| `ux_module.spin` | 18272 | 0 | 27 Oct 2026. Text boot. A good list starts graphics. Not loaded. |
 | `demo/vjet_test.spin` | 6140 | — | Stored beam-chase demo. Current compile is 6156. |
 | `demo/vjet_ftdi.spin` | 8660 | — | Beam chase plus ACIA and FTDI. Clean. |
 | `demo/vjet_fb.spin` | 8044 | about 944 | Removed. Recorded size. `build/vjet_fb.binary` stays an old file. |
@@ -234,9 +235,9 @@ This stage records the removed framebuffer trial. Do not compile those files.
 
 Recorded goal. One binary ran the product console, entered graphics mode, showed a framebuffer scene, kept the ACIA link, and returned to text.
 
-That trial used `src/ux_module_vjet.spin` and the framebuffer objects. Those objects were removed. Product `src/ux_module.spin` stays text only. The live bring-up is the eight-line scan.
+That trial used `src/ux_module_vjet.spin` and the framebuffer objects. Those objects were removed. The live firmware is the eight-line scan in `src/ux_module.spin`.
 
-Promote the switch into `src/ux_module.spin` only after the checks below pass. Boot still starts text mode.
+The switch is in the product top. Boot still starts text mode. A good sealed list starts graphics. The bench checks below are not run on this image.
 
 The Hub limit is the bitmap store. The accepted frame uses at most 632 bytes. The bring-up scene is one box, two triangles, and the text " GFX". That list uses at most 132 bytes. Each bring-up list is 256 bytes.
 
@@ -364,10 +365,10 @@ A graphics ring in the ACIA cog does not fit in the 18 longs above the stack res
 A normal compile of the copier exceeds Hub by 68 longs. Compile the bring-up with `-u`. `main` calls `font.get`, so the font stays in the image.
 
 ```
-openspin -u -L src -L src/lib_vjet -b -o build/ux_module_vjet.binary src/ux_module_vjet.spin
+openspin -u -L src -L src/lib_vjet -b -o build/ux_module.binary src/ux_module.spin
 ```
 
-That compile removes 86 unused methods and saves 4068 bytes. An earlier copier image is 16392 bytes, with 4520 bytes free. Do not use `-u` on `src/ux_module.spin`. The EEPROM image on 20 Oct 2026 is 17428 bytes. The size note is under Measurements on 20 Oct 2026.
+The product compile needs `-u`. On 27 Oct 2026 that command removes 78 methods and saves 2936 bytes. The image is 18272 bytes. Hub has no spare bytes. The EEPROM image on 20 Oct 2026 is 17428 bytes. The size note is under Measurements on 20 Oct 2026.
 
 ### Scene files
 
@@ -582,7 +583,7 @@ This send does not wait for step 10. The library does not parse STL or OBJ. It d
 
 ### Piece 3 — Show
 
-The bring-up in `src/ux_module_vjet.spin` is this piece. Cog 0 reads the ACIA ring. The mark is `$1C`. The next word is the payload length. Cog 0 copies that many bytes into the unpublished list. The draw cog publishes that list on the front porch.
+The product top `src/ux_module.spin` is this piece. Cog 0 reads the ACIA ring. The mark is `$1C`. The next word is the payload length. Cog 0 copies that many bytes into the unpublished list. The draw cog publishes that list on the front porch. A good list in text mode starts graphics.
 
 The local scene stops. Render cogs read the published list. The copy stores the bytes as they arrive. It does not add a Hub base. Piece 2 has already fixed the reloc words. A count of 0 is rejected.
 
@@ -592,7 +593,7 @@ A count above `DLIST_SIZE * 4` is discarded and is not printed. `$07` is the gra
 
 A bad chain stays unpublished. Text mode discards an extra list and keeps the sealed one. In graphics the next mark waits at most 250 ms. A list state with no byte for 250 ms returns to idle. The parser discards a known remainder until another 250 ms gap.
 
-`G:TESTART` showed one white box on this path. That box has no reloc word. A list with two or more shapes needs the reloc fix from piece 2. The product top does not have this parser. Step 5 stays open. Step 8 stays open.
+`G:TESTART` showed one white box on this path. That box has no reloc word. A list with two or more shapes needs the reloc fix from piece 2. The parser is in the product top. Step 5 source is in. The bench checks are not run. Step 8 stays open.
 
 A screen record is a different payload. The draw cog builds slopes for a screen record. That builder is the game stream. It is not part of these three pieces.
 
@@ -673,7 +674,7 @@ The 17700-byte image uses 17752 and 19752. The 18136-byte source uses 18188 and 
 
 ### Show language and workflow
 
-Spin is the show code. Cog 0 already parses `$1C` in `src/ux_module_vjet.spin`. The porch publishes the sealed list. Leave that parser in Spin. Do not move it into PASM.
+Spin is the show code. Cog 0 parses `$1C` in `src/ux_module.spin`. The porch publishes the sealed list. Leave that parser in Spin. Do not move it into PASM.
 
 An in-built demonstration is retired only as a send/show pair. Cook its frames. Send them with the library. The parser already in the bring-up shows them. Remove the scene from the firmware after the VGA picture is accepted.
 
@@ -682,11 +683,11 @@ Retire the scenes in this order.
 1. Spinning triangles, `scene/scene_triangles.spin`, top `demo/vjet_test.spin`.
 2. Orbit probe, `scene/scene_probe.spin`, top `demo/vjet_probe.spin`.
 3. Test card, `scene/scene_card.spin`, top `demo/vjet_card.spin`.
-4. Stress picture, `scene/scene_stress.spin`. This is the scene `ux_module_vjet.spin` includes now.
+4. Stress picture, `scene/scene_stress.spin`. This is the scene `ux_module.spin` includes now.
 
 After the stress pair is accepted, delete `drawScene` and the scene include. The draw cog then publishes a sealed list and does not build a local picture. `vjet_cube.spin` is outside this retirement. It does not compile.
 
-Move the parser into `src/ux_module.spin` only after that deletion, and only as step 5. Do not delete the last scene and promote the product top in one edit. `gfx_flag` stays clear until step 8.
+The parser is in `src/ux_module.spin`. The stress scene stays until that pair is accepted on VGA. `gfx_flag` stays clear until step 8.
 
 ## Stage 3 — CP/M-IDE
 
@@ -757,11 +758,13 @@ Do the rows in order. A later row waits for the exit text of the row above.
 | 11 | CP/M library, cooker, and cube `.COM` for `8085-cf-acia`. | Cube spins. A key returns to the CCP. |
 | 12 | GSX subset driver. | Open, clear, bar, convex fill, close. |
 
-Status on 20 Oct 2026. Steps 1 and 2 are done. Steps 3 and 4 pass on the beam-chase bring-up. Text boots. Control-G shows a clean eight-line picture. Control-G returns to text. The product top does not have this switch. Do not mark step 5 passed.
+Status on 20 Oct 2026. Steps 1 and 2 are done. Steps 3 and 4 pass on the beam-chase bring-up. Text boots. Control-G shows a clean eight-line picture. Control-G returns to text.
 
-On 26 Oct 2026 the bench has no hardware. Authoring file is the rule for the convert and for the game stream. Three pieces is the cut for the sealed list. The cooker is `tools/vjet_cook.py`. The send library is `vjet/` in z88dk-libraries. The show path is `src/ux_module_vjet.spin`. A text-mode list is stored at `dlist1`.
+On 27 Oct 2026 the show path is `src/ux_module.spin`. A good list in text mode starts graphics. The following `$07` falls inside `settleDrain` and is not a leave. A later `$07` returns to text. The bench checks for step 5 are not run. Do not mark step 5 passed. Step 8 stays open.
 
-The show compile on 26 Oct 2026 is 18136 bytes. This compile does not write EEPROM. Variable space starts at 18136. The font table is at 17672. The lists are at 18188 and 20188. The 17700-byte image stays the clean point until a load.
+On 26 Oct 2026 the bench has no hardware. Authoring file is the rule for the convert and for the game stream. Three pieces is the cut for the sealed list. The cooker is `tools/vjet_cook.py`. The send library is `vjet/` in z88dk-libraries. A text-mode list is stored at `dlist1`.
+
+The show compile on 27 Oct 2026 is 18272 bytes. This compile does not write EEPROM. Variable space starts at 18272. The font table is at 17808. The lists are at 18324 and 20324. Hub has no spare bytes. The 17700-byte image stays the clean point until a load. The 26 Oct compile was 18136 bytes, with the font at 17672 and the lists at 18188 and 20188.
 
 The live source picture is `scene/scene_stress.spin`. `DLIST_SIZE` is 500. A sealed list replaces that picture. The clean point is the handoff in `3D_PROCESS_LIB_VJET.md`.
 
