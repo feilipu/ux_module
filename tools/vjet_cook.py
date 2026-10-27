@@ -471,7 +471,20 @@ def parse_binary_stl(data):
     return tris
 
 
+def _exact_binary_stl(data):
+    if len(data) < 84:
+        return False
+    count = struct.unpack_from("<I", data, 80)[0]
+    if count < 1:
+        return False
+    return len(data) == 84 + count * 50
+
+
 def parse_stl(data):
+    # A binary file may start with the bytes "solid". An exact record
+    # length is binary. ASCII is the fallback when the length does not match.
+    if _exact_binary_stl(data):
+        return parse_binary_stl(data)
     head = data.lstrip()[:5].lower()
     if head == b"solid" and b"facet" in data.lower():
         return parse_ascii_stl(data)
@@ -682,6 +695,7 @@ def check_chain(buf, relocs):
             slots.append(pos)
     if slots != list(relocs):
         raise CookError("reloc list does not match the links")
+    show_accepts(buf)
     for i, pos in enumerate(positions):
         link = struct.unpack_from("<H", buf, pos)[0]
         if i + 1 < len(positions):
@@ -689,6 +703,60 @@ def check_chain(buf, relocs):
                 raise CookError("list link skipped a shape")
         elif link != 0:
             raise CookError("list link skipped a shape")
+
+
+def _traps_cover(payload, pos, span, cover):
+    q = 24
+    got = 0
+    while got < cover:
+        if q + 12 > span:
+            return False
+        height = struct.unpack_from("<H", payload, pos + q)[0]
+        if height == 0:
+            return False
+        got += height
+        q += 12
+    return True
+
+
+def show_accepts(payload):
+    """Same rules as listChainOk. Offsets here, Hub addresses on the Propeller."""
+
+    pos = 0
+    n = 0
+    lim = len(payload)
+    while True:
+        if pos + 7 >= lim:
+            raise CookError("list header does not fit")
+        if payload[pos + 2] != 0xFF:
+            raise CookError("list sync is not FF")
+        kind = payload[pos + 3]
+        if kind < 1 or kind > 3:
+            raise CookError("list type is not 1, 2, or 3")
+        y0, y1 = struct.unpack_from("<HH", payload, pos + 4)
+        if y0 > 240 or y1 > 240 or y1 < y0:
+            raise CookError("list scanlines are outside 0..240")
+        nxt = struct.unpack_from("<H", payload, pos)[0]
+        if nxt == 0:
+            span = lim - pos
+        elif (nxt & 1) or nxt <= pos or (nxt + 7) >= lim:
+            raise CookError("list link left the payload")
+        else:
+            span = nxt - pos
+        if kind == 1:
+            if span < 36 or not _traps_cover(payload, pos, span, y1 - y0):
+                raise CookError("list trap does not cover its scanlines")
+        elif kind == 2:
+            if span < 16:
+                raise CookError("list box is short")
+        elif span < 20:
+            raise CookError("list text is short")
+        if nxt == 0:
+            return
+        pos = nxt
+        n += 1
+        if n == 250:
+            raise CookError("list has too many shapes")
 
 
 def walk_shapes(payload):
@@ -805,6 +873,16 @@ def run_check():
     else:
         raise CookError("a missing reloc was accepted")
 
+    one = List()
+    one.line(0, 0, 10 << 16, 1 << 16, colour)
+    if one.lines != 1 or len(one.buf) != 36:
+        raise CookError("a one pixel line was not one trap")
+    check_chain(one.buf, one.relocs)
+
+    solid = bytearray(b"solid") + bytearray(75) + binary[80:]
+    if parse_stl(bytes(solid)) != ascii_tris:
+        raise CookError("a binary STL with a solid header was read as ASCII")
+
     print("check ok")
     report("triangle.stl", tri_stl, blob_stl, None)
     report("square.obj", _sq, sq_blob, None)
@@ -856,15 +934,19 @@ def main(argv):
         print("vjet_cook: %s" % exc, file=sys.stderr)
         return 1
 
-    if args.out is not None:
-        args.out.parent.mkdir(parents=True, exist_ok=True)
-        args.out.write_bytes(blob)
-    if args.asm is not None:
-        args.asm.parent.mkdir(parents=True, exist_ok=True)
-        write_asm(args.asm, blob, src.name)
-    if args.inc is not None:
-        args.inc.parent.mkdir(parents=True, exist_ok=True)
-        write_inc(args.inc, args.out.name)
+    try:
+        if args.out is not None:
+            args.out.parent.mkdir(parents=True, exist_ok=True)
+            args.out.write_bytes(blob)
+        if args.asm is not None:
+            args.asm.parent.mkdir(parents=True, exist_ok=True)
+            write_asm(args.asm, blob, src.name)
+        if args.inc is not None:
+            args.inc.parent.mkdir(parents=True, exist_ok=True)
+            write_inc(args.inc, args.out.name)
+    except OSError as exc:
+        print("vjet_cook: %s" % exc, file=sys.stderr)
+        return 1
     report(src.name, gl, blob, args.font)
     return 0
 

@@ -14,6 +14,7 @@
 '' Eight line slots. Three render cogs. The picture is scene/scene_stress.spin.
 '' A streamed list replaces that picture. Cog 0 copies it from the ACIA ring.
 '' A list that arrives in text mode is stored at dlist1. The copy adds no Hub base.
+'' A count of 0 is ignored. A longer count is discarded and is not printed.
 '' A bad chain stays unpublished. Text mode discards an extra list.
 '' A 250 ms gap returns the parser to idle.
 '' The stress picture moves. Cog 0 keeps the ACIA pump. The draw cog has its own stack.
@@ -372,7 +373,7 @@ PUB readZ80 | char, n, need
   In graphics, a list mark stays in the ring while listReady is set.
   That hold ends after 250 ms. Text mode discards the extra list.
   A list state with no byte for 250 ms returns to idle.
-  When the length is known, the rest is discarded until the next gap.
+  A count of 0 is ignored. A count above 2000 is discarded and is not printed.
   A bad chain does not set listReady.
   TDRE is allowed only when the next byte fits in FTDI TX.}}
 
@@ -534,8 +535,10 @@ PRI takeZ80Byte(char)
 
     PARSE_LIST_HI:                                      ' count high byte. Do not echo.
       listCount := listCount | (char << 8)
-      if (listCount == 0) or (listCount > constant(DLIST_SIZE * 4))
-        z80Parse := PARSE_IDLE                          ' reject. Leave listReady as it is.
+      if listCount == 0
+        z80Parse := PARSE_IDLE                          ' no payload. Leave listReady as it is.
+      elseif listCount > constant(DLIST_SIZE * 4)
+        z80Parse := PARSE_SKIP                          ' discard it. Do not print the payload.
       else
         listBytes := listCount
         if (not gfxMode) or drawHold
@@ -561,10 +564,10 @@ PRI takeZ80Byte(char)
 
     PARSE_SKIP_HI:
       listCount := listCount | (char << 8)
-      if (listCount == 0) or (listCount > constant(DLIST_SIZE * 4))
+      if listCount == 0
         z80Parse := PARSE_IDLE                          ' leave the sealed list ready
       else
-        z80Parse := PARSE_SKIP
+        z80Parse := PARSE_SKIP                          ' discard a long count too
 
     PARSE_SKIP:
       listCount--
@@ -1227,8 +1230,10 @@ PRI claimList
   longfill (listAt, 0, DLIST_SIZE)
 
 
-PRI listChainOk : ok | p, nxt, kind, y0, y1, n, lim
+PRI listChainOk : ok | p, nxt, kind, y0, y1, n, lim, span, q, h, got
 {{1 when every link stays inside this list and moves forward.
+  A box is 16 bytes. Text is 20 bytes. A trap stack is at least 36.
+  The trap heights cover the scanlines and stay inside the shape.
   Each scanline is from 0 to 240. A failed chain stays unpublished.}}
 
   p := listBase
@@ -1248,9 +1253,32 @@ PRI listChainOk : ok | p, nxt, kind, y0, y1, n, lim
       return 0
     nxt := byte[p] | (byte[p + 1] << 8)
     if nxt == 0
+      span := lim - p
+    else
+      if (nxt & 1) or (nxt =< p) or ((nxt + 7) => lim)
+        return 0
+      span := nxt - p
+    if kind == 2
+      if span < 16
+        return 0
+    elseif kind == 3
+      if span < 20
+        return 0
+    else
+      if span < 36
+        return 0
+      q := 24
+      got := 0
+      repeat while got < (y1 - y0)
+        if (q + 12) > span
+          return 0
+        h := byte[p + q] | (byte[p + q + 1] << 8)
+        if h == 0
+          return 0
+        got := got + h
+        q := q + 12
+    if nxt == 0
       return 1
-    if (nxt & 1) or (nxt =< p) or ((nxt + 7) => lim)
-      return 0
     p := nxt
     n++
     if n == 250

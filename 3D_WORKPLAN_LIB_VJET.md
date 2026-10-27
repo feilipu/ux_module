@@ -331,7 +331,7 @@ Do not start a list while `z80XmSess` or `hostXm` is set. Test `SOH` and `STX` b
 
 The next two bytes are a little-endian count. Then that many list bytes follow. Reject a count of 0. Reject a count above `DLIST_SIZE * 4`. Any other count is valid. The stress image uses 500 longs, so that limit is 2000 bytes. The triangle image uses 296 longs, so that limit is 1184 bytes.
 
-On a good count, clear only the fill target. Then store those bytes as the display list. The first word is the link. Do not echo those bytes to FTDI or to the text screen. A rejected count returns the parser to idle. The following bytes are then console bytes.
+On a good count, clear only the fill target. Then store those bytes as the display list. The first word is the link. Do not echo those bytes to FTDI or to the text screen. A count of 0 returns the parser to idle. A count above the limit is discarded and is not printed.
 
 A data byte of `$03` is payload. It does not reset the console FIFOs. A control-port write of `$03` still resets them. The graphics program writes the data port only.
 
@@ -345,9 +345,9 @@ Idle is state 0. The list states are 8, 9, 10, and 11. States 12, 13, and 14 dis
 
 State 8 stores the low count byte. State 9 stores the high count byte. State 11 waits until the draw cog has left `gl.start`. State 10 stores the payload bytes. The draw cog sets `drawHold` when it will not call `gl.start`. Cog 0 clears the fill target only after that, or before graphics starts.
 
-`listFill` is 0 for `dlist1` and 1 for `dlist2`. A finished list sets `listReady` only when every link stays inside that list. A bad chain stays unpublished. The parser returns to idle. The draw cog flips `listFill` only after it publishes.
+`listFill` is 0 for `dlist1` and 1 for `dlist2`. A finished list sets `listReady` only when every link stays inside that list. A box is 16 bytes. Text is 20 bytes. A trap stack is at least 36 bytes, and its heights cover the scanlines. A bad chain stays unpublished. The parser returns to idle. The draw cog flips `listFill` only after it publishes.
 
-In graphics, Cog 0 leaves the next mark in the ring while `listReady` is set. That hold ends after 250 ms. Text mode discards the extra list and keeps the sealed one. A list state with no byte for 250 ms returns to idle. The parser discards a known remainder until another 250 ms gap. A full ring can stop the 8085 for at most 250 ms.
+In graphics, Cog 0 leaves the next mark in the ring while `listReady` is set. That hold ends after 250 ms. Text mode discards the extra list and keeps the sealed one. A list state with no byte for 250 ms returns to idle. The parser discards a known remainder until another 250 ms gap. A full ring drops that byte. The ACIA releases /WAIT. The host does not stay stopped.
 
 The porch order is fixed. Publish the buffer that `listFill` names. Then flip `listFill`. Then clear `listReady`. Then set `listShown`.
 
@@ -588,7 +588,7 @@ The local scene stops. Render cogs read the published list. The copy stores the 
 
 A list that arrives in text mode is stored at `dlist1`. The first `vjet_send_list` uses that address. A later list uses the other list. A return to text selects `dlist1` again when no list is waiting.
 
-A count above `DLIST_SIZE * 4` is rejected. The payload is not echoed. `$07` is the graphics switch. It is not a list byte. `gfx_flag` stays clear, so the pair stays a 6850.
+A count above `DLIST_SIZE * 4` is discarded and is not printed. `$07` is the graphics switch. It is not a list byte. `gfx_flag` stays clear, so the pair stays a 6850.
 
 A bad chain stays unpublished. Text mode discards an extra list and keeps the sealed one. In graphics the next mark waits at most 250 ms. A list state with no byte for 250 ms returns to idle. The parser discards a known remainder until another 250 ms gap.
 
@@ -637,12 +637,12 @@ The package is `vjet/` in z88dk-libraries. The layout matches `th02/` and `3d/`:
 | Call | Action |
 |------|--------|
 | `vjet_font(hub)` | Set the image font. 0 skips the check. |
-| `vjet_send_list(blob, dest)` | Fix reloc words. Write `$1C`, the length, and the payload. |
-| `vjet_load(name, buf, max)` | Read one CP/M file into RAM. The send then uses that buffer. |
+| `vjet_send_list(blob, dest, size)` | Fix reloc words. `size` is the blob length. A short blob returns before the first byte. |
+| `vjet_load(name, buf, max)` | Read one CP/M file into RAM. `max` above 32767 returns -1. After an open, the DMA address is 0080h. |
 | `vjet_graphics()` | Write one `$07`. |
 | `vjet_key()` | Return a stored key, or 0. The program exits on `q`. |
 
-`dest` is the Hub address of `dlist1` or `dlist2`. The blob does not store that address. The same payload can fill either list. `vjet_load` uses BDOS file calls, so classic and newlib share one loader.
+`dest` is the Hub address of `dlist1` or `dlist2`. The blob does not store that address. The same payload can fill either list. `size` is the loaded count, or the size of a linked blob. `vjet_load` uses BDOS file calls, so classic and newlib share one loader.
 
 Build from `source/` with the same shape as the `3d` package. Leave out the math flags.
 
@@ -698,7 +698,7 @@ The UX Module tree keeps the cooker and piece 3. z88dk-libraries keeps piece 2. 
 
 | Call | Port use |
 |------|----------|
-| `vjet_send_list` | 6850 path. Fix reloc words. Write `$1C`, the length, and the payload. |
+| `vjet_send_list` | 6850 path. Fix reloc words. Pass the blob length. Write `$1C`, the length, and the payload. |
 | `vjet_open` | `di`, then the enter sequence. Read 0x80 until the mode flag is set. |
 | `vjet_close` | Enter text. `ei` only after status says text mode. |
 | `vjet_load` | Load mesh from a memory block. |
